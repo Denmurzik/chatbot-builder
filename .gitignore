@@ -1,11 +1,36 @@
-# Only whitelisted files are tracked
+# Отслеживаются только явно разрешённые файлы и каталоги
 /*
 !/.gitignore
 !/AGENTS.md
 !/Chatbot Visual Editor.docx
 !/Vision_чат-бот_конструктор.docx
 !/VP-chatbot/
-
-# VP backups
-*.bak_*
 !/docs/
+
+# Монорепозиторий, инфраструктура и CI
+!/package.json
+!/pnpm-workspace.yaml
+!/pnpm-lock.yaml
+!/tsconfig.base.json
+!/eslint.config.mjs
+!/.prettierrc
+!/vitest.workspace.ts
+!/docker-compose.yml
+!/.env.example
+!/README.md
+!/apps/
+!/packages/
+!/.github/
+!/scripts/
+
+# Бэкапы Visual Paradigm
+*.bak_*
+
+# Артефакты сборки, зависимости и локальное окружение
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+coverage/
+*.tsbuildinfo

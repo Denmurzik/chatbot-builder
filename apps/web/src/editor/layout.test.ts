@@ -92,4 +92,42 @@ describe('layoutScenario', () => {
       expect(node.position.y % GRID_SIZE).toBe(0);
     }
   });
+
+  it('цепочка с обратной связью (Эхо): зазор между рангами >= 100, без пересечений', () => {
+    const size = { width: 320, height: 120 };
+    const nodes: BlockNode[] = [
+      makeNode('start', { type: 'ENTRY_POINT', title: 'Старт' }, size),
+      makeNode('in1', { type: 'TEXT_INPUT', title: 'Ввод', question: '', variableName: 'x' }, size),
+      makeNode('echo', { type: 'TEXT_MESSAGE', title: 'Эхо', text: 'Эхо' }, size),
+      makeNode('in2', { type: 'TEXT_INPUT', title: 'Ввод', question: '', variableName: 'x' }, size),
+    ];
+    const link = (s: string, t: string): Edge => ({
+      id: `${s}::default`,
+      source: s,
+      sourceHandle: 'default',
+      target: t,
+    });
+    const edges = [
+      link('start', 'in1'),
+      link('in1', 'echo'),
+      link('echo', 'in2'),
+      link('in2', 'echo'),
+    ];
+
+    const laidOut = layoutScenario(nodes, edges);
+    const sorted = [...laidOut].sort((a, b) => a.position.x - b.position.x);
+    for (let i = 1; i < sorted.length; i += 1) {
+      const prev = sorted[i - 1]!;
+      expect(sorted[i]!.position.x - (prev.position.x + size.width)).toBeGreaterThanOrEqual(100);
+    }
+    for (let i = 0; i < laidOut.length; i += 1) {
+      for (let j = i + 1; j < laidOut.length; j += 1) {
+        expect(boxesOverlap(laidOut[i]!, laidOut[j]!)).toBe(false);
+      }
+    }
+    for (const node of laidOut) {
+      expect(node.position.x % GRID_SIZE).toBe(0);
+      expect(node.position.y % GRID_SIZE).toBe(0);
+    }
+  });
 });

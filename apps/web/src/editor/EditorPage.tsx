@@ -100,7 +100,7 @@ function ScenarioEditor({
   // Счётчик правок графа: по нему понимаем, менялся ли граф, пока шёл запрос сохранения
   const revisionRef = useRef(0);
   const canvasRef = useRef<HTMLDivElement>(null);
-  const { screenToFlowPosition, fitView } = useReactFlow();
+  const { screenToFlowPosition, fitView, getNodes } = useReactFlow();
   const save = useSaveScenario(projectId);
 
   const selected = nodes.find((node) => node.selected) ?? null;
@@ -183,12 +183,18 @@ function ScenarioEditor({
 
   // Упорядочить: раскладка слева направо по сетке и подгонка вида
   const handleAutoLayout = useCallback(() => {
-    commitNodes(layoutScenario(nodesRef.current, edgesRef.current));
+    // Реальные измеренные размеры берём из экземпляра React Flow
+    const measuredById = new Map(getNodes().map((n) => [n.id, n.measured]));
+    const source = nodesRef.current.map((node) => {
+      const measured = measuredById.get(node.id) ?? node.measured;
+      return measured ? { ...node, measured } : node;
+    });
+    commitNodes(layoutScenario(source, edgesRef.current));
     touch();
     window.requestAnimationFrame(() => {
-      void fitView({ maxZoom: 1, padding: 0.3, duration: 200 });
+      void fitView({ padding: 0.2, maxZoom: 1, duration: 200 });
     });
-  }, [commitNodes, touch, fitView]);
+  }, [commitNodes, touch, fitView, getNodes]);
 
   // Действия блоков и связей для BlockNode и ScenarioEdge; задачи 4 и 5 подменяют часть из них
   const actions = useMemo<EditorActions>(

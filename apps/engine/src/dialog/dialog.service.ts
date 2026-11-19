@@ -10,11 +10,10 @@ import {
 import { SecretVault } from '@chatbot/vault';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PRISMA } from '../infra/tokens';
-import { HttpRequestLauncher } from '../http/http-request-launcher';
-import { MessengerGateway } from '../messenger/messenger-gateway';
 import { ContextRepository, type DialogContextRow } from './context.repository';
 import { buildEnvironment } from './environment';
 import { decryptHeaders, toStoredHeaders } from './http-headers';
+import { HttpRequestLauncher, MessengerGateway } from './ports';
 
 interface Processed {
   result: EngineResult;

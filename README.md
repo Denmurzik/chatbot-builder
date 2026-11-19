@@ -71,3 +71,46 @@ pnpm --filter @chatbot/db db:generate
 | `pnpm dev:api` | Запуск `apps/api` в режиме разработки |
 | `pnpm dev:engine` | Запуск `apps/engine` в режиме разработки |
 | `pnpm dev:web` | Запуск `apps/web` (Vite dev server) |
+
+## Запуск сценариев спринта 1
+
+1. Поднимите инфраструктуру и примените миграции PostgreSQL:
+
+   ```bash
+   pnpm infra:up
+   pnpm --filter @chatbot/db db:migrate
+   ```
+
+2. Заполните базу тестовыми данными (автор, проект «Эхо» и опубликованный эхо-бот). Если задать `TELEGRAM_DEV_TOKEN` в `.env`, скрипт дополнительно создаст зашифрованное подключение Telegram:
+
+   ```bash
+   pnpm --filter @chatbot/api seed:dev
+   ```
+
+   Тестовая учётная запись веб-редактора (из `seed:dev`):
+   - **Email:** `dev@example.com`
+   - **Пароль:** `devpassword`
+
+   Для локальной отладки эхо-бота через long polling укажите в `.env` `TELEGRAM_DEV_TOKEN=<токен>` и `TELEGRAM_POLLING=1`.
+
+3. Запустите приложения (в трёх терминалах):
+
+   ```bash
+   pnpm dev:api
+   pnpm dev:engine
+   pnpm dev:web
+   ```
+
+4. Консольный чат движка (сценарий «Запись к врачу» без HTTP):
+
+   ```bash
+   pnpm --filter @chatbot/engine-core chat examples/doctor-no-http.json
+   ```
+
+5. Прототип П1 (проверка обработки событий, очереди и HTTP-клиента):
+
+   ```bash
+   pnpm --filter @chatbot/engine p1
+   # с проверкой исходящего HTTP-запроса:
+   pnpm --filter @chatbot/engine p1 -- --http
+   ```

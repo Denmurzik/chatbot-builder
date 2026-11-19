@@ -1,12 +1,11 @@
 import { createPrismaClient, type PrismaClient } from '@chatbot/db';
-import { DialogEngine } from '@chatbot/engine-core';
 import { EventQueue } from '@chatbot/queue';
 import { SecretVault } from '@chatbot/vault';
 import { Global, Inject, Module, type OnApplicationShutdown } from '@nestjs/common';
 import { loadConfig } from '../config';
 import { APP_CONFIG, EVENT_QUEUE, PRISMA, type AppConfig } from './tokens';
 
-// Общие провайдеры: конфигурация, клиент Prisma, SecretVault и движок диалогов
+// Общие инфраструктурные провайдеры базового слоя: конфигурация, Prisma, EventQueue и SecretVault
 @Global()
 @Module({
   providers: [
@@ -23,9 +22,8 @@ import { APP_CONFIG, EVENT_QUEUE, PRISMA, type AppConfig } from './tokens';
         new EventQueue(config.redisUrl, config.queuePrefix ? { prefix: config.queuePrefix } : {}),
     },
     { provide: SecretVault, inject: [APP_CONFIG], useFactory: () => SecretVault.fromEnv() },
-    { provide: DialogEngine, useFactory: () => new DialogEngine() },
   ],
-  exports: [APP_CONFIG, PRISMA, EVENT_QUEUE, SecretVault, DialogEngine],
+  exports: [APP_CONFIG, PRISMA, EVENT_QUEUE, SecretVault],
 })
 export class InfraModule implements OnApplicationShutdown {
   constructor(

@@ -5,11 +5,11 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from './app.module';
 import { DialogService } from './dialog/dialog.service';
+import { MessengerGateway } from './dialog/ports';
 import { EventDispatcher } from './dispatcher/event-dispatcher';
 import { ExternalApiClient } from './http/external-api-client';
 import { HttpRequestExecutor } from './http/http-request-executor';
 import { ResponseParser } from './http/response-parser';
-import { MessengerGateway } from './messenger/messenger-gateway';
 import { PreviewPublisher } from './preview/preview-publisher';
 
 describe('Каркас модулей Engine (skeleton)', () => {

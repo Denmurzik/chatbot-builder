@@ -1,10 +1,11 @@
 import type { PrismaClient } from '@chatbot/db';
 import type { EventQueue } from '@chatbot/queue';
 import { Module } from '@nestjs/common';
+import { HttpRequestLauncher } from '../dialog/ports';
 import { EVENT_QUEUE, PRISMA } from '../infra/tokens';
 import { ExternalApiClient } from './external-api-client';
 import { HttpRequestExecutor } from './http-request-executor';
-import { HttpRequestLauncher, NoopHttpRequestLauncher } from './http-request-launcher';
+import { NoopHttpRequestLauncher } from './http-request-launcher';
 import { QueueHttpResultSink } from './queue-http-result-sink';
 import { ResponseParser } from './response-parser';
 

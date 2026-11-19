@@ -9,8 +9,8 @@ import { SecretVault } from '@chatbot/vault';
 import { Test, type TestingModule } from '@nestjs/testing';
 import type IORedis from 'ioredis';
 import { AppModule } from '../app.module';
+import { MessengerGateway } from '../dialog/ports';
 import { APP_CONFIG, PRISMA, type AppConfig } from '../infra/tokens';
-import { MessengerGateway } from '../messenger/messenger-gateway';
 
 export const ADMIN_URL =
   process.env.DATABASE_URL ?? 'postgresql://chatbot:chatbot@127.0.0.1:55432/chatbot';

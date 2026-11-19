@@ -1,15 +1,9 @@
 import { NotImplementedError } from '@chatbot/model';
 import pRetry from 'p-retry';
 import { request as undiciRequest, type Dispatcher } from 'undici';
+import type { OutgoingHttpRequest } from '../dialog/ports';
 
-/** Исходящий HTTP-запрос блока «HTTP-запрос». */
-export interface OutgoingHttpRequest {
-  id: string;
-  method: string;
-  url: string;
-  headers: Record<string, string>;
-  body: string | null;
-}
+export type { OutgoingHttpRequest };
 
 /** Приёмник результата: вызывается один раз после всех попыток. */
 export interface HttpResultSink {

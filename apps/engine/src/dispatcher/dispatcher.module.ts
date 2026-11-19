@@ -1,9 +1,8 @@
 import { Module } from '@nestjs/common';
-import { DialogModule } from '../dialog/dialog.module';
 import { EventDispatcher } from './event-dispatcher';
 
+// DialogService предоставляется глобально из DialogModule.register(...) в AppModule
 @Module({
-  imports: [DialogModule],
   providers: [EventDispatcher],
 })
 export class DispatcherModule {}

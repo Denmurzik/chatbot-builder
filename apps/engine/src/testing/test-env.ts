@@ -25,8 +25,11 @@ export interface SentMessage {
 // Подмена MessengerGateway: запоминает сообщения вместо отправки в Telegram
 export class FakeMessengerGateway extends MessengerGateway {
   readonly sent: SentMessage[] = [];
+  // Включённый режим имитирует сбой отправки
+  failing = false;
 
   async sendMessage(botId: string, chatId: string, message: OutgoingMessage): Promise<void> {
+    if (this.failing) throw new Error('Имитация сбоя отправки');
     this.sent.push({ botId, chatId, message });
   }
 }

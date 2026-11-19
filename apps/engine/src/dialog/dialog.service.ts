@@ -49,26 +49,25 @@ export class DialogService {
       const scenario: Scenario = scenarioSchema.parse(bot.publishedScenario);
       const env = buildEnvironment(botId, environmentSchema.parse(bot.environment), this.vault);
 
+      await this.repository.ensureExists(tx, botId, event.chatId, event.userId, event.channel);
       const row = await this.repository.lockForUpdate(tx, botId, event.chatId);
-      const result = this.engine.handleEvent(event, row ? toState(row) : null, scenario, env);
+      if (!row) throw new Error('Контекст диалога не найден после создания');
+      const result = this.engine.handleEvent(event, toState(row), scenario, env);
 
       const data = {
         userId: event.userId,
         channel: event.channel,
         state: result.context.state,
-        currentBlockId: result.context.currentBlockId ?? '',
+        currentBlockId: result.context.currentBlockId,
         variables: result.context.variables,
         currentRequestId: result.context.currentRequestId,
       };
-      const saved = row
-        ? await tx.dialogContext.update({ where: { id: row.id }, data })
-        : await tx.dialogContext.create({ data: { ...data, botId, chatId: event.chatId } });
+      const saved = await tx.dialogContext.update({ where: { id: row.id }, data });
 
       let httpRequestId: string | null = null;
       if (result.httpRequest) {
         const request = result.httpRequest;
-        // Расшифровка секретов — проверка в памяти до фиксации; в базу пишется маска
-        decryptHeaders(request.headers, bot.projectId, this.vault);
+        // В базу пишется маска; секреты расшифровываются в памяти после фиксации
         const created = await tx.httpRequest.create({
           data: {
             dialogContextId: saved.id,
@@ -107,14 +106,12 @@ export class DialogService {
     }
   }
 
-  // Ошибка отправки одного сообщения не отменяет сохранённое состояние: пишется в журнал
+  // Ошибка отправки не отменяет сохранённое состояние: пишется в журнал
   private async sendAll(botId: string, chatId: string, messages: OutgoingMessage[]): Promise<void> {
-    for (const message of messages) {
-      try {
-        await this.gateway.sendMessage(botId, chatId, message);
-      } catch (error) {
-        this.logger.error(`Не удалось отправить сообщение боту ${botId}, чат ${chatId}`, error);
-      }
+    try {
+      await this.gateway.sendMessages(botId, chatId, messages);
+    } catch (error) {
+      this.logger.error(`Не удалось отправить сообщения боту ${botId}, чат ${chatId}`, error);
     }
   }
 }
@@ -122,7 +119,7 @@ export class DialogService {
 function toState(row: DialogContextRow) {
   return {
     state: row.state,
-    currentBlockId: row.currentBlockId === '' ? null : row.currentBlockId,
+    currentBlockId: row.currentBlockId,
     variables: row.variables,
     currentRequestId: row.currentRequestId,
   };

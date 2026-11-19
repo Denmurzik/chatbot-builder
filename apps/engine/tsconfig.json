@@ -7,20 +7,10 @@
   "include": ["src"],
   "exclude": ["src/**/*.test.ts", "src/**/*.int.test.ts", "src/testing"],
   "references": [
-    {
-      "path": "../../packages/model"
-    },
-    {
-      "path": "../../packages/engine-core"
-    },
-    {
-      "path": "../../packages/vault"
-    },
-    {
-      "path": "../../packages/db"
-    },
-    {
-      "path": "../../packages/queue"
-    }
+    { "path": "../../packages/model" },
+    { "path": "../../packages/engine-core" },
+    { "path": "../../packages/vault" },
+    { "path": "../../packages/db" },
+    { "path": "../../packages/queue" }
   ]
 }

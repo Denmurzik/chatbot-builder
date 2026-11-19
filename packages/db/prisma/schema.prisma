@@ -99,7 +99,7 @@ model DialogContext {
   userId           String        @map("user_id")
   channel          Channel
   state            DialogState
-  currentBlockId   String        @map("current_block_id")
+  currentBlockId   String?       @map("current_block_id")
   variables        Json
   currentRequestId String?       @map("current_request_id")
   updatedAt        DateTime      @updatedAt @map("updated_at")

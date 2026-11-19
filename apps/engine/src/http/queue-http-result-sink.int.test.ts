@@ -1,5 +1,7 @@
+import { createRedisConnection, partitionOf, dialogKey, queueName } from '@chatbot/queue';
+import { Queue } from 'bullmq';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestEnv, textEvent, waitFor, type TestEnv } from '../testing/test-env';
+import { REDIS_URL, createTestEnv, textEvent, waitFor, type TestEnv } from '../testing/test-env';
 import { QueueHttpResultSink } from './queue-http-result-sink';
 
 describe('QueueHttpResultSink', () => {
@@ -42,6 +44,27 @@ describe('QueueHttpResultSink', () => {
       responseCode: 200,
       responseBody: '{"ok":true}',
     });
+
+    const ctx = await env.db.dialogContext.findUniqueOrThrow({
+      where: { id: request.dialogContextId },
+    });
+    const redis = createRedisConnection(REDIS_URL);
+    const probe = new Queue(queueName(partitionOf(dialogKey(ctx.botId, ctx.chatId))), {
+      connection: redis,
+      prefix: env.config.queuePrefix,
+    });
+    try {
+      const job = await probe.getJob(`http-${request.id}-RESPONSE_RECEIVED`);
+      expect(job?.data).toMatchObject({
+        type: 'RESPONSE_RECEIVED',
+        botId: ctx.botId,
+        chatId: ctx.chatId,
+        requestId: request.id,
+      });
+    } finally {
+      await probe.close();
+      await redis.quit();
+    }
   });
 
   it('тайм-аут (код 0) даёт статус TIMED_OUT, ошибка статуса — FAILED', async () => {

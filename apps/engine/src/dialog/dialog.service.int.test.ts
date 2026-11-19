@@ -112,6 +112,24 @@ describe('обработка событий диалога (PostgreSQL + Redis)'
     expect(req.headers).toEqual([{ name: 'Authorization', value: encrypted.mask, secret: true }]);
   });
 
+  it('сбой отправки не откатывает сохранённый контекст, воркер продолжает работу', async () => {
+    const bot = await env.createBot();
+    env.gateway.failing = true;
+    await env.emit(textEvent(bot.id, 'tg:6', 'старт'));
+    await waitFor(async () => {
+      const row = await env.db.dialogContext.findFirst({
+        where: { botId: bot.id, chatId: 'tg:6' },
+      });
+      return row?.state === 'WAITING_USER';
+    });
+    env.gateway.failing = false;
+    expect(env.texts(bot.id, 'tg:6')).toEqual([]);
+
+    await env.emit(textEvent(bot.id, 'tg:6', 'привет'));
+    await waitFor(() => env.texts(bot.id, 'tg:6').length >= 2);
+    expect(env.texts(bot.id, 'tg:6')).toEqual(['Вы сказали: привет', 'Что сказать?']);
+  });
+
   it('событие несуществующего бота не ломает обработку следующих', async () => {
     await env.emit(textEvent('00000000-0000-0000-0000-000000000000', 'tg:4', 'x'));
     const bot = await env.createBot();

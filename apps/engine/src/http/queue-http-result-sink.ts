@@ -32,12 +32,14 @@ export class QueueHttpResultSink implements HttpResultSink {
     type: ChatEvent['type'],
     data: Record<string, unknown>,
   ): Promise<void> {
-    const request = await this.prisma.httpRequest.update({
+    const request = await this.prisma.httpRequest.findUnique({
       where: { id: requestId },
-      data,
       include: { dialogContext: true },
     });
+    if (!request) throw new Error(`HTTP-запрос ${requestId} не найден`);
     const context = request.dialogContext;
+    // Сначала событие в очередь (повтор с тем же jobId безопасен), затем статус:
+    // сбой между шагами оставит SENT, а не «потерянный» ответ
     await this.queue.enqueue(
       {
         type,
@@ -49,5 +51,6 @@ export class QueueHttpResultSink implements HttpResultSink {
       },
       `http-${requestId}-${type}`,
     );
+    await this.prisma.httpRequest.updateMany({ where: { id: requestId, status: 'SENT' }, data });
   }
 }

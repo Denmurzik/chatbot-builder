@@ -5,7 +5,7 @@ import {
   Injectable,
   Logger,
   type OnApplicationBootstrap,
-  type OnApplicationShutdown,
+  type OnModuleDestroy,
 } from '@nestjs/common';
 import { Worker, type Job } from 'bullmq';
 import type IORedis from 'ioredis';
@@ -14,7 +14,7 @@ import { APP_CONFIG, EVENT_QUEUE, type AppConfig } from '../infra/tokens';
 
 // Диспетчер событий: по одному воркеру с concurrency = 1 на каждый из 16 разделов очереди (п. 2.2)
 @Injectable()
-export class EventDispatcher implements OnApplicationBootstrap, OnApplicationShutdown {
+export class EventDispatcher implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(EventDispatcher.name);
   private connection: IORedis | null = null;
   private workers: Worker[] = [];
@@ -34,8 +34,13 @@ export class EventDispatcher implements OnApplicationBootstrap, OnApplicationShu
       const worker = new Worker(queueName(partition), (job) => this.handle(job), {
         connection,
         concurrency: 1,
+        // Зависшее задание не перезапускается молча: оно падает с ошибкой и попадает в журнал
+        maxStalledCount: 0,
         ...(this.config.queuePrefix ? { prefix: this.config.queuePrefix } : {}),
       });
+      worker.on('failed', (job, error) =>
+        this.logger.error(`Задание ${job?.id} не выполнено (раздел ${partition})`, error),
+      );
       worker.on('error', (error) =>
         this.logger.error(`Ошибка воркера раздела ${partition}`, error),
       );
@@ -54,7 +59,8 @@ export class EventDispatcher implements OnApplicationBootstrap, OnApplicationShu
     }
   }
 
-  async onApplicationShutdown(): Promise<void> {
+  // Воркеры закрываются раньше Prisma и очереди (они закрываются в onApplicationShutdown InfraModule)
+  async onModuleDestroy(): Promise<void> {
     await Promise.all(this.workers.map((w) => w.close()));
     this.workers = [];
     await this.connection?.quit();

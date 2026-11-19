@@ -5,3 +5,4 @@ export * from './scenario';
 export * from './events';
 export * from './environment';
 export * from './errors';
+export * from './variables';

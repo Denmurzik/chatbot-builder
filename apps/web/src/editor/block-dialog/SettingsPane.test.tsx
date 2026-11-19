@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { ru } from '@/i18n/ru';
 import { BLOCK_META } from '../block-meta';
 import type { BlockNodeData } from '../convert';
 import { setupCodeMirrorJsdom } from '../fields/cm-test-setup';
@@ -38,6 +39,32 @@ describe('SettingsPane', () => {
     renderPane(BLOCK_META.OPTION_CHOICE.defaults());
     fireEvent.change(screen.getByDisplayValue(/Да/), { target: { value: 'Да\nДа' } });
     expect(screen.getByText('Повторяющееся значение: «Да»')).toBeTruthy();
+  });
+
+  it('пустые строки в списке вариантов не показываются ошибкой и убираются при потере фокуса', () => {
+    const onChange = vi.fn();
+    renderPane(BLOCK_META.OPTION_CHOICE.defaults(), onChange);
+    const field = screen.getByRole('textbox', { name: ru.fields.options }) as HTMLTextAreaElement;
+    fireEvent.change(field, { target: { value: 'Да\n\n\nНет' } });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(field.value).toBe('Да\n\n\nНет');
+    fireEvent.blur(field);
+    expect(field.value).toBe('Да\nНет');
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ options: ['Да', 'Нет'] }));
+  });
+
+  it('подписи полей связаны с полями (htmlFor и aria-labelledby)', () => {
+    renderPane(BLOCK_META.TEXT_INPUT.defaults());
+    const question = screen.getByLabelText(ru.fields.question);
+    expect(question).toBeTruthy();
+    const name = screen.getByLabelText(ru.fields.variableName);
+    expect(name.tagName).toBe('INPUT');
+    // Поле CodeMirror получает имя через aria-labelledby
+    const labelled = document.querySelector('[aria-labelledby]');
+    expect(labelled).toBeTruthy();
+    expect(document.getElementById(labelled!.getAttribute('aria-labelledby')!)?.textContent).toBe(
+      ru.fields.question,
+    );
   });
 
   it('значение «else» в переключателе показывает ошибку', () => {

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useId, useState, type ReactNode } from 'react';
 import { Plus, Trash2, TriangleAlert } from 'lucide-react';
 import {
   ERROR_STRATEGIES,
@@ -48,12 +48,17 @@ function Field({
   label: string;
   hint?: string;
   errors?: string[];
-  children: ReactNode;
+  // Функция получает id для поля (Label htmlFor ↔ id) и id подписи (для CodeMirror: aria-labelledby)
+  children: ReactNode | ((ids: { id: string; labelId: string }) => ReactNode);
 }) {
+  const id = useId();
+  const labelId = `${id}-label`;
   return (
     <div className="flex flex-col gap-1.5">
-      <Label>{label}</Label>
-      {children}
+      <Label id={labelId} htmlFor={typeof children === 'function' ? id : undefined}>
+        {label}
+      </Label>
+      {typeof children === 'function' ? children({ id, labelId }) : children}
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
       {errors.map((error) => (
         <p key={error} role="alert" className="text-xs text-destructive">
@@ -94,15 +99,18 @@ function TextField({
   const invalid = errors !== undefined && errors.length > 0;
   return (
     <Field label={label} hint={hint} errors={errors}>
-      {insertable ? (
-        <InsertableInput value={value} aria-invalid={invalid} onValueChange={onChange} />
-      ) : (
-        <Input
-          value={value}
-          aria-invalid={invalid}
-          onChange={(event) => onChange(event.target.value)}
-        />
-      )}
+      {({ id }) =>
+        insertable ? (
+          <InsertableInput id={id} value={value} aria-invalid={invalid} onValueChange={onChange} />
+        ) : (
+          <Input
+            id={id}
+            value={value}
+            aria-invalid={invalid}
+            onChange={(event) => onChange(event.target.value)}
+          />
+        )
+      }
     </Field>
   );
 }
@@ -150,15 +158,17 @@ function TemplateField({
   const onCreateEditor = useCodeMirrorInsertTarget('template');
   return (
     <Field label={label} hint={hint}>
-      <TemplateInput
-        value={value}
-        onChange={onChange}
-        variables={variables}
-        envNames={[]}
-        multiline={multiline}
-        ariaLabel={label}
-        onCreateEditor={onCreateEditor}
-      />
+      {({ labelId }) => (
+        <TemplateInput
+          value={value}
+          onChange={onChange}
+          variables={variables}
+          envNames={[]}
+          multiline={multiline}
+          ariaLabelledBy={labelId}
+          onCreateEditor={onCreateEditor}
+        />
+      )}
     </Field>
   );
 }
@@ -178,14 +188,16 @@ function ExpressionField({
   const onCreateEditor = useCodeMirrorInsertTarget('expression');
   return (
     <Field label={label} hint={hint}>
-      <ExpressionInput
-        value={value}
-        onChange={onChange}
-        variables={variables}
-        envNames={[]}
-        ariaLabel={label}
-        onCreateEditor={onCreateEditor}
-      />
+      {({ labelId }) => (
+        <ExpressionInput
+          value={value}
+          onChange={onChange}
+          variables={variables}
+          envNames={[]}
+          ariaLabelledBy={labelId}
+          onCreateEditor={onCreateEditor}
+        />
+      )}
     </Field>
   );
 }
@@ -206,18 +218,28 @@ function NumberField({
   const issue = minIssue(value, min);
   return (
     <Field label={label} errors={issue ? [issue] : []}>
-      <Input
-        type="number"
-        value={raw}
-        aria-invalid={issue !== null}
-        onChange={(event) => {
-          setRaw(event.target.value);
-          const parsed = Number.parseInt(event.target.value, 10);
-          onChange(Number.isNaN(parsed) ? 0 : parsed);
-        }}
-      />
+      {({ id }) => (
+        <Input
+          id={id}
+          type="number"
+          value={raw}
+          aria-invalid={issue !== null}
+          onChange={(event) => {
+            setRaw(event.target.value);
+            const parsed = Number.parseInt(event.target.value, 10);
+            onChange(Number.isNaN(parsed) ? 0 : parsed);
+          }}
+        />
+      )}
     </Field>
   );
+}
+
+function nonEmptyLines(text: string): string[] {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 }
 
 // Список значений «по строке на значение»: сырой текст храним локально,
@@ -236,26 +258,27 @@ function LinesField({
   onChange: (value: string[]) => void;
 }) {
   const [raw, setRaw] = useState(value.join('\n'));
-  // Хвостовые пустые строки (только что нажатый Enter) ошибкой не считаем
-  const lines = raw.split('\n').map((line) => line.trim());
-  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
-  const errors = listIssues(lines, forbidden);
+  // Пустые строки (только что нажатый Enter, пропуск в середине) в значения не попадают — ошибкой не считаем
+  const errors = listIssues(nonEmptyLines(raw), forbidden);
   return (
     <Field label={label} hint={hint} errors={errors}>
-      <Textarea
-        value={raw}
-        rows={5}
-        aria-invalid={errors.length > 0}
-        onChange={(event) => {
-          setRaw(event.target.value);
-          onChange(
-            event.target.value
-              .split('\n')
-              .map((line) => line.trim())
-              .filter((line) => line.length > 0),
-          );
-        }}
-      />
+      {({ id }) => (
+        <Textarea
+          id={id}
+          value={raw}
+          rows={5}
+          aria-invalid={errors.length > 0}
+          onChange={(event) => {
+            setRaw(event.target.value);
+            onChange(nonEmptyLines(event.target.value));
+          }}
+          // Пустые строки внутри списка при потере фокуса убираем
+          onBlur={() => {
+            const cleaned = nonEmptyLines(raw).join('\n');
+            if (cleaned !== raw) setRaw(cleaned);
+          }}
+        />
+      )}
     </Field>
   );
 }
@@ -273,18 +296,20 @@ function SelectField<T extends string>({
 }) {
   return (
     <Field label={label}>
-      <Select value={value} onValueChange={(next) => onChange(next as T)}>
-        <SelectTrigger className="w-full" aria-label={label}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {({ id }) => (
+        <Select value={value} onValueChange={(next) => onChange(next as T)}>
+          <SelectTrigger id={id} className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
     </Field>
   );
 }

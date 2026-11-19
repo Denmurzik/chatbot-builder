@@ -1,5 +1,5 @@
 import pRetry from 'p-retry';
-import { request as undiciRequest } from 'undici';
+import { request as undiciRequest, type Dispatcher } from 'undici';
 
 /** Исходящий HTTP-запрос блока «HTTP-запрос». */
 export interface OutgoingHttpRequest {
@@ -34,7 +34,9 @@ export class ExternalApiClient {
   constructor(private readonly sink: HttpResultSink) {}
 
   send(request: OutgoingHttpRequest, timeoutSec: number, retryCount: number, retryIntervalSec: number): void {
-    void this.run(request, timeoutSec, retryCount, retryIntervalSec);
+    this.run(request, timeoutSec, retryCount, retryIntervalSec).catch((error: unknown) => {
+      console.error('ExternalApiClient: необработанная ошибка', error);
+    });
   }
 
   private async run(
@@ -43,19 +45,30 @@ export class ExternalApiClient {
     retryCount: number,
     retryIntervalSec: number,
   ): Promise<void> {
+    let result: { status: number; body: string };
     try {
-      const result = await pRetry(() => this.attempt(request, timeoutSec), {
+      result = await pRetry(() => this.attempt(request, timeoutSec), {
         retries: retryCount,
         minTimeout: retryIntervalSec * 1000,
         maxTimeout: retryIntervalSec * 1000,
         factor: 1,
         randomize: false,
       });
-      await this.sink.onResponse(request.id, result.status, result.body);
     } catch (error) {
       const failure =
         error instanceof HttpAttemptError ? error : new HttpAttemptError(0, 'Не удалось выполнить запрос');
-      await this.sink.onFailure(request.id, failure.code, failure.message);
+      await this.safely('onFailure', () => this.sink.onFailure(request.id, failure.code, failure.message));
+      return;
+    }
+    await this.safely('onResponse', () => this.sink.onResponse(request.id, result.status, result.body));
+  }
+
+  /** Ошибка приёмника только логируется и не попадает в путь ошибок запроса. */
+  private async safely(name: string, call: () => Promise<void>): Promise<void> {
+    try {
+      await call();
+    } catch (error) {
+      console.error(`ExternalApiClient: ошибка в приёмнике ${name}`, error);
     }
   }
 
@@ -66,7 +79,7 @@ export class ExternalApiClient {
   ): Promise<{ status: number; body: string }> {
     try {
       const response = await undiciRequest(request.url, {
-        method: request.method as 'GET',
+        method: request.method as Dispatcher.HttpMethod,
         headers: request.headers,
         body: request.body ?? undefined,
         signal: AbortSignal.timeout(timeoutSec * 1000),

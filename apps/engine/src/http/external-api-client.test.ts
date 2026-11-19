@@ -118,4 +118,43 @@ describe('ExternalApiClient', () => {
     await done;
     expect(sink.onResponse).toHaveBeenCalledWith('r1', 200, 'late');
   });
+
+  it('onResponse бросает -> onFailure не вызывается, необработанных отклонений нет', async () => {
+    const url = await startServer((_req, res) => res.end('ok'));
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { sink, done } = makeSink();
+    sink.onResponse.mockImplementation(async () => {
+      throw new Error('sink сломан');
+    });
+    new ExternalApiClient(sink).send(request(url), 1, 0, 0.01);
+    await vi.waitFor(() => expect(sink.onResponse).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 50));
+    process.off('unhandledRejection', unhandled);
+    errorSpy.mockRestore();
+    void done;
+    expect(sink.onFailure).not.toHaveBeenCalled();
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  it('onFailure бросает -> необработанных отклонений нет', async () => {
+    const url = await startServer((_req, res) => {
+      res.statusCode = 500;
+      res.end();
+    });
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { sink } = makeSink();
+    sink.onFailure.mockImplementation(async () => {
+      throw new Error('sink сломан');
+    });
+    new ExternalApiClient(sink).send(request(url), 1, 0, 0.01);
+    await vi.waitFor(() => expect(sink.onFailure).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 50));
+    process.off('unhandledRejection', unhandled);
+    errorSpy.mockRestore();
+    expect(unhandled).not.toHaveBeenCalled();
+  });
 });

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Position, ReactFlowProvider, type NodeProps } from '@xyflow/react';
+import { Position, ReactFlowProvider, type Edge, type NodeProps } from '@xyflow/react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ru } from '@/i18n/ru';
@@ -32,7 +32,7 @@ function createActions(): EditorActions {
 function renderBlockNode(
   id: string,
   data: BlockNodeType['data'],
-  options: { selected?: boolean; actions?: EditorActions } = {},
+  options: { selected?: boolean; actions?: EditorActions; edges?: Edge[] } = {},
 ) {
   const actions = options.actions ?? createActions();
   const props: NodeProps<BlockNodeType> = {
@@ -52,7 +52,7 @@ function renderBlockNode(
     targetPosition: Position.Left,
   };
   const result = render(
-    <ReactFlowProvider>
+    <ReactFlowProvider initialEdges={options.edges}>
       <EditorActionsContext.Provider value={actions}>
         <BlockNode {...props} />
       </EditorActionsContext.Provider>
@@ -113,6 +113,42 @@ describe('BlockNode', () => {
     expect(addButtons).toHaveLength(3);
     fireEvent.click(addButtons[1]!);
     expect(actions.addFromOutput).toHaveBeenCalledWith('opt_1', 'Отмена');
+  });
+
+  it('«+» скрыт у подключённого выхода и виден у свободного', () => {
+    const data = {
+      type: 'CONDITION',
+      title: 'Условие',
+      expression: 'x > 1',
+    } as BlockNodeType['data'];
+    renderBlockNode('c1', data, {
+      edges: [{ id: 'e1', source: 'c1', sourceHandle: 'yes', target: 'next' }],
+    });
+    // Выходы «да» и «нет»: подключён один — остаётся одна кнопка «+»
+    expect(screen.getAllByRole('button', { name: ru.editor.addNextBlock })).toHaveLength(1);
+  });
+
+  it('у HTTP-запроса (двойная рамка) ручки выходов лежат внутри блока без лишнего отступа', () => {
+    const { container } = renderBlockNode('h1', {
+      type: 'HTTP_REQUEST',
+      title: 'API',
+      method: 'GET',
+      url: 'https://example.com',
+      headers: [],
+      body: '',
+      variableName: 'res',
+      errorVariable: 'err',
+      timeoutSec: 10,
+      retryCount: 0,
+      retryIntervalSec: 1,
+      errorStrategy: 'EXIT_ERROR',
+      suspendText: null,
+      responseMappings: [],
+    });
+    const shape = container.querySelector('[data-block-shape="integration"]')!;
+    // Ручки — потомки самого блока (внешней рамки), без промежуточной обёртки с рамкой
+    expect(shape.querySelectorAll('.react-flow__handle.source').length).toBeGreaterThan(0);
+    expect(shape.querySelector(':scope > div.rounded-md.border')).toBeNull();
   });
 
   it('меню выделенного блока вызывает «Дублировать» и «Удалить»', () => {

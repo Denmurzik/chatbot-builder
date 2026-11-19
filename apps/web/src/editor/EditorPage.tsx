@@ -223,6 +223,7 @@ function ScenarioEditor({
         if (!target || target.data.type === 'ENTRY_POINT') return;
         handleNodesChange([{ type: 'remove', id }]);
       },
+      // TODO: в задаче 5 название блока станет редактируемым в окне блока — тогда убрать prompt
       rename: (id) => {
         const target = nodesRef.current.find((node) => node.id === id);
         if (!target) return;

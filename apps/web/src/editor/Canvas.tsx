@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { ru } from '@/i18n/ru';
 import { BLOCK_META } from './block-meta';
 import { BLOCK_NODE_TYPE, connectEdges, type BlockNode as BlockNodeType } from './convert';
+import { filterDeletion } from './deletion';
 import { ScenarioEdge } from './edges/ScenarioEdge';
 import { GRID_SIZE } from './placement';
 import { BlockNode } from './nodes/BlockNode';
@@ -76,13 +77,7 @@ export function Canvas({
         onConnect={handleConnect}
         deleteKeyCode={['Delete', 'Backspace']}
         onBeforeDelete={async ({ nodes: doomed, edges: doomedEdges }) =>
-          isFocusInsidePanel()
-            ? false
-            : {
-                // Точку входа удалить нельзя
-                nodes: doomed.filter((node) => node.data.type !== 'ENTRY_POINT'),
-                edges: doomedEdges,
-              }
+          isFocusInsidePanel() ? false : filterDeletion(doomed, doomedEdges)
         }
         colorMode={colorMode}
         fitView

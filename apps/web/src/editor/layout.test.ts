@@ -1,8 +1,8 @@
 import type { Edge } from '@xyflow/react';
 import { describe, expect, it } from 'vitest';
 import type { BlockNode } from './convert';
-import { defaultNodeSize, layoutScenario } from './layout';
-import { GRID_SIZE } from './placement';
+import { layoutScenario } from './layout';
+import { GRID_SIZE, defaultNodeSize } from './placement';
 
 function makeNode(
   id: string,

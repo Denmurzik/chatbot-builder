@@ -1,27 +1,10 @@
 import type { Edge } from '@xyflow/react';
 import { Graph, layout } from '@dagrejs/dagre';
-import type { BlockType } from '@chatbot/model';
-import { BLOCK_META } from './block-meta';
 import type { BlockNode } from './convert';
-import { snapToGrid } from './placement';
+import { defaultNodeSize, snapToGrid } from './placement';
 
 const NODE_SEP = 60;
 const RANK_SEP = 120;
-
-// Размеры по умолчанию (пока React Flow не измерил узел) — по категории блока
-export function defaultNodeSize(type: BlockType): { width: number; height: number } {
-  switch (BLOCK_META[type].category) {
-    case 'start':
-    case 'finish':
-      return { width: 200, height: 80 };
-    case 'integration':
-      return { width: 256, height: 140 };
-    case 'logic':
-      return type === 'ASSIGNMENT' ? { width: 224, height: 100 } : { width: 256, height: 140 };
-    default:
-      return { width: 256, height: 140 };
-  }
-}
 
 function sizeOf(node: BlockNode): { width: number; height: number } {
   const fallback = defaultNodeSize(node.data.type);

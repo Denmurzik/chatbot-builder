@@ -62,9 +62,3 @@ if (typeof Range !== 'undefined') {
     };
   }
 }
-
-if (typeof Element !== 'undefined' && !Element.prototype.getBoundingClientRect) {
-  Element.prototype.getBoundingClientRect = function () {
-    return emptyRect();
-  };
-}

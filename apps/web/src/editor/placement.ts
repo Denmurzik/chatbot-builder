@@ -1,8 +1,26 @@
+import type { BlockType } from '@chatbot/model';
+import { BLOCK_META } from './block-meta';
+
 // Размеры узла по умолчанию (min-w-48 … max-w-64), пока React Flow не измерил его
 export const NODE_WIDTH = 256;
 export const NODE_HEIGHT = 140;
 export const NODE_GAP = 40;
 export const GRID_SIZE = 20;
+
+// Размеры по умолчанию (пока React Flow не измерил узел) — по категории блока
+export function defaultNodeSize(type: BlockType): { width: number; height: number } {
+  switch (BLOCK_META[type].category) {
+    case 'start':
+    case 'finish':
+      return { width: 200, height: 80 };
+    case 'integration':
+      return { width: 256, height: 140 };
+    case 'logic':
+      return type === 'ASSIGNMENT' ? { width: 224, height: 100 } : { width: 256, height: 140 };
+    default:
+      return { width: 256, height: 140 };
+  }
+}
 
 // Привязка координаты к сетке (+ 0 убирает -0)
 export function snapToGrid(value: number): number {

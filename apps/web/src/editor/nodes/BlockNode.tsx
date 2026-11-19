@@ -151,8 +151,10 @@ const SHAPE_CLASSES: Record<Shape, string> = {
   branch: 'min-w-48 max-w-64 rounded-lg border bg-card',
   // Присваивание: компактная карточка
   compact: 'min-w-40 max-w-56 rounded-md border bg-card',
-  // Интеграция: двойная рамка (внутренняя рисуется отдельно)
-  integration: 'min-w-48 max-w-64 rounded-lg border-2 bg-card p-0.5',
+  // Интеграция: двойная рамка — внутренняя линия рисуется inset-тенью, поэтому ручки и «+»
+  // остаются на внешней границе блока
+  integration:
+    'min-w-48 max-w-64 rounded-lg border-2 bg-card shadow-[inset_0_0_0_3px_var(--card),inset_0_0_0_4px_var(--border)]',
 };
 
 // Значок блока: у развилок — ромб, у остальных — скруглённый квадрат (у начала и конца — круг)
@@ -265,7 +267,7 @@ export function BlockNode({ id, data, selected }: NodeProps<BlockNodeType>) {
       {data.type !== 'ENTRY_POINT' && (
         <Handle type="target" position={Position.Left} className="!size-3 !bg-muted-foreground" />
       )}
-      {shape === 'integration' ? <div className="rounded-md border">{content}</div> : content}
+      {content}
       {shape === 'talk' && (
         // Хвостик «реплики»
         <span

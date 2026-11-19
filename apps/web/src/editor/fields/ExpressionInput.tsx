@@ -101,7 +101,6 @@ export function ExpressionInput({
     ],
     // Массивы variables/envNames сравниваются по содержимому через ключи, а не по ссылке:
     // иначе расширения пересоздавались бы при каждом рендере родителя
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [variablesKey, envKey, ariaLabel, ariaLabelledBy, hasError, errorId],
   );
 

@@ -50,6 +50,9 @@ interface CanvasProps {
   onAddClick: () => void;
   // Блок из панели «Что дальше?» отпущен над холстом (координаты экрана)
   onBlockDrop: (type: string, point: { x: number; y: number }) => void;
+  // Начало и конец перетаскивания блоков — для истории
+  onNodeDragStart: () => void;
+  onNodeDragStop: () => void;
   // Дополнительные слои внутри холста (приветствие)
   children?: ReactNode;
 }
@@ -63,6 +66,8 @@ export function Canvas({
   onAutoLayout,
   onAddClick,
   onBlockDrop,
+  onNodeDragStart,
+  onNodeDragStop,
   children,
 }: CanvasProps) {
   const colorMode = useColorMode();
@@ -102,6 +107,8 @@ export function Canvas({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={handleConnect}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDragStop={onNodeDragStop}
         onNodeDoubleClick={(_event, node) => openBlock(node.id)}
         deleteKeyCode={['Delete', 'Backspace']}
         onBeforeDelete={async ({ nodes: doomed, edges: doomedEdges }) =>

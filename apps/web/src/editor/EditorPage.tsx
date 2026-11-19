@@ -8,7 +8,7 @@ import {
   type EdgeChange,
   type NodeChange,
 } from '@xyflow/react';
-import { ArrowLeft, Save } from 'lucide-react';
+import { ArrowLeft, CircleHelp, Redo2, Save, Undo2 } from 'lucide-react';
 import { Link, useBlocker, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { BLOCK_TYPES, scenarioSchema, type BlockType, type Scenario } from '@chatbot/model';
@@ -44,6 +44,8 @@ import type { ScenarioTemplate } from './onboarding/templates';
 import { NodePicker } from './picker/NodePicker';
 import { addFree, addFromOutput, insertOnEdge, type GraphResult } from './picker/insertion';
 import { nextBlockId } from './ids';
+import { sameSnapshot, snapshotOf, useHistory, type Snapshot } from './history';
+import { ShortcutsHelp } from './ShortcutsHelp';
 
 // Выбор и размеры узлов не меняют сценарий — не считаем их несохранёнными изменениями
 function isMeaningfulNodeChange(change: NodeChange<BlockNode>): boolean {
@@ -67,6 +69,16 @@ function isFocusOnCanvasOrBody(): boolean {
   return (
     active === document.body ||
     (active instanceof Element && active.closest('.react-flow') !== null)
+  );
+}
+
+// Поля ввода, CodeMirror и окна: там Ctrl+Z работает по-своему и граф не трогает
+function isUndoBlockedTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest(
+      'input, textarea, select, [contenteditable="true"], .cm-editor, [role="dialog"], [role="menu"]',
+    ) !== null
   );
 }
 
@@ -112,6 +124,7 @@ function ScenarioEditor({
   const [nodes, setNodes] = useState<BlockNode[]>(initialFlow.nodes);
   const [edges, setEdges] = useState<Edge[]>(initialFlow.edges);
   const [dirty, setDirty] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [picker, setPicker] = useState<PickerTarget | null>(null);
   // Окно блока: какой блок открыт и нужно ли сразу выделить его название (действие «Переименовать»)
   const [dialog, setDialog] = useState<{ id: string; focusTitle: boolean } | null>(null);
@@ -127,6 +140,9 @@ function ScenarioEditor({
   const canvasRef = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition, fitView, getNodes } = useReactFlow();
   const save = useSaveScenario(projectId);
+  // Базовые снимки: начало перетаскивания и открытие окна блока (шаг — по итогу)
+  const dragBaseRef = useRef<Snapshot | null>(null);
+  const dialogBaseRef = useRef<Snapshot | null>(null);
 
   const blank = isBlankFlow(nodes, edges);
   const showWelcome = welcomePending && blank;
@@ -147,8 +163,30 @@ function ScenarioEditor({
     setDirty(true);
   }, []);
 
+  const getGraph = useCallback(() => ({ nodes: nodesRef.current, edges: edgesRef.current }), []);
+
+  // Отмена и повтор помечают сценарий изменённым; размеры берём у уже измеренных блоков
+  const restoreGraph = useCallback(
+    (snapshot: Snapshot) => {
+      const measuredById = new Map(nodesRef.current.map((node) => [node.id, node.measured]));
+      commitNodes(
+        snapshot.nodes.map((node) => {
+          const measured = measuredById.get(node.id);
+          return measured ? { ...node, measured } : node;
+        }),
+      );
+      commitEdges(snapshot.edges);
+      touch();
+    },
+    [commitNodes, commitEdges, touch],
+  );
+
+  const history = useHistory({ getGraph, restore: restoreGraph });
+  const { record, pushSnapshot } = history;
+
   const handleNodesChange = useCallback(
     (changes: NodeChange<BlockNode>[]) => {
+      if (changes.some((change) => change.type === 'remove')) record();
       const next = applyNodeChanges(changes, nodesRef.current);
       commitNodes(next);
       // Удаление блока убирает и его рёбра
@@ -157,26 +195,29 @@ function ScenarioEditor({
       }
       if (changes.some(isMeaningfulNodeChange)) touch();
     },
-    [commitNodes, commitEdges, touch],
+    [commitNodes, commitEdges, touch, record],
   );
 
   const handleEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
+      if (changes.some((change) => change.type !== 'select')) record();
       commitEdges(applyEdgeChanges(changes, edgesRef.current));
       if (changes.some((change) => change.type !== 'select')) touch();
     },
-    [commitEdges, touch],
+    [commitEdges, touch, record],
   );
 
   const handleEdgesReplace = useCallback(
     (updater: (edges: Edge[]) => Edge[]) => {
+      record();
       commitEdges(updater(edgesRef.current));
       touch();
     },
-    [commitEdges, touch],
+    [commitEdges, touch, record],
   );
 
   function applyGraph(result: GraphResult) {
+    record();
     commitNodes(result.nodes);
     commitEdges(result.edges);
     touch();
@@ -222,6 +263,7 @@ function ScenarioEditor({
   function applyTemplate(template: ScenarioTemplate) {
     setWelcomePending(false);
     if (template.id === 'empty') return;
+    record();
     const flow = scenarioToFlow(template.build());
     commitNodes(flow.nodes);
     commitEdges(flow.edges);
@@ -250,12 +292,41 @@ function ScenarioEditor({
       const measured = measuredById.get(node.id) ?? node.measured;
       return measured ? { ...node, measured } : node;
     });
+    record();
     commitNodes(layoutScenario(source, edgesRef.current));
     touch();
     window.requestAnimationFrame(() => {
       void fitView({ padding: 0.2, maxZoom: 1, duration: 200 });
     });
-  }, [commitNodes, touch, fitView, getNodes]);
+  }, [commitNodes, touch, fitView, getNodes, record]);
+
+  // Окно блока: при открытии запоминаем базовый снимок, при закрытии с изменениями — один шаг
+  const openDialog = useCallback((id: string, focusTitle: boolean) => {
+    dialogBaseRef.current ??= snapshotOf(nodesRef.current, edgesRef.current);
+    setDialog({ id, focusTitle });
+  }, []);
+
+  const closeDialog = useCallback(() => {
+    const base = dialogBaseRef.current;
+    dialogBaseRef.current = null;
+    if (base && !sameSnapshot(base, snapshotOf(nodesRef.current, edgesRef.current))) {
+      pushSnapshot(base);
+    }
+    setDialog(null);
+  }, [pushSnapshot]);
+
+  // Перетаскивание: шаг только если блоки действительно сдвинулись
+  const handleDragStart = useCallback(() => {
+    dragBaseRef.current = snapshotOf(nodesRef.current, edgesRef.current);
+  }, []);
+
+  const handleDragStop = useCallback(() => {
+    const base = dragBaseRef.current;
+    dragBaseRef.current = null;
+    if (base && !sameSnapshot(base, snapshotOf(nodesRef.current, edgesRef.current))) {
+      pushSnapshot(base);
+    }
+  }, [pushSnapshot]);
 
   // Действия блоков и связей для BlockNode и ScenarioEdge; задачи 4 и 5 подменяют часть из них
   const actions = useMemo<EditorActions>(
@@ -263,7 +334,7 @@ function ScenarioEditor({
       // Выделяем блок и открываем его окно «Вход — Настройки — Выход»
       openBlock: (id) => {
         commitNodes(nodesRef.current.map((node) => ({ ...node, selected: node.id === id })));
-        setDialog({ id, focusTitle: false });
+        openDialog(id, false);
       },
       addFromOutput: (blockId, output) => setPicker({ kind: 'output', blockId, output }),
       insertOnEdge: (edgeId) => setPicker({ kind: 'edge', edgeId }),
@@ -272,6 +343,7 @@ function ScenarioEditor({
         const current = nodesRef.current;
         const source = current.find((node) => node.id === id);
         if (!source || source.data.type === 'ENTRY_POINT') return;
+        record();
         const copy: BlockNode = {
           id: nextBlockId(source.data.type, current),
           type: BLOCK_NODE_TYPE,
@@ -294,10 +366,10 @@ function ScenarioEditor({
       // Название редактируется в окне блока: открываем его с выделенным названием
       rename: (id) => {
         if (!nodesRef.current.some((node) => node.id === id)) return;
-        setDialog({ id, focusTitle: true });
+        openDialog(id, true);
       },
     }),
-    [commitNodes, touch, handleNodesChange],
+    [commitNodes, touch, handleNodesChange, record, openDialog],
   );
 
   const handleSave = useCallback(() => {
@@ -359,6 +431,24 @@ function ScenarioEditor({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [handleSave]);
 
+  // Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y — по code (не зависит от раскладки); поля ввода и окна не трогаем
+  const { undo, redo } = history;
+  const overlayOpen = dialog !== null || picker !== null;
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const isUndo = event.code === 'KeyZ' && !event.shiftKey;
+      const isRedo = (event.code === 'KeyZ' && event.shiftKey) || event.code === 'KeyY';
+      if (!isUndo && !isRedo) return;
+      if (overlayOpen || isUndoBlockedTarget(event.target)) return;
+      event.preventDefault();
+      if (isUndo) undo();
+      else redo();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [undo, redo, overlayOpen]);
+
   // Предупреждение о несохранённых изменениях: закрытие вкладки и переход по ссылкам
   useEffect(() => {
     if (!dirty) return;
@@ -393,6 +483,38 @@ function ScenarioEditor({
       <EditorHeader name={name}>
         <div className="flex items-center gap-3">
           {dirty && <span className="text-xs text-muted-foreground">{ru.editor.unsaved}</span>}
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            disabled={!history.canUndo}
+            onClick={history.undo}
+            aria-label={ru.editor.undo}
+            title={`${ru.editor.undo} (Ctrl+Z)`}
+          >
+            <Undo2 className="size-4" />
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            disabled={!history.canRedo}
+            onClick={history.redo}
+            aria-label={ru.editor.redo}
+            title={`${ru.editor.redo} (Ctrl+Shift+Z)`}
+          >
+            <Redo2 className="size-4" />
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            onClick={() => setShortcutsOpen(true)}
+            aria-label={ru.editor.shortcuts.open}
+            title={ru.editor.shortcuts.open}
+          >
+            <CircleHelp className="size-4" />
+          </Button>
           <Tooltip>
             {/* Button в React 18 не пробрасывает ref — триггер оборачиваем в span */}
             <TooltipTrigger asChild>
@@ -419,6 +541,8 @@ function ScenarioEditor({
               onAutoLayout={handleAutoLayout}
               onAddClick={() => setPicker({ kind: 'free' })}
               onBlockDrop={handleBlockDrop}
+              onNodeDragStart={handleDragStart}
+              onNodeDragStop={handleDragStop}
             >
               {blank && !showWelcome && entryNode && (
                 <FirstStepCard
@@ -439,8 +563,9 @@ function ScenarioEditor({
         edges={edges}
         focusTitle={dialog?.focusTitle ?? false}
         onChange={handleDataChange}
-        onClose={() => setDialog(null)}
+        onClose={closeDialog}
       />
+      <ShortcutsHelp open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <NodePicker
         open={picker !== null}
         onOpenChange={(open) => !open && setPicker(null)}

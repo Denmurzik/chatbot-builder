@@ -1,6 +1,6 @@
 import { ExpressionError, parseExpression } from '@chatbot/engine-core';
 import { ru } from '@/i18n/ru';
-import type { BlockNode } from './convert';
+import type { BlockNode, BlockNodeData } from './convert';
 
 // Проверка списка строк (варианты / значения): пустые, повторы, зарезервированные значения
 export function listIssues(lines: string[], forbidden: readonly string[] = []): string[] {
@@ -60,7 +60,10 @@ function compact(issues: (string | null)[]): string[] {
 
 // Ошибки данных блока, блокирующие сохранение
 export function nodeIssues(node: BlockNode): string[] {
-  const data = node.data;
+  return dataIssues(node.data);
+}
+
+export function dataIssues(data: BlockNodeData): string[] {
   switch (data.type) {
     case 'TEXT_INPUT':
       return compact([variableNameIssue(data.variableName)]);

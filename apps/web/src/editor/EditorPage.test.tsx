@@ -117,6 +117,33 @@ describe('EditorPage', () => {
       return JSON.parse(String(call[1]!.body)) as Scenario;
     }
 
+    it('Ctrl+Z (code KeyZ) отменяет дублирование, Ctrl+Y возвращает, поля ввода не затрагиваются', async () => {
+      stubFetch(scenario);
+      renderEditor();
+      fireEvent.click(await screen.findByText('Привет'));
+      fireEvent.click(await screen.findByRole('button', { name: ru.editor.nodeActions.duplicate }));
+      expect(document.querySelectorAll('.react-flow__node')).toHaveLength(3);
+
+      // Событие из поля ввода граф не трогает
+      const input = document.createElement('input');
+      document.body.appendChild(input);
+      fireEvent.keyDown(input, { key: 'я', code: 'KeyZ', ctrlKey: true });
+      expect(document.querySelectorAll('.react-flow__node')).toHaveLength(3);
+      input.remove();
+
+      fireEvent.keyDown(window, { key: 'я', code: 'KeyZ', ctrlKey: true });
+      await waitFor(() => expect(document.querySelectorAll('.react-flow__node')).toHaveLength(2));
+      // Отмена помечает сценарий изменённым
+      expect(screen.getByText(ru.editor.unsaved)).toBeTruthy();
+
+      fireEvent.keyDown(window, { key: 'н', code: 'KeyY', ctrlKey: true });
+      await waitFor(() => expect(document.querySelectorAll('.react-flow__node')).toHaveLength(3));
+      fireEvent.keyDown(window, { key: 'я', code: 'KeyZ', ctrlKey: true });
+      await waitFor(() => expect(document.querySelectorAll('.react-flow__node')).toHaveLength(2));
+      fireEvent.keyDown(window, { key: 'я', code: 'KeyZ', ctrlKey: true, shiftKey: true });
+      await waitFor(() => expect(document.querySelectorAll('.react-flow__node')).toHaveLength(3));
+    });
+
     it('«Дублировать» создаёт копию с новым id, сдвигом 40 по сетке, без связей и выделяет её', async () => {
       const fetchMock = stubFetch(scenario);
       renderEditor();

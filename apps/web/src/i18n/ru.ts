@@ -60,6 +60,23 @@ export const ru = {
     autoLayout: 'Упорядочить',
     autoLayoutHint: 'Расставить блоки слева направо',
     addBlock: 'Добавить блок',
+    undo: 'Отменить',
+    redo: 'Повторить',
+    blockErrors: (count: number) => `Ошибок в блоке: ${count}`,
+    unconnectedOutput: 'Выход не подключён',
+    shortcuts: {
+      open: 'Горячие клавиши',
+      title: 'Горячие клавиши',
+      description: 'Работают, когда фокус на холсте',
+      items: [
+        { keys: 'Ctrl+S', action: 'Сохранить сценарий' },
+        { keys: 'Ctrl+Z', action: 'Отменить действие' },
+        { keys: 'Ctrl+Shift+Z / Ctrl+Y', action: 'Повторить отменённое действие' },
+        { keys: 'Delete', action: 'Удалить выбранные блоки и связи' },
+        { keys: 'Двойной клик', action: 'Открыть настройки блока' },
+        { keys: 'Tab', action: 'Добавить блок' },
+      ],
+    },
     picker: {
       title: 'Что дальше?',
       description: 'Выберите блок: нажмите на него или перетащите на холст',

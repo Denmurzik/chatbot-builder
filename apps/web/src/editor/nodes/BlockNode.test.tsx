@@ -82,6 +82,25 @@ describe('BlockNode', () => {
     expect(screen.getByRole('button', { name: ru.editor.nodeActions.configure })).toBeTruthy();
   });
 
+  it('показывает значок с числом ошибок и подсвечивает неподключённый выход', () => {
+    const { container } = renderBlockNode('txt', {
+      type: 'TEXT_INPUT',
+      title: 'Вопрос',
+      question: 'Имя?',
+      variableName: '1bad',
+    } as BlockNodeType['data']);
+
+    const badge = screen.getByTestId('block-issues');
+    expect(badge.textContent).toBe('1');
+    expect(badge.getAttribute('title')).toBe(ru.validation.variableName);
+    expect(container.querySelector('[data-unconnected="true"]')).toBeTruthy();
+  });
+
+  it('без ошибок значка нет', () => {
+    renderBlockNode('exit', { type: 'EXIT_POINT', title: 'Конец' });
+    expect(screen.queryByTestId('block-issues')).toBeNull();
+  });
+
   it('у EXIT_POINT есть ручка входа слева и нет ручек выходов', () => {
     const { container } = renderBlockNode('exit', { type: 'EXIT_POINT', title: 'Конец' });
 

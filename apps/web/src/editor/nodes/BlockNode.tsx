@@ -22,6 +22,7 @@ import { useEditorActions } from '../actions';
 import { BLOCK_META } from '../block-meta';
 import { blockPreview } from '../preview';
 import { useHoverDelay } from '../useHoverDelay';
+import { dataIssues } from '../validate';
 import { safeOutputs, type BlockNode as BlockNodeType } from '../convert';
 
 // Служебные выходы, имена которых переводим, — только для своих типов блоков
@@ -68,7 +69,14 @@ function OutputRow({
   const { addFromOutput } = useEditorActions();
   const connections = useNodeConnections({ id: nodeId, handleType: 'source', handleId: output });
   return (
-    <div className="relative px-3 py-0.5 text-right text-xs text-muted-foreground">
+    <div
+      className={cn(
+        'relative px-3 py-0.5 text-right text-xs text-muted-foreground',
+        connections.length === 0 && 'text-destructive',
+      )}
+      data-unconnected={connections.length === 0 ? 'true' : undefined}
+      title={connections.length === 0 ? ru.editor.unconnectedOutput : undefined}
+    >
       {outputLabel(type, output)}
       <Handle
         id={output}
@@ -203,6 +211,7 @@ export function BlockNode({ id, data, selected }: NodeProps<BlockNodeType>) {
   const outputs = safeOutputs(data);
   const preview = blockPreview(data);
   const outputsKey = JSON.stringify(outputs);
+  const issues = dataIssues(data);
 
   // После смены набора ручек React Flow нужно пересчитать их положение
   useEffect(() => {
@@ -264,6 +273,17 @@ export function BlockNode({ id, data, selected }: NodeProps<BlockNodeType>) {
         onMenuOpenChange={setMenuOpen}
         hoverHandlers={handlers}
       />
+      {issues.length > 0 && (
+        <span
+          role="img"
+          aria-label={ru.editor.blockErrors(issues.length)}
+          title={issues.join('\n')}
+          data-testid="block-issues"
+          className="absolute -top-2 -right-2 z-10 flex size-5 items-center justify-center rounded-full bg-destructive text-[11px] font-semibold text-white"
+        >
+          {issues.length}
+        </span>
+      )}
       {data.type !== 'ENTRY_POINT' && (
         <Handle type="target" position={Position.Left} className="!size-3 !bg-muted-foreground" />
       )}

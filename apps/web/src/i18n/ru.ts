@@ -159,6 +159,7 @@ export const ru = {
       false: 'логическое значение «ложь»',
     },
     expressionError: 'Ошибка в выражении',
+    expressionErrorGeneric: 'не удалось разобрать выражение',
     unknownVariable: 'переменная не задана выше по сценарию',
   },
   preview: {

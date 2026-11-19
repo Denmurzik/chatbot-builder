@@ -1,4 +1,4 @@
-import { EditorState, type Extension, type Range } from '@codemirror/state';
+import { EditorState, Transaction, type ChangeSpec, type Extension, type Range } from '@codemirror/state';
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from '@codemirror/view';
 
 // Тема в токенах shadcn: работает и в светлой, и в тёмной теме через CSS-переменные
@@ -53,10 +53,25 @@ export function fieldTheme(multiline: boolean): Extension {
   });
 }
 
-// Запрещает перевод строки в однострочном поле
-export const singleLineFilter: Extension = EditorState.transactionFilter.of((tr) =>
-  tr.docChanged && tr.newDoc.lines > 1 && tr.startState.doc.lines === 1 ? [] : tr,
-);
+// Однострочное поле: переводы строки во вставляемом тексте заменяются пробелами.
+// Длина вставки сохраняется (CRLF считается одним переводом строки), поэтому выделение остаётся валидным
+export const singleLineFilter: Extension = EditorState.transactionFilter.of((tr) => {
+  if (!tr.docChanged) return tr;
+  let hasNewline = false;
+  const changes: ChangeSpec[] = [];
+  tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+    if (inserted.lines > 1) hasNewline = true;
+    changes.push({ from: fromA, to: toA, insert: inserted.sliceString(0, undefined, ' ') });
+  });
+  if (!hasNewline) return tr;
+  return {
+    changes,
+    selection: tr.selection,
+    effects: tr.effects,
+    scrollIntoView: tr.scrollIntoView,
+    userEvent: tr.annotation(Transaction.userEvent),
+  };
+});
 
 // Плагин подсветки: функция возвращает размеченные диапазоны для всего документа
 export function decorationPlugin(build: (doc: string) => Range<Decoration>[]): Extension {

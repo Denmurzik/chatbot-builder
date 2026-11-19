@@ -90,4 +90,30 @@ describe('TemplateInput', () => {
 
     expect(onChange).toHaveBeenCalledWith('Строка 1\nСтрока 2 {{name}}');
   });
+
+  it('подчёркивание обновляется при смене variables', () => {
+    const props = { onChange: vi.fn(), envNames: [], value: 'Привет, {{name}}!' };
+    const { container, rerender } = render(<TemplateInput {...props} variables={[]} />);
+    expect(container.querySelector('.cm-template-var-unknown')).not.toBeNull();
+
+    rerender(<TemplateInput {...props} variables={['name']} />);
+    expect(container.querySelector('.cm-template-var-unknown')).toBeNull();
+  });
+
+  it('задаёт ARIA-атрибуты поля', () => {
+    const { container } = render(
+      <TemplateInput
+        value=""
+        onChange={vi.fn()}
+        variables={[]}
+        envNames={[]}
+        ariaLabelledBy="lbl"
+        multiline
+      />,
+    );
+    const content = container.querySelector('.cm-content') as HTMLElement;
+    expect(content.getAttribute('role')).toBe('textbox');
+    expect(content.getAttribute('aria-labelledby')).toBe('lbl');
+    expect(content.getAttribute('aria-multiline')).toBe('true');
+  });
 });

@@ -96,4 +96,111 @@ describe('ExpressionInput', () => {
 
     expect(onChange).toHaveBeenCalledWith('tries == 5');
   });
+
+  it('не вызывает onChange при монтировании', () => {
+    const onChange = vi.fn();
+    render(<ExpressionInput value="a" onChange={onChange} variables={['a']} envNames={[]} />);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('внешнее изменение value обновляет документ без вызова onChange', () => {
+    const onChange = vi.fn();
+    let view: EditorView | null = null;
+    const props = {
+      onChange,
+      variables: ['a'],
+      envNames: [],
+      onCreateEditor: (v: EditorView) => {
+        view = v;
+      },
+    };
+    const { rerender } = render(<ExpressionInput value="a" {...props} />);
+    rerender(<ExpressionInput value="a + 1" {...props} />);
+    expect(view!.state.doc.toString()).toBe('a + 1');
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('ошибка исчезает после исправления выражения', () => {
+    vi.useFakeTimers();
+    const props = { onChange: vi.fn(), variables: ['a'], envNames: [] };
+    const { rerender } = render(<ExpressionInput value="a +" {...props} />);
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(screen.queryByRole('alert')).not.toBeNull();
+
+    rerender(<ExpressionInput value="a + 1" {...props} />);
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('вставка с переводом строки превращается в «a b», документ остаётся однострочным', () => {
+    let view: EditorView | null = null;
+    render(
+      <ExpressionInput
+        value=""
+        onChange={vi.fn()}
+        variables={[]}
+        envNames={[]}
+        onCreateEditor={(v) => {
+          view = v;
+        }}
+      />,
+    );
+    act(() => {
+      view!.dispatch({ changes: { from: 0, insert: 'a\nb' } });
+    });
+    expect(view!.state.doc.toString()).toBe('a b');
+    expect(view!.state.doc.lines).toBe(1);
+  });
+
+  it('Enter не добавляет строку', () => {
+    let view: EditorView | null = null;
+    const { container } = render(
+      <ExpressionInput
+        value="a"
+        onChange={vi.fn()}
+        variables={['a']}
+        envNames={[]}
+        onCreateEditor={(v) => {
+          view = v;
+        }}
+      />,
+    );
+    const content = container.querySelector('.cm-content') as HTMLElement;
+    act(() => {
+      content.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }),
+      );
+    });
+    expect(view!.state.doc.lines).toBe(1);
+  });
+
+  it('задаёт ARIA-атрибуты поля и связь с ошибкой', () => {
+    vi.useFakeTimers();
+    const { container } = render(
+      <ExpressionInput
+        id="expr"
+        value="a +"
+        onChange={vi.fn()}
+        variables={['a']}
+        envNames={[]}
+        ariaLabel="Условие"
+      />,
+    );
+    const content = container.querySelector('.cm-content') as HTMLElement;
+    expect(content.getAttribute('role')).toBe('textbox');
+    expect(content.getAttribute('aria-multiline')).toBe('false');
+    expect(content.getAttribute('aria-label')).toBe('Условие');
+    expect(content.getAttribute('aria-invalid')).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    const alert = screen.getByRole('alert');
+    expect(content.getAttribute('aria-invalid')).toBe('true');
+    expect(content.getAttribute('aria-describedby')).toBe(alert.id);
+  });
 });

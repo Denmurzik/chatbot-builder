@@ -46,6 +46,8 @@ export interface TemplateInputProps {
   multiline?: boolean;
   placeholder?: string;
   id?: string;
+  ariaLabel?: string;
+  ariaLabelledBy?: string;
   // Нужен для тестов и фокусировки
   onCreateEditor?: (view: EditorView) => void;
 }
@@ -59,19 +61,29 @@ export function TemplateInput({
   multiline = false,
   placeholder,
   id,
+  ariaLabel,
+  ariaLabelledBy,
   onCreateEditor,
 }: TemplateInputProps) {
   const variablesKey = variables.join('\u0000');
   const envKey = envNames.join('\u0000');
   const extensions = useMemo(
     () => [
+      EditorView.contentAttributes.of({
+        role: 'textbox',
+        'aria-multiline': multiline ? 'true' : 'false',
+        ...(ariaLabel ? { 'aria-label': ariaLabel } : {}),
+        ...(ariaLabelledBy ? { 'aria-labelledby': ariaLabelledBy } : {}),
+      }),
       fieldTheme(multiline),
       ...(multiline ? [EditorView.lineWrapping] : [singleLineFilter]),
       autocompletion({ override: [createTemplateCompletionSource(variables, envNames)] }),
       decorationPlugin((doc) => buildDecorations(doc, new Set(variables))),
     ],
-    // Массивы сравниваются по содержимому (через ключи)
-    [variablesKey, envKey, multiline],
+    // Массивы variables/envNames сравниваются по содержимому через ключи, а не по ссылке:
+    // иначе расширения пересоздавались бы при каждом рендере родителя
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [variablesKey, envKey, multiline, ariaLabel, ariaLabelledBy],
   );
 
   const unknown = findUnknownNames(value, new Set(variables));

@@ -1,9 +1,9 @@
 import { autocompletion } from '@codemirror/autocomplete';
 import { Decoration, EditorView } from '@codemirror/view';
 import type { Range } from '@codemirror/state';
-import { parseExpression } from '@chatbot/engine-core';
+import { ExpressionError, parseExpression } from '@chatbot/engine-core';
 import CodeMirror from '@uiw/react-codemirror';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { ru } from '@/i18n/ru';
 import { baseSetup, decorationPlugin, fieldTheme, singleLineFilter } from './cm-base';
 import { createExpressionCompletionSource } from './completions';
@@ -43,7 +43,7 @@ function errorMessage(value: string): string | null {
     parseExpression(value);
     return null;
   } catch (error) {
-    return error instanceof Error ? error.message : ru.common.unknownError;
+    return error instanceof ExpressionError ? error.message : ru.fieldInput.expressionErrorGeneric;
   }
 }
 
@@ -54,6 +54,8 @@ export interface ExpressionInputProps {
   envNames: string[];
   placeholder?: string;
   id?: string;
+  ariaLabel?: string;
+  ariaLabelledBy?: string;
   // Нужен для тестов и фокусировки
   onCreateEditor?: (view: EditorView) => void;
 }
@@ -66,8 +68,11 @@ export function ExpressionInput({
   envNames,
   placeholder,
   id,
+  ariaLabel,
+  ariaLabelledBy,
   onCreateEditor,
 }: ExpressionInputProps) {
+  const reactId = useId();
   const [error, setError] = useState<string | null>(null);
 
   // Ошибка показывается с задержкой, чтобы не мигать во время набора
@@ -78,15 +83,26 @@ export function ExpressionInput({
 
   const variablesKey = variables.join('\u0000');
   const envKey = envNames.join('\u0000');
+  const errorId = `${id ?? reactId}-error`;
+  const hasError = error !== null;
   const extensions = useMemo(
     () => [
+      EditorView.contentAttributes.of({
+        role: 'textbox',
+        'aria-multiline': 'false',
+        ...(ariaLabel ? { 'aria-label': ariaLabel } : {}),
+        ...(ariaLabelledBy ? { 'aria-labelledby': ariaLabelledBy } : {}),
+        ...(hasError ? { 'aria-invalid': 'true', 'aria-describedby': errorId } : {}),
+      }),
       fieldTheme(false),
       singleLineFilter,
       autocompletion({ override: [createExpressionCompletionSource(variables, envNames)] }),
       decorationPlugin((doc) => buildDecorations(doc, new Set(variables))),
     ],
-    // Массивы сравниваются по содержимому (через ключи)
-    [variablesKey, envKey],
+    // Массивы variables/envNames сравниваются по содержимому через ключи, а не по ссылке:
+    // иначе расширения пересоздавались бы при каждом рендере родителя
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [variablesKey, envKey, ariaLabel, ariaLabelledBy, hasError, errorId],
   );
 
   return (
@@ -102,7 +118,7 @@ export function ExpressionInput({
         onCreateEditor={onCreateEditor}
       />
       {error && (
-        <p role="alert" className="mt-1 text-xs text-destructive">
+        <p id={errorId} role="alert" className="mt-1 text-xs text-destructive">
           {ru.fieldInput.expressionError}: {error}
         </p>
       )}

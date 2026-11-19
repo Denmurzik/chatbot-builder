@@ -21,6 +21,7 @@ export function LoginPage() {
       title={ru.auth.loginTitle}
       description={ru.auth.loginDescription}
       submitLabel={ru.auth.submitLogin}
+      passwordAutoComplete="current-password"
       pending={login.isPending}
       errorMessage={errorMessage}
       onSubmit={(values) => login.mutate(values, { onSuccess: () => navigate('/projects') })}

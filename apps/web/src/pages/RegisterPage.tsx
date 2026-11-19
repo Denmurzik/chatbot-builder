@@ -14,7 +14,13 @@ export function RegisterPage() {
     if (error instanceof ApiError && error.status === 409) {
       errorMessage = ru.auth.emailTaken;
     } else if (error instanceof ApiError && error.status === 400) {
-      errorMessage = error.issues?.[0]?.message ?? ru.auth.passwordTooShort;
+      const path = error.issues?.[0]?.path;
+      errorMessage =
+        path === 'email'
+          ? ru.auth.invalidEmail
+          : path === 'password'
+            ? ru.auth.passwordTooShort
+            : ru.common.unknownError;
     } else {
       errorMessage = ru.common.unknownError;
     }
@@ -25,6 +31,7 @@ export function RegisterPage() {
       title={ru.auth.registerTitle}
       description={ru.auth.registerDescription}
       submitLabel={ru.auth.submitRegister}
+      passwordAutoComplete="new-password"
       pending={register.isPending}
       errorMessage={errorMessage}
       onSubmit={(values) => register.mutate(values, { onSuccess: () => navigate('/projects') })}

@@ -4,6 +4,7 @@ export const ru = {
   common: {
     loading: 'Загрузка…',
     cancel: 'Отмена',
+    close: 'Закрыть',
     create: 'Создать',
     unknownError: 'Что-то пошло не так. Попробуйте ещё раз',
   },

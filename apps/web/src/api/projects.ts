@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { Scenario } from '@chatbot/model';
 import { apiFetch } from './client';
 
 export interface ProjectSummary {
@@ -10,8 +11,7 @@ export interface ProjectSummary {
 export interface ProjectDetails {
   id: string;
   name: string;
-  // Сценарий (формат @chatbot/model); редактор — задача 12
-  scenario: unknown;
+  scenario: Scenario;
   updatedAt: string;
 }
 
@@ -26,7 +26,7 @@ export function useCreateProject() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (name: string) =>
-      apiFetch<{ id: string; name: string; scenario: unknown }>('/projects', {
+      apiFetch<{ id: string; name: string; scenario: Scenario }>('/projects', {
         method: 'POST',
         body: JSON.stringify({ name }),
       }),
@@ -44,7 +44,7 @@ export function useProject(id: string) {
 export function useSaveScenario(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (scenario: unknown) =>
+    mutationFn: (scenario: Scenario) =>
       apiFetch<{ updatedAt: string }>(`/projects/${id}/scenario`, {
         method: 'PUT',
         body: JSON.stringify(scenario),

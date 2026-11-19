@@ -28,6 +28,7 @@ interface AuthFormProps {
   pending: boolean;
   errorMessage?: string;
   onSubmit: (values: AuthFormValues) => void;
+  passwordAutoComplete: 'current-password' | 'new-password';
   footer: React.ReactNode;
 }
 
@@ -68,7 +69,7 @@ export function AuthForm(props: AuthFormProps) {
                   <FormItem>
                     <FormLabel>{ru.auth.password}</FormLabel>
                     <FormControl>
-                      <Input type="password" autoComplete="current-password" {...field} />
+                      <Input type="password" autoComplete={props.passwordAutoComplete} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

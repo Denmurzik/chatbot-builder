@@ -1,3 +1,4 @@
+import { ExpressionError, parseExpression } from '@chatbot/engine-core';
 import { ru } from '@/i18n/ru';
 import type { BlockNode } from './convert';
 
@@ -33,20 +34,57 @@ export function minIssue(value: number, min: number): string | null {
   return value < min ? ru.validation.min(min) : null;
 }
 
+const VARIABLE_NAME_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+// Имя переменной: латиница, цифры, _; не начинается с цифры
+export function variableNameIssue(name: string): string | null {
+  return VARIABLE_NAME_REGEX.test(name) ? null : ru.validation.variableName;
+}
+
+// Ошибка выражения: пустое или не проходящее разбор движком
+export function expressionIssue(expression: string): string | null {
+  if (expression.trim() === '') return ru.validation.expressionEmpty;
+  try {
+    parseExpression(expression);
+    return null;
+  } catch (error) {
+    return error instanceof ExpressionError
+      ? ru.validation.expressionError(error.message)
+      : ru.validation.expressionError(ru.fieldInput.expressionErrorGeneric);
+  }
+}
+
+function compact(issues: (string | null)[]): string[] {
+  return [...new Set(issues.filter((issue): issue is string => issue !== null))];
+}
+
 // Ошибки данных блока, блокирующие сохранение
 export function nodeIssues(node: BlockNode): string[] {
   const data = node.data;
   switch (data.type) {
+    case 'TEXT_INPUT':
+    case 'LIST_CHOICE':
+      return compact([variableNameIssue(data.variableName)]);
     case 'OPTION_CHOICE':
-      return listIssues(data.options);
+      return [...compact([variableNameIssue(data.variableName)]), ...listIssues(data.options)];
+    case 'ASSIGNMENT':
+      return compact([variableNameIssue(data.variableName), expressionIssue(data.expression)]);
+    case 'CONDITION':
+      return compact([expressionIssue(data.expression)]);
     case 'SWITCH':
-      return listIssues(data.values, ['else']);
-    case 'HTTP_REQUEST':
       return [
+        ...compact([variableNameIssue(data.variableName)]),
+        ...listIssues(data.values, ['else']),
+      ];
+    case 'HTTP_REQUEST':
+      return compact([
+        variableNameIssue(data.variableName),
+        variableNameIssue(data.errorVariable),
+        ...data.responseMappings.map((mapping) => variableNameIssue(mapping.variableName)),
         minIssue(data.timeoutSec, 1),
         minIssue(data.retryCount, 0),
         minIssue(data.retryIntervalSec, 0),
-      ].filter((issue): issue is string => issue !== null);
+      ]);
     default:
       return [];
   }

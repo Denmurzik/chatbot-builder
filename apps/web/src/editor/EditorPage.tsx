@@ -26,7 +26,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ru } from '@/i18n/ru';
 import { Canvas } from './Canvas';
-import { Inspector } from './Inspector';
+import { BlockDialog } from './block-dialog/BlockDialog';
 import { EditorActionsContext, type EditorActions } from './actions';
 import {
   BLOCK_NODE_TYPE,
@@ -113,6 +113,8 @@ function ScenarioEditor({
   const [edges, setEdges] = useState<Edge[]>(initialFlow.edges);
   const [dirty, setDirty] = useState(false);
   const [picker, setPicker] = useState<PickerTarget | null>(null);
+  // Окно блока: какой блок открыт и нужно ли сразу выделить его название (действие «Переименовать»)
+  const [dialog, setDialog] = useState<{ id: string; focusTitle: boolean } | null>(null);
   // Оверлей «С чего начнём?» — только при первом открытии пустого сценария (флаг в памяти страницы)
   const [welcomePending, setWelcomePending] = useState(() =>
     isBlankFlow(initialFlow.nodes, initialFlow.edges),
@@ -126,7 +128,6 @@ function ScenarioEditor({
   const { screenToFlowPosition, fitView, getNodes } = useReactFlow();
   const save = useSaveScenario(projectId);
 
-  const selected = nodes.find((node) => node.selected) ?? null;
   const blank = isBlankFlow(nodes, edges);
   const showWelcome = welcomePending && blank;
   const entryNode = blank ? nodes[0] : undefined;
@@ -259,9 +260,11 @@ function ScenarioEditor({
   // Действия блоков и связей для BlockNode и ScenarioEdge; задачи 4 и 5 подменяют часть из них
   const actions = useMemo<EditorActions>(
     () => ({
-      // Пока окна блока нет — просто выделяем блок
-      openBlock: (id) =>
-        commitNodes(nodesRef.current.map((node) => ({ ...node, selected: node.id === id }))),
+      // Выделяем блок и открываем его окно «Вход — Настройки — Выход»
+      openBlock: (id) => {
+        commitNodes(nodesRef.current.map((node) => ({ ...node, selected: node.id === id })));
+        setDialog({ id, focusTitle: false });
+      },
       addFromOutput: (blockId, output) => setPicker({ kind: 'output', blockId, output }),
       insertOnEdge: (edgeId) => setPicker({ kind: 'edge', edgeId }),
       // Копия правее и ниже со сдвигом 40, без связей, с новым id
@@ -288,15 +291,13 @@ function ScenarioEditor({
         if (!target || target.data.type === 'ENTRY_POINT') return;
         handleNodesChange([{ type: 'remove', id }]);
       },
-      // TODO: в задаче 5 название блока станет редактируемым в окне блока — тогда убрать prompt
+      // Название редактируется в окне блока: открываем его с выделенным названием
       rename: (id) => {
-        const target = nodesRef.current.find((node) => node.id === id);
-        if (!target) return;
-        const title = window.prompt(ru.editor.renamePrompt, target.data.title)?.trim();
-        if (title) handleDataChange(id, { ...target.data, title });
+        if (!nodesRef.current.some((node) => node.id === id)) return;
+        setDialog({ id, focusTitle: true });
       },
     }),
-    [commitNodes, touch, handleNodesChange, handleDataChange],
+    [commitNodes, touch, handleNodesChange],
   );
 
   const handleSave = useCallback(() => {
@@ -431,8 +432,15 @@ function ScenarioEditor({
           </EditorActionsContext.Provider>
           {showWelcome && <WelcomeOverlay onChoose={applyTemplate} />}
         </div>
-        <Inspector node={selected} onChange={handleDataChange} />
       </div>
+      <BlockDialog
+        nodeId={dialog?.id ?? null}
+        nodes={nodes}
+        edges={edges}
+        focusTitle={dialog?.focusTitle ?? false}
+        onChange={handleDataChange}
+        onClose={() => setDialog(null)}
+      />
       <NodePicker
         open={picker !== null}
         onOpenChange={(open) => !open && setPicker(null)}

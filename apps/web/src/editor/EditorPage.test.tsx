@@ -6,10 +6,12 @@ import { emptyScenario, type Scenario } from '@chatbot/model';
 import { ru } from '@/i18n/ru';
 import { createQueryClient } from '@/app/queryClient';
 import { EditorPage } from './EditorPage';
+import { setupCodeMirrorJsdom } from './fields/cm-test-setup';
 import { BLOCK_DRAG_MIME } from './picker/NodePicker';
 
 // jsdom не содержит ResizeObserver и DOMMatrixReadOnly, нужных React Flow
 beforeAll(() => {
+  setupCodeMirrorJsdom();
   vi.stubGlobal(
     'DOMMatrixReadOnly',
     class {
@@ -65,7 +67,7 @@ describe('EditorPage', () => {
     cleanup();
   });
 
-  it('отрисовывает холст, инспектор и загруженный блок', async () => {
+  it('отрисовывает холст и загруженный блок', async () => {
     stubFetch();
     renderEditor();
 
@@ -73,9 +75,10 @@ describe('EditorPage', () => {
     expect(await screen.findByRole('button', { name: /Сохранить/ })).toBeTruthy();
     // Постоянной левой панели блоков нет
     expect(screen.queryByLabelText('Блоки')).toBeNull();
-    expect(screen.getByLabelText('Свойства блока')).toBeTruthy();
+    // Правой панели свойств нет: настройки открываются окном блока
+    expect(screen.queryByLabelText('Свойства блока')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.getByText('Старт')).toBeTruthy();
-    expect(screen.getByText('Выберите блок на холсте, чтобы изменить его свойства')).toBeTruthy();
   });
 
   it('Ctrl+S по code KeyS (русская раскладка, key «ы») сохраняет сценарий', async () => {
@@ -267,6 +270,89 @@ describe('EditorPage', () => {
       const saved = await savedScenario(fetchMock);
       expect(saved.blocks.length).toBeGreaterThan(2);
       expect(saved.transitions.length).toBeGreaterThan(2);
+    });
+  });
+
+  describe('окно блока', () => {
+    const scenario: Scenario = {
+      formatVersion: 1,
+      blocks: [
+        { id: 'entry', type: 'ENTRY_POINT', title: 'Старт', x: 0, y: 0 },
+        { id: 'msg_1', type: 'TEXT_MESSAGE', title: 'Привет', text: 'Здравствуйте', x: 400, y: 0 },
+      ],
+      transitions: [{ source: { blockId: 'entry', output: 'default' }, target: 'msg_1' }],
+    };
+
+    async function savedScenario(fetchMock: ReturnType<typeof stubFetch>): Promise<Scenario> {
+      fireEvent.keyDown(window, { key: 's', code: 'KeyS', ctrlKey: true });
+      await waitFor(() =>
+        expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(true),
+      );
+      const call = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT')!;
+      return JSON.parse(String(call[1]!.body)) as Scenario;
+    }
+
+    it('кнопка «Настроить» открывает окно, переименование применяется сразу, Esc закрывает', async () => {
+      const fetchMock = stubFetch(scenario);
+      renderEditor();
+      fireEvent.click(await screen.findByText('Привет'));
+      fireEvent.click(await screen.findByRole('button', { name: ru.editor.nodeActions.configure }));
+
+      const title = await screen.findByLabelText(ru.blockDialog.titleLabel);
+      fireEvent.change(title, { target: { value: 'Приветствие' } });
+      fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+      const saved = await savedScenario(fetchMock);
+      expect(saved.blocks.find((b) => b.id === 'msg_1')!.title).toBe('Приветствие');
+    });
+
+    it('двойной клик по блоку открывает окно', async () => {
+      stubFetch(scenario);
+      renderEditor();
+      fireEvent.doubleClick(await screen.findByText('Привет'));
+      expect(await screen.findByRole('dialog')).toBeTruthy();
+    });
+
+    it('Delete в поле окна не удаляет блок', async () => {
+      const fetchMock = stubFetch(scenario);
+      renderEditor();
+      fireEvent.doubleClick(await screen.findByText('Привет'));
+      const title = await screen.findByLabelText(ru.blockDialog.titleLabel);
+      title.focus();
+      fireEvent.keyDown(title, { key: 'Delete', code: 'Delete' });
+      fireEvent.keyDown(document.body, { key: 'Delete', code: 'Delete' });
+      fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Backspace', code: 'Backspace' });
+
+      fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      const saved = await savedScenario(fetchMock);
+      expect(saved.blocks).toHaveLength(2);
+    });
+
+    it('ошибка в имени переменной блокирует сохранение', async () => {
+      const bad: Scenario = {
+        ...scenario,
+        blocks: [
+          scenario.blocks[0]!,
+          {
+            id: 'ask',
+            type: 'TEXT_INPUT',
+            title: 'Ввод',
+            question: 'Имя?',
+            variableName: 'имя',
+            x: 400,
+            y: 0,
+          },
+        ],
+        transitions: [{ source: { blockId: 'entry', output: 'default' }, target: 'ask' }],
+      };
+      const fetchMock = stubFetch(bad);
+      renderEditor();
+      await screen.findByText('Ввод');
+      fireEvent.keyDown(window, { key: 's', code: 'KeyS', ctrlKey: true });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false);
     });
   });
 });

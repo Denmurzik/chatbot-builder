@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { ru } from '@/i18n/ru';
 import { BLOCK_META } from './block-meta';
 import { BLOCK_NODE_TYPE, connectEdges, type BlockNode as BlockNodeType } from './convert';
+import { useEditorActions } from './actions';
 import { filterDeletion } from './deletion';
 import { ScenarioEdge } from './edges/ScenarioEdge';
 import { GRID_SIZE } from './placement';
@@ -29,13 +30,12 @@ const nodeTypes = { [BLOCK_NODE_TYPE]: BlockNode };
 const edgeTypes = { default: ScenarioEdge };
 const SNAP_GRID: [number, number] = [GRID_SIZE, GRID_SIZE];
 
-// Delete в инспекторе, выпадающих списках и диалогах не должен удалять блоки на холсте
+// Delete в окне блока, выпадающих списках и диалогах не должен удалять блоки на холсте
 function isFocusInsidePanel(): boolean {
   const active = document.activeElement;
   return (
     active instanceof Element &&
-    active.closest('[data-inspector], [data-radix-popper-content-wrapper], [role="dialog"]') !==
-      null
+    active.closest('[data-radix-popper-content-wrapper], [role="dialog"]') !== null
   );
 }
 
@@ -66,6 +66,7 @@ export function Canvas({
   children,
 }: CanvasProps) {
   const colorMode = useColorMode();
+  const { openBlock } = useEditorActions();
 
   // Из одного выхода — один переход: новое соединение заменяет прежнее
   function handleConnect(connection: Connection) {
@@ -101,6 +102,7 @@ export function Canvas({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={handleConnect}
+        onNodeDoubleClick={(_event, node) => openBlock(node.id)}
         deleteKeyCode={['Delete', 'Backspace']}
         onBeforeDelete={async ({ nodes: doomed, edges: doomedEdges }) =>
           isFocusInsidePanel() ? false : filterDeletion(doomed, doomedEdges)

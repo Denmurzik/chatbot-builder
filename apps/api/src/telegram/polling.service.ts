@@ -1,4 +1,4 @@
-import { SecretVault } from '@chatbot/vault';
+import { SecretVault, tokenAad } from '@chatbot/vault';
 import {
   Inject,
   Injectable,
@@ -39,7 +39,7 @@ export class PollingService implements OnApplicationBootstrap, OnApplicationShut
       try {
         const token = this.vault.decrypt(
           { cipherText: connection.tokenCipher, mask: connection.tokenMask },
-          `${botId}:TELEGRAM`,
+          tokenAad(botId),
         );
         const bot = new Bot(token);
         bot.use(async (ctx) => {

@@ -274,4 +274,81 @@ describe('Projects API (интеграционные тесты)', () => {
     const afterB = await agentA.get(`/api/projects/${projectA.body.id}`).expect(200);
     expect(afterB.body.scenario).toEqual(scenarioA);
   });
+
+  it('секретный заголовок HTTP-блока шифруется при сохранении: GET отдаёт value="" и secretValue.mask, в БД нет открытого текста', async () => {
+    const agent = await createAuthenticatedAgent('secret-header@example.com');
+    const created = await agent
+      .post('/api/projects')
+      .send({ name: 'HTTP с секретом' })
+      .expect(201);
+    const projectId: string = created.body.id;
+
+    const secretToken = 'Bearer super-secret-token-1234';
+    const scenarioWithSecret: Scenario = {
+      formatVersion: 1,
+      blocks: [
+        { id: 'entry', type: 'ENTRY_POINT', title: 'Старт', x: 0, y: 0 },
+        {
+          id: 'req',
+          type: 'HTTP_REQUEST',
+          title: 'Запрос',
+          x: 200,
+          y: 0,
+          method: 'GET',
+          url: 'https://api.example.com/data',
+          headers: [
+            { name: 'Accept', value: 'application/json', secret: false },
+            { name: 'Authorization', value: secretToken, secret: true },
+            { name: 'X-Empty-Secret', value: '', secret: true },
+          ],
+          body: '',
+          variableName: 'resp',
+          errorVariable: 'err',
+          timeoutSec: 5,
+          retryCount: 0,
+          retryIntervalSec: 0,
+          errorStrategy: 'EXIT_ERROR',
+          suspendText: null,
+          responseMappings: [],
+        },
+      ],
+      transitions: [{ source: { blockId: 'entry', output: 'default' }, target: 'req' }],
+    };
+
+    await agent
+      .put(`/api/projects/${projectId}/scenario`)
+      .send(scenarioWithSecret)
+      .expect(200);
+
+    // GET отдаёт пустое value и маску secretValue.mask, без открытого секрета
+    const fetched = await agent.get(`/api/projects/${projectId}`).expect(200);
+    const reqBlock = fetched.body.scenario.blocks.find((b: { id: string }) => b.id === 'req');
+    expect(reqBlock.headers).toEqual([
+      { name: 'Accept', value: 'application/json', secret: false },
+      {
+        name: 'Authorization',
+        value: '',
+        secret: true,
+        secretValue: {
+          cipherText: expect.stringMatching(/^v1:/),
+          mask: '••••1234',
+        },
+      },
+      { name: 'X-Empty-Secret', value: '', secret: true },
+    ]);
+
+    // В базе нет открытого значения секрета
+    const dbProject = await db.prisma.project.findUniqueOrThrow({ where: { id: projectId } });
+    expect(JSON.stringify(dbProject.scenario)).not.toContain(secretToken);
+
+    // Повторное сохранение с value="" и пришедшим secretValue сохраняет прежний шифротекст
+    const firstCipherText: string = reqBlock.headers[1].secretValue.cipherText;
+    await agent
+      .put(`/api/projects/${projectId}/scenario`)
+      .send(fetched.body.scenario)
+      .expect(200);
+    const refetched = await agent.get(`/api/projects/${projectId}`).expect(200);
+    const refetchedReq = refetched.body.scenario.blocks.find((b: { id: string }) => b.id === 'req');
+    expect(refetchedReq.headers[1].secretValue.cipherText).toBe(firstCipherText);
+  });
 });

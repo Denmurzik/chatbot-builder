@@ -1,5 +1,6 @@
 import { createHmac, randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import { envAad, headerAad, tokenAad } from './aad';
 import { SecretVault } from './secret-vault';
 
 describe('SecretVault', () => {
@@ -251,6 +252,21 @@ describe('SecretVault', () => {
 
       expect(errorMessage).not.toBe('');
       expect(errorMessage).not.toContain(badSecretKey);
+    });
+  });
+
+  describe('форматы AAD с префиксами', () => {
+    it('формирует AAD для токена, переменной окружения и заголовка', () => {
+      expect(tokenAad('bot-1')).toBe('token:bot-1:TELEGRAM');
+      expect(envAad('owner-1', 'API_KEY')).toBe('env:owner-1:API_KEY');
+      expect(headerAad('proj-1', 'Authorization')).toBe('header:proj-1:Authorization');
+    });
+
+    it('префиксы не допускают перенос шифротекста между разными типами сущностей', () => {
+      const vault = new SecretVault(key, hashKey);
+      const encrypted = vault.encrypt('secret-value', envAad('id-1', 'TELEGRAM'));
+      expect(() => vault.decrypt(encrypted, tokenAad('id-1'))).toThrow();
+      expect(() => vault.decrypt(encrypted, headerAad('id-1', 'TELEGRAM'))).toThrow();
     });
   });
 });

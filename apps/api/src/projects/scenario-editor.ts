@@ -4,9 +4,11 @@ import {
   parseScenario,
   type Block,
   type BlockType,
+  type HttpHeader,
   type Scenario,
   type Transition,
 } from '@chatbot/model';
+import { headerAad, SecretVault } from '@chatbot/vault';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ZodError } from 'zod';
 import { createValidationException } from '../common/zod-body.pipe';
@@ -15,7 +17,10 @@ import { PrismaService } from '../prisma/prisma.module';
 // Редактор сценария (класс модели ScenarioEditor): проверка структуры и сохранение сценария проекта
 @Injectable()
 export class ScenarioEditor {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly vault: SecretVault,
+  ) {}
 
   // Проверяет структуру сценария через parseScenario и бросает 400 с issues при ошибке
   validateScenario(rawScenario: unknown): Scenario {
@@ -45,7 +50,7 @@ export class ScenarioEditor {
       throw new NotFoundException('Проект не найден');
     }
 
-    const scenario = this.validateScenario(rawScenario);
+    const scenario = this.encryptSecretHeaders(projectId, this.validateScenario(rawScenario));
 
     try {
       const updated = await this.prisma.client.project.update({
@@ -63,6 +68,36 @@ export class ScenarioEditor {
       }
       throw err;
     }
+  }
+
+  // Шифрует открытые значения секретных HTTP-заголовков перед записью в БД (п. 2.13)
+  private encryptSecretHeaders(projectId: string, scenario: Scenario): Scenario {
+    return {
+      ...scenario,
+      blocks: scenario.blocks.map((block) => {
+        if (block.type !== 'HTTP_REQUEST') return block;
+        return {
+          ...block,
+          headers: block.headers.map((header): HttpHeader => {
+            if (!header.secret) {
+              return { name: header.name, value: header.value, secret: false };
+            }
+            if (header.value !== '') {
+              return {
+                name: header.name,
+                value: '',
+                secret: true,
+                secretValue: this.vault.encrypt(header.value, headerAad(projectId, header.name)),
+              };
+            }
+            // Повторное сохранение без изменения секрета или пустой секрет (поймает валидатор спринта 2)
+            return header.secretValue
+              ? { name: header.name, value: '', secret: true, secretValue: header.secretValue }
+              : { name: header.name, value: '', secret: true };
+          }),
+        };
+      }),
+    };
   }
 
   // Операции модели BCE (редактирование графа выполняется на клиенте и сохраняется целиком; UC-A-05..A-19, спринт 2)

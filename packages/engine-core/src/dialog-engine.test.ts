@@ -372,7 +372,7 @@ describe('DialogEngine', () => {
         url: 'https://api.test/find?city=' + encodeURIComponent('Санкт "Петербург"'),
         headers: [
           { name: 'X-City', value: 'Санкт "Петербург"', secret: false },
-          { name: 'Authorization', value: '{{env.TOKEN}}', secret: true },
+          { name: 'Authorization', value: '', secret: true },
         ],
         body: '{"city":"Санкт \\"Петербург\\""}',
         timeoutSec: 10,

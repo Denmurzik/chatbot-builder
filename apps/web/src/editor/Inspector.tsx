@@ -206,7 +206,10 @@ function HeadersEditor({
             onChange={(event) => update(index, { name: event.target.value })}
           />
           <Input
-            placeholder={ru.fields.headerValue}
+            type={header.secret ? 'password' : 'text'}
+            placeholder={
+              header.secret && header.secretValue ? header.secretValue.mask : ru.fields.headerValue
+            }
             value={header.value}
             onChange={(event) => update(index, { value: event.target.value })}
           />
@@ -215,7 +218,12 @@ function HeadersEditor({
               <input
                 type="checkbox"
                 checked={header.secret}
-                onChange={(event) => update(index, { secret: event.target.checked })}
+                onChange={(event) =>
+                  update(index, {
+                    secret: event.target.checked,
+                    ...(event.target.checked ? {} : { secretValue: undefined }),
+                  })
+                }
               />
               {ru.fields.headerSecret}
             </label>

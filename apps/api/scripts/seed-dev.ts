@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createPrismaClient, type Prisma } from '@chatbot/db';
 import { parseScenario } from '@chatbot/model';
-import { SecretVault } from '@chatbot/vault';
+import { SecretVault, tokenAad } from '@chatbot/vault';
 import argon2 from 'argon2';
 import dotenv from 'dotenv';
 
@@ -58,7 +58,7 @@ async function main(): Promise<void> {
       console.log('TELEGRAM_DEV_TOKEN не задан: подключение Telegram не создано');
     } else {
       const vault = SecretVault.fromEnv();
-      const encrypted = vault.encrypt(token, `${bot.id}:TELEGRAM`);
+      const encrypted = vault.encrypt(token, tokenAad(bot.id));
       const data = {
         tokenCipher: encrypted.cipherText,
         tokenMask: encrypted.mask,

@@ -1,3 +1,4 @@
+import { headerAad } from '@chatbot/vault';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestEnv, textEvent, waitFor, type TestEnv } from '../testing/test-env';
 
@@ -66,8 +67,8 @@ describe('обработка событий диалога (PostgreSQL + Redis)'
 
   it('HTTP-блок сохраняет http_request со статусом SENT и маской вместо секрета', async () => {
     const bot = await env.createBot();
-    // AAD секрета заголовка — идентификатор проекта и имя заголовка
-    const encrypted = env.vault.encrypt('Bearer abcdefghijkl', `${bot.projectId}:Authorization`);
+    // AAD секрета заголовка — header:<projectId>:<имя заголовка>
+    const encrypted = env.vault.encrypt('Bearer abcdefghijkl', headerAad(bot.projectId, 'Authorization'));
     await env.db.bot.update({
       where: { id: bot.id },
       data: {

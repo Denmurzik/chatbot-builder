@@ -58,4 +58,37 @@ describe('Inspector', () => {
     fireEvent.change(input, { target: { value: '' } });
     expect(input.value).toBe('');
   });
+
+  it('секретный заголовок с secretValue показывает маску как placeholder и пустое поле значения', () => {
+    const onChange = vi.fn();
+    const base = httpData('GET', 0);
+    if (base.type !== 'HTTP_REQUEST') throw new Error('ожидался HTTP_REQUEST');
+    const data: BlockNode['data'] = {
+      ...base,
+      headers: [
+        {
+          name: 'Authorization',
+          value: '',
+          secret: true,
+          secretValue: { cipherText: 'v1:iv:tag:ct', mask: '••••ijkl' },
+        },
+      ],
+    };
+    render(<Inspector node={makeNode(data)} onChange={onChange} />);
+    const input = screen.getByPlaceholderText('••••ijkl') as HTMLInputElement;
+    expect(input.value).toBe('');
+    fireEvent.change(input, { target: { value: 'Bearer new-secret-token' } });
+    expect(onChange).toHaveBeenCalledWith(
+      'n1',
+      expect.objectContaining({
+        headers: [
+          expect.objectContaining({
+            name: 'Authorization',
+            value: 'Bearer new-secret-token',
+            secret: true,
+          }),
+        ],
+      }),
+    );
+  });
 });

@@ -1,16 +1,16 @@
-import { SecretVault } from '@chatbot/vault';
+import { envAad, SecretVault } from '@chatbot/vault';
 import { describe, expect, it } from 'vitest';
 import { buildEnvironment } from './environment';
 
 const vault = new SecretVault(Buffer.alloc(32, 1), Buffer.alloc(32, 2));
 
 describe('buildEnvironment', () => {
-  it('открытые значения берутся как есть, секретные расшифровываются с AAD <botId>:<имя>', () => {
+  it('открытые значения берутся как есть, секретные расшифровываются с AAD env:<botId>:<имя>', () => {
     const env = buildEnvironment(
       'bot1',
       [
         { name: 'HOST', value: 'https://api.test', secret: false },
-        { name: 'KEY', secret: true, secretValue: vault.encrypt('s3cret-value', 'bot1:KEY') },
+        { name: 'KEY', secret: true, secretValue: vault.encrypt('s3cret-value', envAad('bot1', 'KEY')) },
       ],
       vault,
     );
@@ -18,7 +18,7 @@ describe('buildEnvironment', () => {
   });
 
   it('секрет, перенесённый в чужого бота, не расшифровывается', () => {
-    const secretValue = vault.encrypt('x', 'bot1:KEY');
+    const secretValue = vault.encrypt('x', envAad('bot1', 'KEY'));
     expect(() =>
       buildEnvironment('bot2', [{ name: 'KEY', secret: true, secretValue }], vault),
     ).toThrow();

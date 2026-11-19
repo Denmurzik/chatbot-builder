@@ -1,7 +1,7 @@
 import type { MessengerType, PrismaClient } from '@chatbot/db';
 import type { OutgoingMessage } from '@chatbot/engine-core';
 import { NotImplementedError } from '@chatbot/model';
-import { SecretVault } from '@chatbot/vault';
+import { SecretVault, tokenAad } from '@chatbot/vault';
 import { Inject, Injectable } from '@nestjs/common';
 import { Api } from 'grammy';
 import { PRISMA } from '../infra/tokens';
@@ -78,7 +78,7 @@ export class TelegramMessengerGateway extends MessengerGateway {
     if (!connection) throw new Error(`У бота ${botId} нет подключения к Telegram`);
     const token = this.vault.decrypt(
       { cipherText: connection.tokenCipher, mask: connection.tokenMask },
-      `${botId}:TELEGRAM`,
+      tokenAad(botId),
     );
     return new Api(token);
   }

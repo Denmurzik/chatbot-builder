@@ -1,5 +1,8 @@
 import type { PendingHttpHeader } from '@chatbot/engine-core';
-import type { SecretVault } from '@chatbot/vault';
+import { headerAad, type SecretVault } from '@chatbot/vault';
+import { Logger } from '@nestjs/common';
+
+const logger = new Logger('HttpHeaders');
 
 // Заголовок в том виде, в каком он хранится в http_request.headers
 export interface StoredHeader {
@@ -17,7 +20,7 @@ export function toStoredHeaders(headers: PendingHttpHeader[]): StoredHeader[] {
   }));
 }
 
-// Для отправки: секреты расшифровываются только в памяти. AAD — `<projectId>:<имя заголовка>`.
+// Для отправки: секреты расшифровываются только в памяти. AAD — `header:<projectId>:<имя заголовка>`.
 export function decryptHeaders(
   headers: PendingHttpHeader[],
   projectId: string,
@@ -25,8 +28,17 @@ export function decryptHeaders(
 ): Record<string, string> {
   const result: Record<string, string> = {};
   for (const h of headers) {
-    result[h.name] =
-      h.secret && h.secretValue ? vault.decrypt(h.secretValue, `${projectId}:${h.name}`) : h.value;
+    if (h.secret) {
+      if (h.secretValue) {
+        result[h.name] = vault.decrypt(h.secretValue, headerAad(projectId, h.name));
+      } else {
+        // Секретный заголовок без шифротекста никогда не подставляет открытое h.value
+        logger.warn(`Секретный заголовок "${h.name}" не содержит зашифрованного значения`);
+        result[h.name] = '';
+      }
+    } else {
+      result[h.name] = h.value;
+    }
   }
   return result;
 }

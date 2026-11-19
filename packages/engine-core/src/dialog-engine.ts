@@ -247,7 +247,8 @@ export class DialogEngine {
             url: render(block.url, scope, 'URL'),
             headers: block.headers.map((h) => ({
               name: h.name,
-              value: h.secret ? h.value : render(h.value, scope, 'HEADER'),
+              // Секретное значение никогда не передаётся открытым текстом; расшифровка — только из secretValue
+              value: h.secret ? '' : render(h.value, scope, 'HEADER'),
               secret: h.secret,
               ...(h.secretValue !== undefined ? { secretValue: h.secretValue } : {}),
             })),

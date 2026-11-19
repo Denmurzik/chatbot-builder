@@ -23,6 +23,7 @@ function createActions(): EditorActions {
     openBlock: vi.fn(),
     addFromOutput: vi.fn(),
     insertOnEdge: vi.fn(),
+    removeEdge: vi.fn(),
     duplicate: vi.fn(),
     remove: vi.fn(),
     rename: vi.fn(),

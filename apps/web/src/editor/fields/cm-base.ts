@@ -37,6 +37,10 @@ export function fieldTheme(multiline: boolean): Extension {
       overflowX: multiline ? 'hidden' : 'auto',
     },
     '.cm-content': { padding: '0.4rem 0.25rem', caretColor: 'var(--foreground)' },
+    // CodeMirror рисует курсор и выделение сам (drawSelection), caretColor на них не влияет
+    '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--foreground)' },
+    '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection':
+      { backgroundColor: 'color-mix(in oklab, var(--ring) 40%, transparent)' },
     '.cm-line': { padding: '0 0.5rem' },
     '.cm-placeholder': { color: 'var(--muted-foreground)' },
     '.cm-template-pill': {

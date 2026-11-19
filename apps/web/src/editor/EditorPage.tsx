@@ -1,0 +1,247 @@
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  ReactFlowProvider,
+  applyEdgeChanges,
+  applyNodeChanges,
+  useReactFlow,
+  type Edge,
+  type EdgeChange,
+  type NodeChange,
+} from '@xyflow/react';
+import { ArrowLeft, Save } from 'lucide-react';
+import { Link, useParams } from 'react-router-dom';
+import { toast } from 'sonner';
+import { scenarioSchema, type BlockType, type Scenario } from '@chatbot/model';
+import { ApiError } from '@/api/client';
+import { useProject, useSaveScenario } from '@/api/projects';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { ru } from '@/i18n/ru';
+import { BlockPalette } from './BlockPalette';
+import { Canvas } from './Canvas';
+import { Inspector } from './Inspector';
+import { BLOCK_META } from './block-meta';
+import {
+  BLOCK_NODE_TYPE,
+  flowToScenario,
+  pruneEdges,
+  scenarioToFlow,
+  type BlockNode,
+  type BlockNodeData,
+} from './convert';
+
+// Выбор и размеры узлов не меняют сценарий — не считаем их несохранёнными изменениями
+function isMeaningfulNodeChange(change: NodeChange<BlockNode>): boolean {
+  return change.type !== 'select' && change.type !== 'dimensions';
+}
+
+// Свободный идентификатор блока: тип в нижнем регистре + номер (до 40 символов)
+function nextBlockId(type: BlockType, nodes: BlockNode[]): string {
+  const base = type.toLowerCase();
+  const used = new Set(nodes.map((node) => node.id));
+  let n = 1;
+  while (used.has(`${base}_${n}`)) n += 1;
+  return `${base}_${n}`;
+}
+
+function showIssues(title: string, issues: { path: string; message: string }[]) {
+  toast.error(title, {
+    description: (
+      <ul className="list-disc pl-4">
+        {issues.map((issue, index) => (
+          <li key={index}>{issue.message}</li>
+        ))}
+      </ul>
+    ),
+  });
+}
+
+function EditorHeader({ name, children }: { name?: string; children?: ReactNode }) {
+  return (
+    <header className="flex items-center gap-4 border-b px-4 py-2">
+      <Link to="/projects" className="flex items-center gap-1 text-sm text-muted-foreground">
+        <ArrowLeft className="size-4" />
+        {ru.editor.back}
+      </Link>
+      <h1 className="min-w-0 flex-1 truncate text-base font-semibold">{name}</h1>
+      {children}
+    </header>
+  );
+}
+
+function ScenarioEditor({
+  projectId,
+  name,
+  initial,
+}: {
+  projectId: string;
+  name: string;
+  initial: Scenario;
+}) {
+  const [initialFlow] = useState(() => scenarioToFlow(initial));
+  const [nodes, setNodes] = useState<BlockNode[]>(initialFlow.nodes);
+  const [edges, setEdges] = useState<Edge[]>(initialFlow.edges);
+  const [dirty, setDirty] = useState(false);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const { screenToFlowPosition } = useReactFlow();
+  const save = useSaveScenario(projectId);
+
+  const selected = nodes.find((node) => node.selected) ?? null;
+
+  const handleNodesChange = useCallback((changes: NodeChange<BlockNode>[]) => {
+    setNodes((current) => {
+      const next = applyNodeChanges(changes, current);
+      // Удаление блока убирает и его рёбра
+      if (changes.some((change) => change.type === 'remove')) {
+        setEdges((currentEdges) => pruneEdges(next, currentEdges));
+      }
+      return next;
+    });
+    if (changes.some(isMeaningfulNodeChange)) setDirty(true);
+  }, []);
+
+  const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
+    setEdges((current) => applyEdgeChanges(changes, current));
+    if (changes.some((change) => change.type !== 'select')) setDirty(true);
+  }, []);
+
+  const handleEdgesReplace = useCallback((updater: (edges: Edge[]) => Edge[]) => {
+    setEdges(updater);
+    setDirty(true);
+  }, []);
+
+  function handleAdd(type: BlockType) {
+    const bounds = canvasRef.current?.getBoundingClientRect();
+    const position = bounds
+      ? screenToFlowPosition({
+          x: bounds.left + bounds.width / 2,
+          y: bounds.top + bounds.height / 2,
+        })
+      : { x: 0, y: 0 };
+    const node: BlockNode = {
+      id: nextBlockId(type, nodes),
+      type: BLOCK_NODE_TYPE,
+      position: { x: Math.round(position.x), y: Math.round(position.y) },
+      data: BLOCK_META[type].defaults(),
+      selected: true,
+    };
+    setNodes((current) => [...current.map((n) => ({ ...n, selected: false })), node]);
+    setDirty(true);
+  }
+
+  // Правка полей: после смены options/values удаляем рёбра исчезнувших выходов
+  function handleDataChange(id: string, data: BlockNodeData) {
+    const next = nodes.map((node) => (node.id === id ? { ...node, data } : node));
+    setNodes(next);
+    setEdges((current) => pruneEdges(next, current));
+    setDirty(true);
+  }
+
+  const handleSave = useCallback(() => {
+    const scenario = flowToScenario(nodes, edges);
+    const parsed = scenarioSchema.safeParse(scenario);
+    if (!parsed.success) {
+      showIssues(
+        ru.editor.invalidScenario,
+        parsed.error.issues.map((issue) => ({
+          path: issue.path.join('.'),
+          message: issue.message,
+        })),
+      );
+      return;
+    }
+    save.mutate(scenario, {
+      onSuccess: () => {
+        setDirty(false);
+        toast.success(ru.editor.saved);
+      },
+      onError: (error) => {
+        if (error instanceof ApiError && error.status === 400 && error.issues?.length) {
+          showIssues(ru.editor.invalidScenario, error.issues);
+        } else {
+          toast.error(ru.editor.saveError);
+        }
+      },
+    });
+  }, [nodes, edges, save]);
+
+  // Ctrl+S — сохранить
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        handleSave();
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleSave]);
+
+  return (
+    <>
+      <EditorHeader name={name}>
+        <div className="flex items-center gap-3">
+          {dirty && <span className="text-xs text-muted-foreground">{ru.editor.unsaved}</span>}
+          <Tooltip>
+            {/* Button в React 18 не пробрасывает ref — триггер оборачиваем в span */}
+            <TooltipTrigger asChild>
+              <span>
+                <Button type="button" size="sm" disabled={save.isPending} onClick={handleSave}>
+                  <Save className="size-4" />
+                  {save.isPending ? ru.editor.saving : ru.editor.save}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{ru.editor.saveShortcut}</TooltipContent>
+          </Tooltip>
+        </div>
+      </EditorHeader>
+      <div className="flex min-h-0 flex-1">
+        <BlockPalette onAdd={handleAdd} />
+        <div ref={canvasRef} className="min-w-0 flex-1" aria-label={ru.editor.canvas}>
+          <Canvas
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={handleNodesChange}
+            onEdgesChange={handleEdgesChange}
+            onEdgesReplace={handleEdgesReplace}
+          />
+        </div>
+        <Inspector node={selected} onChange={handleDataChange} />
+      </div>
+    </>
+  );
+}
+
+export function EditorPage() {
+  const { id = '' } = useParams();
+  const { data: project, isError } = useProject(id);
+
+  return (
+    <TooltipProvider>
+      <div className="flex h-svh flex-col">
+        {isError ? (
+          <>
+            <EditorHeader />
+            <p className="p-6 text-destructive">{ru.editor.loadError}</p>
+          </>
+        ) : !project ? (
+          <>
+            <EditorHeader />
+            <p className="p-6 text-muted-foreground">{ru.common.loading}</p>
+          </>
+        ) : (
+          <ReactFlowProvider>
+            {/* Состояние редактора инициализируется один раз из загруженного проекта */}
+            <ScenarioEditor
+              key={project.id}
+              projectId={project.id}
+              name={project.name}
+              initial={project.scenario}
+            />
+          </ReactFlowProvider>
+        )}
+      </div>
+    </TooltipProvider>
+  );
+}

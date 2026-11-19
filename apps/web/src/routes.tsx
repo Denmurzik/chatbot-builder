@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AuthGuard } from '@/app/AuthGuard';
-import { EditorPage } from '@/pages/EditorPage';
+import { EditorPage } from '@/editor/EditorPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { ProjectsPage } from '@/pages/ProjectsPage';
 import { RegisterPage } from '@/pages/RegisterPage';

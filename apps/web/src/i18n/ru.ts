@@ -1,0 +1,46 @@
+// Все строки интерфейса — на русском, в одном месте
+export const ru = {
+  appName: 'Конструктор чат-ботов',
+  common: {
+    loading: 'Загрузка…',
+    cancel: 'Отмена',
+    create: 'Создать',
+    unknownError: 'Что-то пошло не так. Попробуйте ещё раз',
+  },
+  auth: {
+    loginTitle: 'Вход',
+    loginDescription: 'Войдите, чтобы работать с проектами',
+    registerTitle: 'Регистрация',
+    registerDescription: 'Создайте аккаунт автора',
+    email: 'Email',
+    password: 'Пароль',
+    submitLogin: 'Войти',
+    submitRegister: 'Зарегистрироваться',
+    noAccount: 'Нет аккаунта?',
+    haveAccount: 'Уже есть аккаунт?',
+    toRegister: 'Зарегистрироваться',
+    toLogin: 'Войти',
+    invalidCredentials: 'Неверный email или пароль',
+    emailTaken: 'Этот email уже занят',
+    invalidEmail: 'Введите корректный email',
+    passwordTooShort: 'Пароль должен содержать не менее 8 символов',
+    logout: 'Выйти',
+  },
+  projects: {
+    title: 'Проекты',
+    empty: 'Проектов пока нет. Создайте первый',
+    create: 'Новый проект',
+    createTitle: 'Новый проект',
+    nameLabel: 'Название',
+    nameRequired: 'Введите название проекта',
+    updatedAt: 'Изменён',
+    loadError: 'Не удалось загрузить проекты',
+  },
+  editor: {
+    placeholder: 'Редактор сценария появится в следующей версии',
+    back: 'К проектам',
+  },
+  theme: {
+    toggle: 'Сменить тему',
+  },
+} as const;

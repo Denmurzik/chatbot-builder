@@ -11,7 +11,9 @@
     "declaration": false,
     "declarationMap": false,
     "sourceMap": false,
+    "baseUrl": ".",
     "paths": {
+      "@/*": ["./src/*"],
       "@chatbot/model": ["../../packages/model/src/index.ts"]
     }
   },

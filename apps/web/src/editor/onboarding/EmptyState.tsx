@@ -19,7 +19,7 @@ export function FirstStepCard({
       <button
         type="button"
         onClick={onClick}
-        className="absolute flex w-64 flex-col items-start gap-1 rounded-lg border-2 border-dashed bg-card/60 px-4 py-3 text-left text-muted-foreground transition-colors hover:border-primary hover:bg-accent hover:text-accent-foreground"
+        className="pointer-events-auto nodrag nopan absolute flex w-64 flex-col items-start gap-1 rounded-lg border-2 border-dashed bg-card/60 px-4 py-3 text-left text-muted-foreground transition-colors hover:border-primary hover:bg-accent hover:text-accent-foreground"
         style={{
           transform: `translate(${entry.position.x + (entry.measured?.width ?? 280) + NODE_GAP}px, ${entry.position.y}px)`,
         }}
@@ -50,11 +50,13 @@ export function WelcomeOverlay({ onChoose }: { onChoose: (template: ScenarioTemp
               key={template.id}
               type="button"
               variant="outline"
-              className="h-auto flex-col items-start gap-0.5 px-4 py-3 whitespace-normal"
+              className="h-auto flex-col items-start gap-0.5 px-4 py-3 text-left whitespace-normal"
               onClick={() => onChoose(template)}
             >
-              <span className="text-sm font-medium">{template.title}</span>
-              <span className="text-xs font-normal text-muted-foreground">{template.hint}</span>
+              <span className="text-left text-sm font-medium">{template.title}</span>
+              <span className="text-left text-xs font-normal text-muted-foreground">
+                {template.hint}
+              </span>
             </Button>
           ))}
         </div>

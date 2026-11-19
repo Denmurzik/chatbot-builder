@@ -25,6 +25,7 @@ import { ExpressionInput } from '../fields/ExpressionInput';
 import { TemplateInput } from '../fields/TemplateInput';
 import { listIssues, minIssue, variableNameIssue } from '../validate';
 import { ConditionBuilder } from './ConditionBuilder';
+import { InsertableInput } from './InsertableInput';
 import { useCodeMirrorInsertTarget } from './insert-target';
 
 const s = ru.settings;
@@ -79,21 +80,29 @@ function TextField({
   hint,
   value,
   errors,
+  insertable = false,
   onChange,
 }: {
   label: string;
   hint?: string;
   value: string;
   errors?: string[];
+  // Поле может принимать имя переменной кнопкой «Вставить»
+  insertable?: boolean;
   onChange: (value: string) => void;
 }) {
+  const invalid = errors !== undefined && errors.length > 0;
   return (
     <Field label={label} hint={hint} errors={errors}>
-      <Input
-        value={value}
-        aria-invalid={errors !== undefined && errors.length > 0}
-        onChange={(event) => onChange(event.target.value)}
-      />
+      {insertable ? (
+        <InsertableInput value={value} aria-invalid={invalid} onValueChange={onChange} />
+      ) : (
+        <Input
+          value={value}
+          aria-invalid={invalid}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
     </Field>
   );
 }
@@ -117,6 +126,7 @@ function VariableNameField({
       hint={hint ?? s.variableHint}
       value={value}
       errors={issue ? [issue] : []}
+      insertable
       onChange={onChange}
     />
   );
@@ -294,10 +304,10 @@ function HeadersEditor({
     <Field label={ru.fields.headers}>
       {value.map((header, index) => (
         <div key={index} className="flex flex-col gap-1.5 rounded-md border p-2">
-          <Input
+          <InsertableInput
             placeholder={ru.fields.headerName}
             value={header.name}
-            onChange={(event) => update(index, { name: event.target.value })}
+            onValueChange={(name) => update(index, { name })}
           />
           {header.secret ? (
             <Input
@@ -371,17 +381,18 @@ function MappingsEditor({
         const issue = variableNameIssue(mapping.variableName);
         return (
           <div key={index} className="flex flex-col gap-1.5 rounded-md border p-2">
-            <Input
+            <InsertableInput
               placeholder={ru.fields.jsonPath}
               value={mapping.jsonPath}
-              onChange={(event) => update(index, { jsonPath: event.target.value })}
+              insertMode="cursor"
+              onValueChange={(jsonPath) => update(index, { jsonPath })}
             />
             <div className="flex items-center gap-1.5">
-              <Input
+              <InsertableInput
                 placeholder={ru.fields.mappingVariable}
                 value={mapping.variableName}
                 aria-invalid={issue !== null}
-                onChange={(event) => update(index, { variableName: event.target.value })}
+                onValueChange={(variableName) => update(index, { variableName })}
               />
               <Button
                 type="button"
@@ -516,9 +527,9 @@ function TypeFields({
             />
           </Group>
           <Group title={g.options}>
-            <TextField
+            <VariableNameField
               label={ru.fields.listVariable}
-              hint={s.listVariableHint}
+              hint={`${s.listVariableHint}. ${s.variableHint}`}
               value={data.listVariable}
               onChange={(listVariable) => onChange({ ...data, listVariable })}
             />

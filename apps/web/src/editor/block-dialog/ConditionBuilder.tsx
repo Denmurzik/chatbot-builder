@@ -1,19 +1,21 @@
 import { Plus, Trash2, TriangleAlert } from 'lucide-react';
-import { useId, useState, type ComponentProps } from 'react';
+import { useEffect, useId, useRef, useState, type ComponentProps } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { ru } from '@/i18n/ru';
 import { cn } from '@/lib/utils';
 import { ExpressionInput } from '../fields/ExpressionInput';
+import { expressionIssue } from '../validate';
 import {
   conditionToExpression,
+  emptyCondition,
   expressionToCondition,
   type ConditionJoin,
   type ConditionModel,
   type ConditionOperator,
   type ConditionRow,
 } from './condition-model';
-import { useCodeMirrorInsertTarget, useInsertRegistry } from './insert-target';
+import { InsertableInput } from './InsertableInput';
+import { useCodeMirrorInsertTarget } from './insert-target';
 
 const t = ru.condition;
 
@@ -47,6 +49,7 @@ function RowEditor({
   variables,
   listId,
   canRemove,
+  isAlive,
   onChange,
   onRemove,
 }: {
@@ -55,29 +58,23 @@ function RowEditor({
   variables: string[];
   listId: string;
   canRemove: boolean;
+  isAlive: () => boolean;
   onChange: (patch: Partial<ConditionRow>) => void;
   onRemove: () => void;
 }) {
-  const { setTarget } = useInsertRegistry();
   const needsValue = row.op !== 'empty' && row.op !== 'notEmpty';
   const unknown = !isKnownVariable(row.variable.trim(), variables);
   return (
     <div className="flex flex-col gap-1" data-testid="condition-row">
       <div className="flex items-center gap-1.5">
-        <Input
+        <InsertableInput
           className="min-w-0 flex-1"
           list={listId}
           placeholder={t.variable}
           aria-label={`${t.variable} ${index + 1}`}
           value={row.variable}
-          onFocus={() =>
-            setTarget({
-              kind: 'variable',
-              insert: (name) => onChange({ variable: name }),
-              isAlive: () => true,
-            })
-          }
-          onChange={(event) => onChange({ variable: event.target.value })}
+          isAlive={isAlive}
+          onValueChange={(variable) => onChange({ variable })}
         />
         <NativeSelect
           aria-label={`${t.operator} ${index + 1}`}
@@ -95,12 +92,14 @@ function RowEditor({
           ))}
         </NativeSelect>
         {needsValue ? (
-          <Input
+          <InsertableInput
             className="min-w-0 flex-1"
             placeholder={t.value}
             aria-label={`${t.value} ${index + 1}`}
             value={row.value}
-            onChange={(event) => onChange({ value: event.target.value })}
+            insertMode="cursor"
+            isAlive={isAlive}
+            onValueChange={(value) => onChange({ value })}
           />
         ) : (
           <span className="flex-1" />
@@ -135,16 +134,33 @@ interface ConditionFieldProps {
 // Условие: переключатель «Конструктор / Выражение» (как «Fixed / Expression» в n8n)
 export function ConditionBuilder({ expression, onChange, variables }: ConditionFieldProps) {
   const listId = useId();
-  const [model, setModel] = useState<ConditionModel | null>(() =>
-    expressionToCondition(expression),
-  );
-  const [mode, setMode] = useState<'builder' | 'expression'>(model ? 'builder' : 'expression');
+  const initial = expressionToCondition(expression);
+  const [model, setModel] = useState<ConditionModel>(() => initial ?? emptyCondition());
+  const [mode, setMode] = useState<'builder' | 'expression'>(initial ? 'builder' : 'expression');
+  // Свежая модель для обработчиков, живущих дольше рендера (цель «Вставить»)
+  const modelRef = useRef(model);
   const onCreateEditor = useCodeMirrorInsertTarget('expression');
 
-  const update = (next: ConditionModel) => {
+  const commit = (next: ConditionModel) => {
+    modelRef.current = next;
     setModel(next);
     onChange(conditionToExpression(next));
   };
+  // Правка от свежей модели, а не от модели рендера, в котором создан обработчик
+  const update = (change: (prev: ConditionModel) => ConditionModel) =>
+    commit(change(modelRef.current));
+
+  // Выражение изменили снаружи (например, отмена): пересобираем конструктор
+  useEffect(() => {
+    if (mode !== 'builder' || expression === conditionToExpression(modelRef.current)) return;
+    const next = expressionToCondition(expression);
+    if (next) {
+      modelRef.current = next;
+      setModel(next);
+    } else {
+      setMode('expression');
+    }
+  }, [expression, mode]);
 
   // Из режима «Выражение» в конструктор можно перейти, только если выражение в него укладывается
   const parsed = mode === 'expression' ? expressionToCondition(expression) : model;
@@ -154,10 +170,13 @@ export function ConditionBuilder({ expression, onChange, variables }: ConditionF
     if (next === mode) return;
     if (next === 'builder') {
       if (!parsed) return;
+      modelRef.current = parsed;
       setModel(parsed);
     }
     setMode(next);
   };
+
+  const builderIssue = mode === 'builder' ? expressionIssue(conditionToExpression(model)) : null;
 
   return (
     <div className="flex flex-col gap-3">
@@ -190,7 +209,7 @@ export function ConditionBuilder({ expression, onChange, variables }: ConditionF
       {!canUseBuilder && mode === 'expression' && (
         <p className="text-xs text-muted-foreground">{t.notRepresentable}</p>
       )}
-      {mode === 'builder' && model ? (
+      {mode === 'builder' ? (
         <div className="flex flex-col gap-2">
           <datalist id={listId}>
             {variables.map((name) => (
@@ -205,13 +224,20 @@ export function ConditionBuilder({ expression, onChange, variables }: ConditionF
               variables={variables}
               listId={listId}
               canRemove={model.rows.length > 1}
+              isAlive={() => index < modelRef.current.rows.length}
               onChange={(patch) =>
-                update({
-                  ...model,
-                  rows: model.rows.map((r, i) => (i === index ? { ...r, ...patch } : r)),
-                })
+                update((prev) =>
+                  index < prev.rows.length
+                    ? {
+                        ...prev,
+                        rows: prev.rows.map((r, i) => (i === index ? { ...r, ...patch } : r)),
+                      }
+                    : prev,
+                )
               }
-              onRemove={() => update({ ...model, rows: model.rows.filter((_, i) => i !== index) })}
+              onRemove={() =>
+                update((prev) => ({ ...prev, rows: prev.rows.filter((_, i) => i !== index) }))
+              }
             />
           ))}
           <div className="flex items-center gap-2">
@@ -220,7 +246,10 @@ export function ConditionBuilder({ expression, onChange, variables }: ConditionF
               variant="outline"
               size="sm"
               onClick={() =>
-                update({ ...model, rows: [...model.rows, { variable: '', op: 'eq', value: '' }] })
+                update((prev) => ({
+                  ...prev,
+                  rows: [...prev.rows, { variable: '', op: 'eq', value: '' }],
+                }))
               }
             >
               <Plus className="size-4" />
@@ -231,7 +260,7 @@ export function ConditionBuilder({ expression, onChange, variables }: ConditionF
                 aria-label={t.join}
                 value={model.join}
                 onChange={(event) =>
-                  update({ ...model, join: event.target.value as ConditionJoin })
+                  update((prev) => ({ ...prev, join: event.target.value as ConditionJoin }))
                 }
               >
                 <option value="and">{t.all}</option>
@@ -239,6 +268,11 @@ export function ConditionBuilder({ expression, onChange, variables }: ConditionF
               </NativeSelect>
             )}
           </div>
+          {builderIssue && (
+            <p role="alert" className="text-xs text-destructive">
+              {builderIssue}
+            </p>
+          )}
         </div>
       ) : (
         <ExpressionInput

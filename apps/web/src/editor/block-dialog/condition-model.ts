@@ -51,8 +51,19 @@ const PLAIN_NUMBER_REGEX = /^-?(0|[1-9]\d*)(\.\d+)?$/;
 const ENV_REF_REGEX = /^\{\{\s*(env\.[A-Za-z_][A-Za-z0-9_]*)\s*\}\}$/;
 // «переменная оператор значение», значение — число или строка в кавычках
 const ROW_REGEX =
-  /^(\{\{\s*env\.[A-Za-z_][A-Za-z0-9_]*\s*\}\}|[A-Za-z_][A-Za-z0-9_]*)\s*(==|!=|<=|>=|<|>)\s*(-?\d+(?:\.\d+)?|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')$/;
-const ESCAPES: Record<string, string> = { n: '\n', r: '\r', t: '\t' };
+  /^(\{\{\s*env\.[A-Za-z_][A-Za-z0-9_]*\s*\}\}|[A-Za-z_][A-Za-z0-9_]*)\s*(==|!=|<=|>=|<|>)\s*(-?(?:0|[1-9]\d*)(?:\.\d+)?|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')$/;
+// Экранирования, которые разбор выражений понимает однозначно; любое другое — режим «Выражение»
+const ESCAPES: Record<string, string> = {
+  n: '\n',
+  r: '\r',
+  t: '\t',
+  b: '\b',
+  f: '\f',
+  v: '\v',
+  '\\': '\\',
+  '"': '"',
+  "'": "'",
+};
 
 export function emptyCondition(): ConditionModel {
   return { join: 'and', rows: [{ variable: '', op: 'eq', value: '' }] };
@@ -64,14 +75,23 @@ function quote(value: string): string {
     .replace(/"/g, '\\"')
     .replace(/\n/g, '\\n')
     .replace(/\r/g, '\\r')
-    .replace(/\t/g, '\\t');
+    .replace(/\t/g, '\\t')
+    .split('\b')
+    .join('\\b')
+    .replace(/\f/g, '\\f')
+    .replace(/\v/g, '\\v');
   return `"${escaped}"`;
 }
 
-function unquote(literalText: string): string {
-  return literalText
-    .slice(1, -1)
-    .replace(/\\([\s\S])/g, (_match, char: string) => ESCAPES[char] ?? char);
+// null — в строке есть экранирование, которое конструктор не воспроизводит без изменений
+function unquote(literalText: string): string | null {
+  let unknown = false;
+  const text = literalText.slice(1, -1).replace(/\\([\s\S])/g, (_match, char: string) => {
+    const known = ESCAPES[char];
+    if (known === undefined) unknown = true;
+    return known ?? char;
+  });
+  return unknown ? null : text;
 }
 
 function literal(value: string): string {
@@ -132,6 +152,7 @@ function parseRow(part: string): ConditionRow | null {
   const variable = env ? `{{${env[1]}}}` : rawVariable;
   const quoted = /^["']/.test(rawValue);
   const value = quoted ? unquote(rawValue) : rawValue;
+  if (value === null) return null;
   const op = TOKEN_OPERATOR[token]!;
   if (quoted && value === '') {
     if (op === 'eq') return { variable, op: 'empty', value: '' };

@@ -63,8 +63,9 @@ export function nodeIssues(node: BlockNode): string[] {
   const data = node.data;
   switch (data.type) {
     case 'TEXT_INPUT':
-    case 'LIST_CHOICE':
       return compact([variableNameIssue(data.variableName)]);
+    case 'LIST_CHOICE':
+      return compact([variableNameIssue(data.variableName), variableNameIssue(data.listVariable)]);
     case 'OPTION_CHOICE':
       return [...compact([variableNameIssue(data.variableName)]), ...listIssues(data.options)];
     case 'ASSIGNMENT':

@@ -142,6 +142,27 @@ describe('expressionToCondition', () => {
     expect(expressionToCondition('a ==')).toBeNull();
   });
 
+  it('экранирования \n \t \b \f \v разбираются и пишутся обратно без потерь', () => {
+    const model: ConditionModel = {
+      join: 'and',
+      rows: [{ variable: 'a', op: 'eq', value: 'x\ny\tz\b\f\v' }],
+    };
+    expect(expressionToCondition(conditionToExpression(model))).toEqual(model);
+  });
+
+  it('неизвестное экранирование не переписывается молча: режим «Выражение»', () => {
+    expect(expressionToCondition('a == "x\\qy"')).toBeNull();
+  });
+
+  it('число с ведущими нулями и экспонентой — режим «Выражение»', () => {
+    expect(expressionToCondition('a == 007')).toBeNull();
+    expect(expressionToCondition('a == 1e5')).toBeNull();
+    expect(expressionToCondition('a == 0.5')).toEqual({
+      join: 'and',
+      rows: [{ variable: 'a', op: 'eq', value: '0.5' }],
+    });
+  });
+
   it('пустое выражение — пустая модель', () => {
     expect(expressionToCondition('  ')).toEqual({
       join: 'and',

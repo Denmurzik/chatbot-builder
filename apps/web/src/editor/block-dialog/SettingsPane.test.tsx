@@ -105,6 +105,12 @@ describe('SettingsPane', () => {
     expect(screen.getByText(/латиница, цифры и _/)).toBeTruthy();
   });
 
+  it('переменная со списком показывает ошибку рядом с полем', () => {
+    const data = { ...BLOCK_META.LIST_CHOICE.defaults(), listVariable: 'список' } as BlockNodeData;
+    renderPane(data);
+    expect(screen.getByText(/латиница, цифры и _/)).toBeTruthy();
+  });
+
   it('у «Присваивания» есть подсказка с примерами выражений', () => {
     renderPane(BLOCK_META.ASSIGNMENT.defaults());
     expect(screen.getByText(/tries \+ 1/)).toBeTruthy();

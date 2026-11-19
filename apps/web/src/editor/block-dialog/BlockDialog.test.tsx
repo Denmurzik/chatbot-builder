@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { Edge } from '@xyflow/react';
+import { EditorView } from '@codemirror/view';
 import { useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ru } from '@/i18n/ru';
@@ -157,16 +158,26 @@ describe('BlockDialog', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('Esc при открытом списке подсказок не закрывает окно', () => {
+  it('Esc при открытом списке подсказок закрывает только список', async () => {
     const onClose = vi.fn();
-    render(<Harness nodeId="ask" onClose={onClose} />);
-    const tooltip = document.createElement('div');
-    tooltip.className = 'cm-tooltip cm-tooltip-autocomplete';
-    document.body.append(tooltip);
-    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    render(<Harness nodeId="msg" onClose={onClose} />);
+    const content = screen.getByLabelText(ru.fields.text);
+    const view = EditorView.findFromDOM(content.closest('.cm-editor') as HTMLElement)!;
+    view.focus();
+    // Ввод «{{» открывает список переменных
+    view.dispatch({
+      changes: { from: 0, insert: '{{' },
+      selection: { anchor: 2 },
+      userEvent: 'input.type',
+    });
+    await waitFor(() => expect(document.querySelector('.cm-tooltip-autocomplete')).not.toBeNull());
+
+    fireEvent.keyDown(content, { key: 'Escape', code: 'Escape', keyCode: 27 });
+    await waitFor(() => expect(document.querySelector('.cm-tooltip-autocomplete')).toBeNull());
     expect(onClose).not.toHaveBeenCalled();
-    tooltip.remove();
-    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(screen.getByRole('dialog')).toBeTruthy();
+
+    fireEvent.keyDown(content, { key: 'Escape', code: 'Escape', keyCode: 27 });
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -187,6 +198,22 @@ describe('BlockDialog', () => {
     render(<Harness nodeId="msg" />);
     const insert = screen.getByRole('button', { name: `${ru.blockDialog.insert} name` });
     expect((insert as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('«Вставить» идёт в последнее поле: обычное поле сбрасывает цель и не меняет другие поля', async () => {
+    render(<Harness nodeId="msg" />);
+    const editor = screen.getByLabelText(ru.fields.text);
+    editor.focus();
+    fireEvent.focusIn(editor);
+    const insert = screen.getByRole('button', { name: `${ru.blockDialog.insert} name` });
+    await waitFor(() => expect((insert as HTMLButtonElement).disabled).toBe(false));
+
+    const title = screen.getByLabelText(ru.blockDialog.titleLabel);
+    fireEvent.focus(title);
+    expect((insert as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(insert);
+    expect(screen.getByLabelText(ru.fields.text).textContent).toBe('Здравствуйте, {{name}}!');
+    expect((title as HTMLInputElement).value).toBe('Приветствие');
   });
 
   describe('конструктор условий', () => {
@@ -245,6 +272,63 @@ describe('BlockDialog', () => {
       expect(screen.getByLabelText(ru.fields.expression).textContent).toBe('name == "Анна"');
       fireEvent.click(screen.getByRole('button', { name: ru.condition.builder }));
       expect((screen.getByLabelText('Переменная 1') as HTMLInputElement).value).toBe('name');
+    });
+
+    it('«Вставить» после правок строк не теряет значение и добавленную строку', () => {
+      const spy = vi.fn();
+      render(<Harness nodeId="cond" onChangeSpy={spy} />);
+      const variable = screen.getByLabelText('Переменная 1');
+      fireEvent.change(variable, { target: { value: 'zzz' } });
+      fireEvent.focus(variable);
+      fireEvent.change(screen.getByLabelText('Значение 1'), { target: { value: '5' } });
+      fireEvent.click(screen.getByRole('button', { name: ru.condition.add }));
+      fireEvent.click(screen.getByRole('button', { name: `${ru.blockDialog.insert} name` }));
+
+      expect((screen.getByLabelText('Переменная 1') as HTMLInputElement).value).toBe('name');
+      expect((screen.getByLabelText('Значение 1') as HTMLInputElement).value).toBe('5');
+      expect(screen.getAllByTestId('condition-row')).toHaveLength(2);
+      expect(spy).toHaveBeenLastCalledWith(
+        'cond',
+        expect.objectContaining({ expression: 'name == 5' }),
+      );
+    });
+
+    it('«Вставить» в поле значения вставляет имя в позицию курсора', () => {
+      render(<Harness nodeId="cond" />);
+      const value = screen.getByLabelText('Значение 1') as HTMLInputElement;
+      fireEvent.focus(value);
+      value.setSelectionRange(1, 1);
+      fireEvent.click(screen.getByRole('button', { name: `${ru.blockDialog.insert} name` }));
+      expect(value.value).toBe('Аnameнна');
+    });
+
+    it('показывает ошибку выражения, собранного конструктором', () => {
+      render(<Harness nodeId="cond" />);
+      fireEvent.change(screen.getByLabelText('Переменная 1'), { target: { value: 'a b' } });
+      expect(screen.getByText(/Ошибка в выражении/)).toBeTruthy();
+      fireEvent.change(screen.getByLabelText('Переменная 1'), { target: { value: '' } });
+      expect(screen.getByText(ru.validation.expressionEmpty)).toBeTruthy();
+    });
+
+    it('при внешней смене выражения (отмена) конструктор пересобирается', () => {
+      const node = flow.nodes.find((n) => n.id === 'cond')!;
+      const view = (expression: string) => (
+        <BlockDialog
+          nodeId="cond"
+          nodes={flow.nodes.map((n) =>
+            n.id === 'cond' ? { ...n, data: { ...node.data, expression } as BlockNodeData } : n,
+          )}
+          edges={flow.edges}
+          onChange={() => {}}
+          onClose={() => {}}
+        />
+      );
+      const { rerender } = render(view('name == "Анна"'));
+      rerender(view('age >= 18 || name != ""'));
+      expect((screen.getByLabelText('Переменная 1') as HTMLInputElement).value).toBe('age');
+      expect((screen.getByLabelText('Переменная 2') as HTMLInputElement).value).toBe('name');
+      rerender(view('(a < 3) && !b'));
+      expect(screen.queryByLabelText('Переменная 1')).toBeNull();
     });
   });
 });

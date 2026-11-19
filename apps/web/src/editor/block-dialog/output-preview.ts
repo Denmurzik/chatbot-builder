@@ -56,7 +56,7 @@ export function previewBlock(
       case 'SWITCH': {
         const value = scope.get(data.variableName);
         if (value === undefined) {
-          result.error = p.previewError(`неизвестная переменная: ${data.variableName}`);
+          result.error = p.previewError(p.unknownVariable(data.variableName));
           break;
         }
         result.branch = data.values.includes(value) ? value : 'else';

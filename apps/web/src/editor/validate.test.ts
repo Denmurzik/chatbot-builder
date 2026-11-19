@@ -58,6 +58,11 @@ describe('nodeIssues', () => {
     expect(nodeIssues(node(http))).toEqual([ru.validation.variableName]);
   });
 
+  it('переменная со списком в «Выборе из списка» проверяется как имя', () => {
+    const list = { ...BLOCK_META.LIST_CHOICE.defaults(), listVariable: 'список' } as BlockNodeData;
+    expect(nodeIssues(node(list))).toEqual([ru.validation.variableName]);
+  });
+
   it('выражения Условия и Присваивания проходят parseExpression', () => {
     const cond = { ...BLOCK_META.CONDITION.defaults(), expression: 'a ==' } as BlockNodeData;
     expect(nodeIssues(node(cond))[0]).toMatch(/Ошибка в выражении/);

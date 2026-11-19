@@ -240,6 +240,7 @@ export const ru = {
     previewOptions: 'Кнопки',
     previewQuestion: 'Вопрос',
     previewText: 'Сообщение',
+    unknownVariable: (name: string) => `неизвестная переменная: ${name}`,
     previewNoMatch: 'Ни одно значение не подошло',
     secretMask: '••••••••',
   },

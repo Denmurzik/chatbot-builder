@@ -1,3 +1,5 @@
+import { closeCompletion } from '@codemirror/autocomplete';
+import { EditorView } from '@codemirror/view';
 import type { Edge } from '@xyflow/react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { availableVariables } from '@chatbot/model';
@@ -27,6 +29,15 @@ interface BlockDialogProps {
 // Список подсказок CodeMirror открыт: Esc должен закрыть только его
 function isCompletionOpen(): boolean {
   return document.querySelector('.cm-tooltip-autocomplete') !== null;
+}
+
+// Поле ввода (в том числе редактор CodeMirror): кнопки и ссылки цель вставки не сбрасывают
+function isTextField(target: EventTarget): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.matches('input, textarea, select') ||
+      target.closest('[contenteditable="true"]') !== null)
+  );
 }
 
 function Column({ title, children }: { title: string; children: ReactNode }) {
@@ -64,45 +75,53 @@ function DialogBody({
 
   return (
     <InsertContext.Provider value={registry}>
-      <header className="flex items-center gap-3 border-b py-3 pr-12 pl-4">
-        <span
-          className="flex size-9 shrink-0 items-center justify-center rounded-md text-white"
-          style={{ backgroundColor: meta.color }}
-        >
-          <Icon className="size-5" />
-        </span>
-        <Input
-          data-title-input
-          className="max-w-md text-base font-semibold"
-          aria-label={t.titleLabel}
-          value={node.data.title}
-          onChange={(event) => onChange(node.id, { ...node.data, title: event.target.value })}
-        />
-        <span className="text-sm text-muted-foreground">
-          {meta.label} · {ru.fields.id}: {node.id}
-        </span>
-      </header>
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_minmax(0,1fr)]">
-        <Column title={t.input}>
-          <InputPane
-            variables={variables}
-            titles={titles}
-            testValues={testValues}
-            onTestValueChange={(name, value) =>
-              setTestValues((prev) => ({ ...prev, [name]: value }))
-            }
+      {/* Фокус в любом другом поле сбрасывает цель «Вставить»; поля-цели ставят её после (CodeMirror — на focusin) */}
+      <div
+        className="flex min-h-0 flex-1 flex-col"
+        onFocusCapture={(event) => {
+          if (isTextField(event.target)) setTarget(null);
+        }}
+      >
+        <header className="flex items-center gap-3 border-b py-3 pr-12 pl-4">
+          <span
+            className="flex size-9 shrink-0 items-center justify-center rounded-md text-white"
+            style={{ backgroundColor: meta.color }}
+          >
+            <Icon className="size-5" />
+          </span>
+          <Input
+            data-title-input
+            className="max-w-md text-base font-semibold"
+            aria-label={t.titleLabel}
+            value={node.data.title}
+            onChange={(event) => onChange(node.id, { ...node.data, title: event.target.value })}
           />
-        </Column>
-        <Column title={t.settings}>
-          <SettingsPane
-            data={node.data}
-            variables={variables.map((variable) => variable.name)}
-            onChange={(data) => onChange(node.id, data)}
-          />
-        </Column>
-        <Column title={t.output}>
-          <OutputPane node={node} nodes={nodes} edges={edges} testValues={testValues} />
-        </Column>
+          <span className="text-sm text-muted-foreground">
+            {meta.label} · {ru.fields.id}: {node.id}
+          </span>
+        </header>
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_minmax(0,1fr)]">
+          <Column title={t.input}>
+            <InputPane
+              variables={variables}
+              titles={titles}
+              testValues={testValues}
+              onTestValueChange={(name, value) =>
+                setTestValues((prev) => ({ ...prev, [name]: value }))
+              }
+            />
+          </Column>
+          <Column title={t.settings}>
+            <SettingsPane
+              data={node.data}
+              variables={variables.map((variable) => variable.name)}
+              onChange={(data) => onChange(node.id, data)}
+            />
+          </Column>
+          <Column title={t.output}>
+            <OutputPane node={node} nodes={nodes} edges={edges} testValues={testValues} />
+          </Column>
+        </div>
       </div>
     </InsertContext.Provider>
   );
@@ -118,6 +137,22 @@ export function BlockDialog({
   focusTitle = false,
 }: BlockDialogProps) {
   const node = nodeId === null ? undefined : nodes.find((n) => n.id === nodeId);
+
+  // Esc при открытом списке подсказок закрывает только список. Radix слушает Esc на document и
+  // помечает событие обработанным (preventDefault), после чего CodeMirror его игнорирует, поэтому
+  // перехватываем раньше Radix (слушатель добавлен при монтировании, до открытия окна) и сами
+  // закрываем список
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape' || !isCompletionOpen()) return;
+      event.stopImmediatePropagation();
+      const editor = document.activeElement?.closest<HTMLElement>('.cm-editor');
+      const view = editor ? EditorView.findFromDOM(editor) : null;
+      if (view) closeCompletion(view);
+    }
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
+  }, []);
 
   // Блок удалили, пока окно открыто, — закрываем
   useEffect(() => {
@@ -141,10 +176,6 @@ export function BlockDialog({
           } else {
             event.target.focus();
           }
-        }}
-        // Esc при открытом списке подсказок закрывает только список
-        onEscapeKeyDown={(event) => {
-          if (isCompletionOpen()) event.preventDefault();
         }}
       >
         <DialogTitle className="sr-only">{node?.data.title ?? t.label}</DialogTitle>

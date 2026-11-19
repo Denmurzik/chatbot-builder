@@ -21,6 +21,7 @@ export interface ApiConfig {
   nodeEnv: string;
   isProduction: boolean;
   telegramPolling: boolean;
+  queuePrefix?: string;
 }
 
 // Читает и проверяет конфигурацию API из переменных окружения
@@ -59,6 +60,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   }
   const telegramPolling = !isProduction && pollingRequested;
 
+  const queuePrefix = env.QUEUE_PREFIX?.trim() || undefined;
+
   return {
     databaseUrl,
     jwtSecret,
@@ -66,6 +69,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     nodeEnv,
     isProduction,
     telegramPolling,
+    ...(queuePrefix ? { queuePrefix } : {}),
   };
 }
 

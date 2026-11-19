@@ -22,7 +22,7 @@ import { APP_CONFIG, EVENT_QUEUE, PRISMA, type AppConfig } from './tokens';
       useFactory: (config: AppConfig) =>
         new EventQueue(config.redisUrl, config.queuePrefix ? { prefix: config.queuePrefix } : {}),
     },
-    { provide: SecretVault, useFactory: () => SecretVault.fromEnv() },
+    { provide: SecretVault, inject: [APP_CONFIG], useFactory: () => SecretVault.fromEnv() },
     { provide: DialogEngine, useFactory: () => new DialogEngine() },
   ],
   exports: [APP_CONFIG, PRISMA, EVENT_QUEUE, SecretVault, DialogEngine],

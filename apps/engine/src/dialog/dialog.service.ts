@@ -48,7 +48,7 @@ export class DialogService {
 
     const processed = await this.prisma.$transaction(async (tx): Promise<Processed | null> => {
       const bot = await this.findBot(botId, tx);
-      if (!bot?.publishedScenario) {
+      if (!bot || bot.status !== 'PUBLISHED' || !bot.publishedScenario) {
         this.logger.warn(`Бот ${botId} не найден или не опубликован, событие пропущено`);
         return null;
       }

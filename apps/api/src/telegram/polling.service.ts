@@ -3,8 +3,8 @@ import {
   Inject,
   Injectable,
   Logger,
+  type BeforeApplicationShutdown,
   type OnApplicationBootstrap,
-  type OnApplicationShutdown,
 } from '@nestjs/common';
 import { Bot } from 'grammy';
 import { API_CONFIG, type ApiConfig } from '../config';
@@ -18,7 +18,7 @@ function errorName(err: unknown): string {
 
 // Dev-режим: long polling вместо webhook для опубликованных ботов (TELEGRAM_POLLING=1)
 @Injectable()
-export class PollingService implements OnApplicationBootstrap, OnApplicationShutdown {
+export class PollingService implements OnApplicationBootstrap, BeforeApplicationShutdown {
   private readonly logger = new Logger(PollingService.name);
   private readonly bots: Bot[] = [];
 
@@ -62,7 +62,8 @@ export class PollingService implements OnApplicationBootstrap, OnApplicationShut
     }
   }
 
-  async onApplicationShutdown(): Promise<void> {
+  // Останавливаем polling до закрытия Prisma и очереди в onApplicationShutdown
+  async beforeApplicationShutdown(): Promise<void> {
     await Promise.all(this.bots.map((bot) => bot.stop().catch(() => undefined)));
   }
 }

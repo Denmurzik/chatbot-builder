@@ -65,4 +65,12 @@ describe('loadConfig', () => {
     });
     expect(validProd.isProduction).toBe(true);
   });
+
+  it('читает QUEUE_PREFIX при наличии и обрезает пробелы', () => {
+    expect(loadConfig(baseEnv).queuePrefix).toBeUndefined();
+    expect(loadConfig({ ...baseEnv, QUEUE_PREFIX: '  test-prefix  ' }).queuePrefix).toBe(
+      'test-prefix',
+    );
+    expect(loadConfig({ ...baseEnv, QUEUE_PREFIX: '   ' }).queuePrefix).toBeUndefined();
+  });
 });

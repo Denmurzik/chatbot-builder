@@ -2,12 +2,15 @@ import path from 'node:path';
 import dotenv from 'dotenv';
 import type { AppConfig } from './infra/tokens';
 
-// Читает .env из корня репозитория (путь явный, не зависит от cwd) и собирает конфигурацию
-export function loadConfig(): AppConfig {
-  dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
-  const databaseUrl = process.env.DATABASE_URL;
-  const redisUrl = process.env.REDIS_URL;
+// Загружаем корневой .env при импорте модуля, независимо от cwd и порядка провайдеров
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+
+// Собирает конфигурацию engine из переменных окружения
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+  const databaseUrl = env.DATABASE_URL?.trim();
+  const redisUrl = env.REDIS_URL?.trim();
   if (!databaseUrl) throw new Error('Не задана переменная окружения DATABASE_URL');
   if (!redisUrl) throw new Error('Не задана переменная окружения REDIS_URL');
-  return { databaseUrl, redisUrl };
+  const queuePrefix = env.QUEUE_PREFIX?.trim() || undefined;
+  return { databaseUrl, redisUrl, ...(queuePrefix ? { queuePrefix } : {}) };
 }

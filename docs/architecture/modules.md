@@ -25,7 +25,7 @@
 2. `packages-no-apps` — пакеты `packages/*` не зависят от приложений `apps/*`.
 3. `model-no-project-packages` — `@chatbot/model` не зависит ни от одного пакета или приложения проекта.
 4. `engine-core-only-model` — `@chatbot/engine-core` из пакетов проекта зависит только от `@chatbot/model`.
-5. `web-only-model` — `apps/web` из пакетов проекта импортирует только `@chatbot/model`.
+5. `web-allowed-packages` — `apps/web` из пакетов проекта импортирует только `@chatbot/model` и `@chatbot/engine-core`.
 6. `no-cross-app-imports` — запрет прямых импортов между приложениями `apps/api`, `apps/engine`, `apps/web` (взаимодействие идёт по HTTP и через очередь Redis/PostgreSQL).
 
 ### Проверка слоёв и ацикличности
@@ -46,7 +46,7 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | `web / API-клиент` | `apps/web/src/api` | взаимодействие | HTTP-клиент к REST API (`apps/api`) для авторизации и работы с проектами | *(клиентский транспорт `apps/web`)* | `@chatbot/model` |
 | 2 | `web / Страницы аккаунта` | `apps/web/src/pages` | взаимодействие | Экраны входа, регистрации, списка и создания проектов | `AccountUI` | `web / API-клиент` |
-| 3 | `web / Редактор сценария` | `apps/web/src/editor` | взаимодействие | Визуальный холст (React Flow), палитра 10 типов блоков, инспектор свойств, конвертация и сохранение сценария | `EditorUI` | `@chatbot/model`, `web / API-клиент` |
+| 3 | `web / Редактор сценария` | `apps/web/src/editor` | взаимодействие | Визуальный холст (React Flow), палитра 10 типов блоков, инспектор свойств, конвертация и сохранение сценария | `EditorUI` | `@chatbot/engine-core`, `@chatbot/model`, `web / API-клиент` |
 | 4 | `web / Превью-чат` | `apps/web/src/preview` | взаимодействие | Интерфейс тестового превью-чата — заглушка спринта 3 | `PreviewChatUI` | `@chatbot/model` |
 | 5 | `api / TelegramModule` | `apps/api/src/telegram` | взаимодействие | Приём webhook Telegram, dev-polling, преобразование обновлений в `ChatEvent` и постановка в очередь | `MessengerGateway` (приём) | `@chatbot/model`, `@chatbot/queue`, `@chatbot/vault`, `api / PrismaModule`, `api / QueueModule` |
 | 6 | `engine / MessengerModule` | `apps/engine/src/messenger` | взаимодействие | Адаптер отправки сообщений и вопросов в Telegram Bot API (grammY), реализует порт `MessengerGateway` | `MessengerGateway` (отправка) | `@chatbot/db`, `@chatbot/engine-core`, `@chatbot/vault`, `engine / DialogModule`, `engine / InfraModule` |

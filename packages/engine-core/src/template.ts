@@ -1,28 +1,12 @@
+import { TEMPLATE_VAR_REGEX, extractVariableNames } from '@chatbot/model';
 import type { VariableScope } from './scope';
 
 // Режим экранирования подставляемых значений в шаблоне (п. 2.4)
 export type RenderMode = 'TEXT' | 'URL' | 'HEADER' | 'JSON';
 
-// Регулярное выражение из п. 2.4 для поиска переменных вида {{имя}} и {{env.ИМЯ}}
-const TEMPLATE_VAR_REGEX = /\{\{\s*([A-Za-z_][A-Za-z0-9_.]*)\s*\}\}/g;
-
 const ENV_PREFIX = 'env.';
 
-// Извлекает имена переменных из шаблона без дублей в порядке первого появления
-export function extractVariableNames(template: string): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-
-  for (const match of template.matchAll(TEMPLATE_VAR_REGEX)) {
-    const name = match[1];
-    if (!seen.has(name)) {
-      seen.add(name);
-      result.push(name);
-    }
-  }
-
-  return result;
-}
+export { extractVariableNames };
 
 // Экранирует значение в зависимости от места подстановки
 function escapeValue(value: string, mode: RenderMode): string {

@@ -44,14 +44,14 @@ module.exports = {
       },
     },
     {
-      name: 'web-only-model',
-      comment: 'apps/web из пакетов проекта импортирует только @chatbot/model',
+      name: 'web-allowed-packages',
+      comment: 'apps/web из пакетов проекта импортирует только @chatbot/model и @chatbot/engine-core',
       severity: 'error',
       from: {
         path: '^apps/web/',
       },
       to: {
-        path: '^packages/(?!model/)',
+        path: '^packages/(?!(model|engine-core)/)',
       },
     },
     {

@@ -2,13 +2,14 @@
   "name": "@chatbot/engine",
   "version": "0.1.0",
   "private": true,
-  "main": "./dist/index.js",
+  "main": "./dist/main.js",
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
-    "dev": "tsx watch src/index.ts",
-    "start": "node dist/index.js",
-    "test": "vitest run --root ../.. --project engine apps/engine"
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "test": "vitest run --root ../.. --project engine apps/engine",
+    "p1": "tsx scripts/p1-order.ts"
   },
   "dependencies": {
     "@chatbot/db": "workspace:*",

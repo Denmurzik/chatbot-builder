@@ -39,15 +39,45 @@ export function scenarioToFlow(scenario: Scenario): { nodes: BlockNode[]; edges:
   return { nodes, edges };
 }
 
+// Выходы блока для ручек: без пустых и повторяющихся имён, значение «else» в SWITCH
+// не дублирует служебный выход (иначе ручки получат одинаковые id и ключи)
+export function safeOutputs(data: BlockNodeData): string[] {
+  const reserved = data.type === 'SWITCH' ? ['else'] : [];
+  const unique = (items: string[]) => [
+    ...new Set(items.filter((item) => item.trim() !== '' && !reserved.includes(item))),
+  ];
+  if (data.type === 'OPTION_CHOICE') return unique(data.options);
+  if (data.type === 'SWITCH') return [...unique(data.values), 'else'];
+  return getOutputs({ ...data, id: 'x', x: 0, y: 0 } as Block);
+}
+
 // Оставляет только рёбра с существующими узлами и выходами (ручка = имя выхода)
 export function pruneEdges(nodes: BlockNode[], edges: Edge[]): Edge[] {
-  const outputsById = new Map(nodes.map((node) => [node.id, getOutputs(nodeToBlock(node))]));
+  const outputsById = new Map(nodes.map((node) => [node.id, safeOutputs(node.data)]));
   return edges.filter(
     (edge) =>
       edge.sourceHandle != null &&
       (outputsById.get(edge.source)?.includes(edge.sourceHandle) ?? false) &&
       outputsById.has(edge.target),
   );
+}
+
+// Новое соединение заменяет прежнее ребро из того же выхода
+export function connectEdges(
+  edges: Edge[],
+  connection: { source: string; sourceHandle: string; target: string },
+): Edge[] {
+  return [
+    ...edges.filter(
+      (e) => !(e.source === connection.source && e.sourceHandle === connection.sourceHandle),
+    ),
+    {
+      id: edgeId(connection.source, connection.sourceHandle),
+      source: connection.source,
+      sourceHandle: connection.sourceHandle,
+      target: connection.target,
+    },
+  ];
 }
 
 export function flowToScenario(nodes: BlockNode[], edges: Edge[]): Scenario {

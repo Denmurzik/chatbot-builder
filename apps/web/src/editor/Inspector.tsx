@@ -24,18 +24,34 @@ import { Textarea } from '@/components/ui/textarea';
 import { ru } from '@/i18n/ru';
 import { BLOCK_META } from './block-meta';
 import type { BlockNode, BlockNodeData } from './convert';
+import { listIssues, minIssue } from './validate';
 
 interface InspectorProps {
   node: BlockNode | null;
   onChange: (id: string, data: BlockNodeData) => void;
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+function Field({
+  label,
+  hint,
+  errors = [],
+  children,
+}: {
+  label: string;
+  hint?: string;
+  errors?: string[];
+  children: ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-1.5">
       <Label>{label}</Label>
       {children}
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {errors.map((error) => (
+        <p key={error} role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      ))}
     </div>
   );
 }
@@ -75,18 +91,25 @@ function AreaField({
 function NumberField({
   label,
   value,
+  min,
   onChange,
 }: {
   label: string;
   value: number;
+  min: number;
   onChange: (value: number) => void;
 }) {
+  // Сырой текст храним локально, чтобы поле можно было очистить
+  const [raw, setRaw] = useState(String(value));
+  const issue = minIssue(value, min);
   return (
-    <Field label={label}>
+    <Field label={label} errors={issue ? [issue] : []}>
       <Input
         type="number"
-        value={value}
+        value={raw}
+        aria-invalid={issue !== null}
         onChange={(event) => {
+          setRaw(event.target.value);
           const parsed = Number.parseInt(event.target.value, 10);
           onChange(Number.isNaN(parsed) ? 0 : parsed);
         }}
@@ -101,19 +124,26 @@ function LinesField({
   label,
   hint,
   value,
+  forbidden,
   onChange,
 }: {
   label: string;
   hint: string;
   value: string[];
+  forbidden?: readonly string[];
   onChange: (value: string[]) => void;
 }) {
   const [raw, setRaw] = useState(value.join('\n'));
+  // Хвостовые пустые строки (только что нажатый Enter) ошибкой не считаем
+  const lines = raw.split('\n').map((line) => line.trim());
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  const errors = listIssues(lines, forbidden);
   return (
-    <Field label={label} hint={hint}>
+    <Field label={label} hint={hint} errors={errors}>
       <Textarea
         value={raw}
         rows={5}
+        aria-invalid={errors.length > 0}
         onChange={(event) => {
           setRaw(event.target.value);
           onChange(
@@ -395,6 +425,7 @@ function TypeFields({
             label={ru.fields.values}
             hint={ru.fields.valuesHint}
             value={data.values}
+            forbidden={['else']}
             onChange={(values) => onChange({ ...data, values })}
           />
         </>
@@ -439,16 +470,19 @@ function TypeFields({
           <NumberField
             label={ru.fields.timeoutSec}
             value={data.timeoutSec}
+            min={1}
             onChange={(timeoutSec) => onChange({ ...data, timeoutSec })}
           />
           <NumberField
             label={ru.fields.retryCount}
             value={data.retryCount}
+            min={0}
             onChange={(retryCount) => onChange({ ...data, retryCount })}
           />
           <NumberField
             label={ru.fields.retryIntervalSec}
             value={data.retryIntervalSec}
+            min={0}
             onChange={(retryIntervalSec) => onChange({ ...data, retryIntervalSec })}
           />
           {UNSAFE_RETRY_METHODS.includes(data.method) && data.retryCount > 0 && (
@@ -484,6 +518,7 @@ function TypeFields({
 export function Inspector({ node, onChange }: InspectorProps) {
   return (
     <aside
+      data-inspector
       className="flex w-80 shrink-0 flex-col border-l bg-card"
       aria-label={ru.editor.inspector}
     >

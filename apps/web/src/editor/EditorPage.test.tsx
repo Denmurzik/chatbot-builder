@@ -1,6 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { emptyScenario } from '@chatbot/model';
 import { createQueryClient } from '@/app/queryClient';
@@ -25,17 +25,13 @@ beforeAll(() => {
   );
 });
 
-describe('EditorPage', () => {
-  afterEach(() => {
-    cleanup();
-  });
-
-  it('отрисовывает три колонки и загруженный блок', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() =>
-        Promise.resolve(
-          new Response(
+// GET проекта отдаёт пустой сценарий, PUT сценария — успех
+function stubFetch() {
+  const fetchMock = vi.fn((url: string, init?: RequestInit) =>
+    Promise.resolve(
+      init?.method === 'PUT'
+        ? new Response(JSON.stringify({ updatedAt: '2026-01-02T00:00:00Z' }), { status: 200 })
+        : new Response(
             JSON.stringify({
               id: 'p1',
               name: 'Запись к врачу',
@@ -44,19 +40,32 @@ describe('EditorPage', () => {
             }),
             { status: 200 },
           ),
-        ),
-      ),
-    );
+    ),
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
 
-    render(
-      <QueryClientProvider client={createQueryClient()}>
-        <MemoryRouter initialEntries={['/projects/p1']}>
-          <Routes>
-            <Route path="/projects/:id" element={<EditorPage />} />
-          </Routes>
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
+// useBlocker требует роутер с данными
+function renderEditor() {
+  const router = createMemoryRouter([{ path: '/projects/:id', element: <EditorPage /> }], {
+    initialEntries: ['/projects/p1'],
+  });
+  render(
+    <QueryClientProvider client={createQueryClient()}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
+}
+
+describe('EditorPage', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('отрисовывает три колонки и загруженный блок', async () => {
+    stubFetch();
+    renderEditor();
 
     expect(await screen.findByText('Запись к врачу')).toBeTruthy();
     expect(await screen.findByRole('button', { name: /Сохранить/ })).toBeTruthy();
@@ -64,5 +73,21 @@ describe('EditorPage', () => {
     expect(screen.getByLabelText('Свойства блока')).toBeTruthy();
     expect(screen.getByText('Старт')).toBeTruthy();
     expect(screen.getByText('Выберите блок на холсте, чтобы изменить его свойства')).toBeTruthy();
+  });
+
+  it('Ctrl+S по code KeyS (русская раскладка, key «ы») сохраняет сценарий', async () => {
+    const fetchMock = stubFetch();
+    renderEditor();
+    await screen.findByRole('button', { name: /Сохранить/ });
+
+    fireEvent.keyDown(window, { key: 'ы', code: 'KeyS', ctrlKey: true });
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) => url === '/api/projects/p1/scenario' && init?.method === 'PUT',
+        ),
+      ).toBe(true),
+    );
   });
 });

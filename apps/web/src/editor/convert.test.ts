@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { scenarioSchema, type Scenario } from '@chatbot/model';
-import { flowToScenario, pruneEdges, scenarioToFlow, type BlockNode } from './convert';
+import {
+  connectEdges,
+  flowToScenario,
+  pruneEdges,
+  safeOutputs,
+  scenarioToFlow,
+  type BlockNode,
+} from './convert';
 
 const scenario: Scenario = {
   formatVersion: 1,
@@ -123,5 +130,34 @@ describe('конвертация сценария и графа', () => {
     expect(pruned.some((e) => e.source === 'opt' && e.sourceHandle === 'Отмена')).toBe(false);
     expect(pruned.some((e) => e.source === 'opt' && e.sourceHandle === 'Запись')).toBe(true);
     expect(flowToScenario(changed, edges).transitions).toHaveLength(4);
+  });
+
+  it('новое соединение заменяет ребро из того же выхода', () => {
+    const { edges } = scenarioToFlow(scenario);
+    const next = connectEdges(edges, { source: 'opt', sourceHandle: 'Запись', target: 'exit' });
+    const fromHandle = next.filter((e) => e.source === 'opt' && e.sourceHandle === 'Запись');
+    expect(fromHandle).toHaveLength(1);
+    expect(fromHandle[0]!.target).toBe('exit');
+    expect(next).toHaveLength(edges.length);
+  });
+
+  it('safeOutputs убирает повторы и «else» из значений переключателя', () => {
+    expect(
+      safeOutputs({
+        type: 'SWITCH',
+        title: '',
+        variableName: 'v',
+        values: ['a', 'a', 'else', 'b'],
+      }),
+    ).toEqual(['a', 'b', 'else']);
+    expect(
+      safeOutputs({
+        type: 'OPTION_CHOICE',
+        title: '',
+        question: '',
+        variableName: 'v',
+        options: ['x', 'x', 'y'],
+      }),
+    ).toEqual(['x', 'y']);
   });
 });

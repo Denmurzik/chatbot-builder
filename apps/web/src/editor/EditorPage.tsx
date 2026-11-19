@@ -9,12 +9,20 @@ import {
   type NodeChange,
 } from '@xyflow/react';
 import { ArrowLeft, Save } from 'lucide-react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useBlocker, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { scenarioSchema, type BlockType, type Scenario } from '@chatbot/model';
 import { ApiError } from '@/api/client';
 import { useProject, useSaveScenario } from '@/api/projects';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ru } from '@/i18n/ru';
 import { BlockPalette } from './BlockPalette';
@@ -29,6 +37,10 @@ import {
   type BlockNode,
   type BlockNodeData,
 } from './convert';
+import { nodeIssues } from './validate';
+
+// Сдвиг каждого следующего добавленного блока, px
+const ADD_OFFSET = 24;
 
 // Выбор и размеры узлов не меняют сценарий — не считаем их несохранёнными изменениями
 function isMeaningfulNodeChange(change: NodeChange<BlockNode>): boolean {
@@ -82,63 +94,118 @@ function ScenarioEditor({
   const [nodes, setNodes] = useState<BlockNode[]>(initialFlow.nodes);
   const [edges, setEdges] = useState<Edge[]>(initialFlow.edges);
   const [dirty, setDirty] = useState(false);
+  // Актуальные значения для расчётов вне updater-функций (в них побочных эффектов быть не должно)
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  // Счётчик правок графа: по нему понимаем, менялся ли граф, пока шёл запрос сохранения
+  const revisionRef = useRef(0);
   const canvasRef = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
   const save = useSaveScenario(projectId);
 
   const selected = nodes.find((node) => node.selected) ?? null;
 
-  const handleNodesChange = useCallback((changes: NodeChange<BlockNode>[]) => {
-    setNodes((current) => {
-      const next = applyNodeChanges(changes, current);
-      // Удаление блока убирает и его рёбра
-      if (changes.some((change) => change.type === 'remove')) {
-        setEdges((currentEdges) => pruneEdges(next, currentEdges));
-      }
-      return next;
-    });
-    if (changes.some(isMeaningfulNodeChange)) setDirty(true);
+  const commitNodes = useCallback((next: BlockNode[]) => {
+    nodesRef.current = next;
+    setNodes(next);
   }, []);
 
-  const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
-    setEdges((current) => applyEdgeChanges(changes, current));
-    if (changes.some((change) => change.type !== 'select')) setDirty(true);
+  const commitEdges = useCallback((next: Edge[]) => {
+    edgesRef.current = next;
+    setEdges(next);
   }, []);
 
-  const handleEdgesReplace = useCallback((updater: (edges: Edge[]) => Edge[]) => {
-    setEdges(updater);
+  const touch = useCallback(() => {
+    revisionRef.current += 1;
     setDirty(true);
   }, []);
 
+  const handleNodesChange = useCallback(
+    (changes: NodeChange<BlockNode>[]) => {
+      const next = applyNodeChanges(changes, nodesRef.current);
+      commitNodes(next);
+      // Удаление блока убирает и его рёбра
+      if (changes.some((change) => change.type === 'remove')) {
+        commitEdges(pruneEdges(next, edgesRef.current));
+      }
+      if (changes.some(isMeaningfulNodeChange)) touch();
+    },
+    [commitNodes, commitEdges, touch],
+  );
+
+  const handleEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      commitEdges(applyEdgeChanges(changes, edgesRef.current));
+      if (changes.some((change) => change.type !== 'select')) touch();
+    },
+    [commitEdges, touch],
+  );
+
+  const handleEdgesReplace = useCallback(
+    (updater: (edges: Edge[]) => Edge[]) => {
+      commitEdges(updater(edgesRef.current));
+      touch();
+    },
+    [commitEdges, touch],
+  );
+
   function handleAdd(type: BlockType) {
     const bounds = canvasRef.current?.getBoundingClientRect();
-    const position = bounds
+    const center = bounds
       ? screenToFlowPosition({
           x: bounds.left + bounds.width / 2,
           y: bounds.top + bounds.height / 2,
         })
       : { x: 0, y: 0 };
+    const current = nodesRef.current;
+    const position = { x: Math.round(center.x), y: Math.round(center.y) };
+    // Подряд добавленные блоки сдвигаем, чтобы они не ложились друг на друга
+    while (
+      current.some(
+        (n) => Math.abs(n.position.x - position.x) < 12 && Math.abs(n.position.y - position.y) < 12,
+      )
+    ) {
+      position.x += ADD_OFFSET;
+      position.y += ADD_OFFSET;
+    }
     const node: BlockNode = {
-      id: nextBlockId(type, nodes),
+      id: nextBlockId(type, current),
       type: BLOCK_NODE_TYPE,
-      position: { x: Math.round(position.x), y: Math.round(position.y) },
+      position,
       data: BLOCK_META[type].defaults(),
       selected: true,
     };
-    setNodes((current) => [...current.map((n) => ({ ...n, selected: false })), node]);
-    setDirty(true);
+    commitNodes([...current.map((n) => ({ ...n, selected: false })), node]);
+    touch();
   }
 
   // Правка полей: после смены options/values удаляем рёбра исчезнувших выходов
   function handleDataChange(id: string, data: BlockNodeData) {
-    const next = nodes.map((node) => (node.id === id ? { ...node, data } : node));
-    setNodes(next);
-    setEdges((current) => pruneEdges(next, current));
-    setDirty(true);
+    const next = nodesRef.current.map((node) => (node.id === id ? { ...node, data } : node));
+    commitNodes(next);
+    commitEdges(pruneEdges(next, edgesRef.current));
+    touch();
   }
 
   const handleSave = useCallback(() => {
-    const scenario = flowToScenario(nodes, edges);
+    if (save.isPending) return;
+    const currentNodes = nodesRef.current;
+
+    // Ошибки полей блоков (повторы, «else», числа) блокируют сохранение
+    const blockIssues = currentNodes.flatMap((node) =>
+      nodeIssues(node).map((message) => ({
+        path: node.id,
+        message: ru.validation.blockError(node.data.title, node.id, message),
+      })),
+    );
+    if (blockIssues.length > 0) {
+      const firstId = blockIssues[0]!.path;
+      commitNodes(currentNodes.map((node) => ({ ...node, selected: node.id === firstId })));
+      showIssues(ru.editor.fixErrors, blockIssues);
+      return;
+    }
+
+    const scenario = flowToScenario(currentNodes, edgesRef.current);
     const parsed = scenarioSchema.safeParse(scenario);
     if (!parsed.success) {
       showIssues(
@@ -150,9 +217,11 @@ function ScenarioEditor({
       );
       return;
     }
+    const sentRevision = revisionRef.current;
     save.mutate(scenario, {
       onSuccess: () => {
-        setDirty(false);
+        // Если граф менялся, пока шёл запрос, изменения остаются несохранёнными
+        if (revisionRef.current === sentRevision) setDirty(false);
         toast.success(ru.editor.saved);
       },
       onError: (error) => {
@@ -163,12 +232,12 @@ function ScenarioEditor({
         }
       },
     });
-  }, [nodes, edges, save]);
+  }, [save, commitNodes]);
 
-  // Ctrl+S — сохранить
+  // Ctrl+S — сохранить; code не зависит от раскладки (в русской key = «ы»)
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+      if ((event.ctrlKey || event.metaKey) && event.code === 'KeyS') {
         event.preventDefault();
         handleSave();
       }
@@ -176,6 +245,21 @@ function ScenarioEditor({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [handleSave]);
+
+  // Предупреждение о несохранённых изменениях: закрытие вкладки и переход по ссылкам
+  useEffect(() => {
+    if (!dirty) return;
+    function onBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+    }
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [dirty]);
+
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      dirty && currentLocation.pathname !== nextLocation.pathname,
+  );
 
   return (
     <>
@@ -209,6 +293,35 @@ function ScenarioEditor({
         </div>
         <Inspector node={selected} onChange={handleDataChange} />
       </div>
+      <Dialog
+        open={blocker.state === 'blocked'}
+        onOpenChange={(open) => {
+          if (!open && blocker.state === 'blocked') blocker.reset();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{ru.editor.leaveTitle}</DialogTitle>
+            <DialogDescription>{ru.editor.leaveDescription}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => blocker.state === 'blocked' && blocker.reset()}
+            >
+              {ru.editor.leaveStay}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => blocker.state === 'blocked' && blocker.proceed()}
+            >
+              {ru.editor.leaveConfirm}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

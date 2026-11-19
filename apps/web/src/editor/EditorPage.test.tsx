@@ -22,12 +22,39 @@ beforeAll(() => {
   vi.stubGlobal(
     'ResizeObserver',
     class {
-      observe() {}
+      constructor(private readonly callback: ResizeObserverCallback) {}
+      // С включённым измерением сообщаем React Flow, что элемент появился: тогда рисуются связи
+      observe(target: Element) {
+        if (measureNodes) {
+          this.callback([{ target } as ResizeObserverEntry], this as unknown as ResizeObserver);
+        }
+      }
       unobserve() {}
       disconnect() {}
     },
   );
 });
+
+// Включается в тестах, которым нужны отрисованные связи (jsdom размеров не считает)
+let measureNodes = false;
+
+// У всех элементов — прямоугольник 100×50, чтобы у блоков и их выходов были границы
+function stubLayout() {
+  measureNodes = true;
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+    x: 0,
+    y: 0,
+    left: 0,
+    top: 0,
+    right: 100,
+    bottom: 50,
+    width: 100,
+    height: 50,
+    toJSON: () => ({}),
+  });
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(100);
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(50);
+}
 
 // GET проекта отдаёт пустой сценарий, PUT сценария — успех
 function stubFetch(scenario: Scenario = emptyScenario()) {
@@ -65,6 +92,8 @@ function renderEditor() {
 describe('EditorPage', () => {
   afterEach(() => {
     cleanup();
+    measureNodes = false;
+    vi.restoreAllMocks();
   });
 
   it('отрисовывает холст и загруженный блок', async () => {
@@ -297,6 +326,37 @@ describe('EditorPage', () => {
       const saved = await savedScenario(fetchMock);
       expect(saved.blocks.length).toBeGreaterThan(2);
       expect(saved.transitions.length).toBeGreaterThan(2);
+    });
+  });
+
+  describe('связи', () => {
+    const chain: Scenario = {
+      formatVersion: 1,
+      blocks: [
+        { id: 'entry', type: 'ENTRY_POINT', title: 'Старт', x: 0, y: 0 },
+        { id: 'msg_1', type: 'TEXT_MESSAGE', title: 'Привет', text: 'Здравствуйте', x: 400, y: 0 },
+      ],
+      transitions: [{ source: { blockId: 'entry', output: 'default' }, target: 'msg_1' }],
+    };
+
+    it('корзина на связи удаляет её с первого клика, Ctrl+Z возвращает', async () => {
+      stubLayout();
+      stubFetch(chain);
+      renderEditor();
+      await screen.findByText('Привет');
+      const edge = await waitFor(() => {
+        const found = document.querySelector('.react-flow__edge');
+        if (!found) throw new Error('связь ещё не отрисована');
+        return found;
+      });
+
+      fireEvent.mouseEnter(edge.querySelector('g') ?? edge);
+      fireEvent.click(await screen.findByRole('button', { name: ru.editor.deleteEdge }));
+      await waitFor(() => expect(document.querySelectorAll('.react-flow__edge')).toHaveLength(0));
+      expect(screen.getByText(ru.editor.unsaved)).toBeTruthy();
+
+      fireEvent.keyDown(window, { key: 'я', code: 'KeyZ', ctrlKey: true });
+      await waitFor(() => expect(document.querySelectorAll('.react-flow__edge')).toHaveLength(1));
     });
   });
 

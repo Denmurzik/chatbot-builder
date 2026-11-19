@@ -79,4 +79,36 @@ describe('ScenarioEdge', () => {
     const selectedFill = container.querySelector('marker path')?.getAttribute('fill');
     expect(selectedFill).not.toBe(normalFill);
   });
+
+  it('прямая связь — плавная кривая, связь назад — ломаная со скруглениями', () => {
+    function pathOf(sourceX: number, targetX: number) {
+      const { container } = render(
+        <ReactFlowProvider>
+          <svg>
+            <ScenarioEdge
+              id="a::b"
+              source="a"
+              target="b"
+              sourceX={sourceX}
+              sourceY={60}
+              targetX={targetX}
+              targetY={60}
+              sourcePosition={Position.Right}
+              targetPosition={Position.Left}
+              selected={false}
+            />
+          </svg>
+        </ReactFlowProvider>,
+      );
+      const d = container.querySelector('.react-flow__edge-path')?.getAttribute('d') ?? '';
+      cleanup();
+      return d;
+    }
+
+    expect(pathOf(200, 400)).toContain('C');
+    expect(pathOf(200, 400)).not.toContain('Q');
+    const backward = pathOf(400, 100);
+    expect(backward).toContain('Q');
+    expect(backward).not.toContain('C');
+  });
 });

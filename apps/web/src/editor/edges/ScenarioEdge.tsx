@@ -2,7 +2,7 @@ import {
   BaseEdge,
   EdgeLabelRenderer,
   getBezierPath,
-  useReactFlow,
+  useInternalNode,
   type EdgeProps,
 } from '@xyflow/react';
 import { Plus, Trash2 } from 'lucide-react';
@@ -10,6 +10,7 @@ import { ru } from '@/i18n/ru';
 import { IconAction } from '../IconAction';
 import { useEditorActions } from '../actions';
 import { useHoverDelay } from '../useHoverDelay';
+import { backwardEdgePath, isBackward, type Rect } from './backward-path';
 
 const ARROW_COLOR = 'var(--muted-foreground)';
 const ARROW_COLOR_SELECTED = 'var(--primary)';
@@ -37,19 +38,47 @@ export function EdgeButtons({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
-      <IconAction icon={Plus} label={ru.editor.insertOnEdge} onClick={onInsert} />
+      <IconAction
+        icon={Plus}
+        label={ru.editor.insertOnEdge}
+        onClick={(event) => {
+          event.stopPropagation();
+          onInsert();
+        }}
+      />
       <IconAction
         icon={Trash2}
         label={ru.editor.deleteEdge}
-        onClick={onDelete}
+        onClick={(event) => {
+          event.stopPropagation();
+          onDelete();
+        }}
         className="hover:text-destructive"
       />
     </div>
   );
 }
 
+// Границы блока в координатах потока; пока блок не измерен — запасной прямоугольник у точки связи
+function useNodeRect(nodeId: string, fallback: { x: number; y: number }): Rect {
+  const node = useInternalNode(nodeId);
+  const width = node?.measured.width;
+  const height = node?.measured.height;
+  if (!node || !width || !height) {
+    return { x: fallback.x, y: fallback.y - 40, width: 0, height: 80 };
+  }
+  return {
+    x: node.internals.positionAbsolute.x,
+    y: node.internals.positionAbsolute.y,
+    width,
+    height,
+  };
+}
+
 export function ScenarioEdge({
   id,
+  source,
+  target,
   sourceX,
   sourceY,
   targetX,
@@ -58,17 +87,28 @@ export function ScenarioEdge({
   targetPosition,
   selected,
 }: EdgeProps) {
-  const { deleteElements } = useReactFlow();
-  const { insertOnEdge } = useEditorActions();
+  const { insertOnEdge, removeEdge } = useEditorActions();
   const { hovered, handlers } = useHoverDelay(150);
-  const [path, labelX, labelY] = getBezierPath({
-    sourceX,
-    sourceY,
-    targetX,
-    targetY,
-    sourcePosition,
-    targetPosition,
-  });
+  const sourceRect = useNodeRect(source, { x: sourceX, y: sourceY });
+  const targetRect = useNodeRect(target, { x: targetX, y: targetY });
+  const sourcePoint = { x: sourceX, y: sourceY };
+  const targetPoint = { x: targetX, y: targetY };
+
+  let path: string;
+  let labelX: number;
+  let labelY: number;
+  if (isBackward(sourcePoint, targetPoint)) {
+    ({ path, labelX, labelY } = backwardEdgePath(sourcePoint, targetPoint, sourceRect, targetRect));
+  } else {
+    [path, labelX, labelY] = getBezierPath({
+      sourceX,
+      sourceY,
+      targetX,
+      targetY,
+      sourcePosition,
+      targetPosition,
+    });
+  }
 
   // Стрелка рисуется здесь же: обычная и акцентная (у выделенной связи) — разные маркеры
   const markerId = `arrow-${id.replace(/[^a-zA-Z0-9_-]/g, '_')}${selected ? '-selected' : ''}`;
@@ -108,7 +148,7 @@ export function ScenarioEdge({
           <EdgeButtons
             visible={hovered || Boolean(selected)}
             onInsert={() => insertOnEdge(id)}
-            onDelete={() => void deleteElements({ edges: [{ id }] })}
+            onDelete={() => removeEdge(id)}
             onMouseEnter={handlers.onMouseEnter}
             onMouseLeave={handlers.onMouseLeave}
           />

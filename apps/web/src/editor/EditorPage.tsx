@@ -338,6 +338,8 @@ function ScenarioEditor({
       },
       addFromOutput: (blockId, output) => setPicker({ kind: 'output', blockId, output }),
       insertOnEdge: (edgeId) => setPicker({ kind: 'edge', edgeId }),
+      // Корзина на связи: один шаг истории; React Flow с его фильтром удаления не участвует
+      removeEdge: (edgeId) => handleEdgesChange([{ type: 'remove', id: edgeId }]),
       // Копия правее и ниже со сдвигом 40, без связей, с новым id
       duplicate: (id) => {
         const current = nodesRef.current;
@@ -369,7 +371,7 @@ function ScenarioEditor({
         openDialog(id, true);
       },
     }),
-    [commitNodes, touch, handleNodesChange, record, openDialog],
+    [commitNodes, touch, handleNodesChange, handleEdgesChange, record, openDialog],
   );
 
   const handleSave = useCallback(() => {

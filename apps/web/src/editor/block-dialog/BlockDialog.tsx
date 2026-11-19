@@ -6,6 +6,7 @@ import { availableVariables } from '@chatbot/model';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { ru } from '@/i18n/ru';
+import { cn } from '@/lib/utils';
 import { BLOCK_META } from '../block-meta';
 import { flowToScenario, type BlockNode, type BlockNodeData } from '../convert';
 import { InputPane } from './InputPane';
@@ -40,10 +41,27 @@ function isTextField(target: EventTarget): boolean {
   );
 }
 
-function Column({ title, children }: { title: string; children: ReactNode }) {
+// Боковые колонки («Вход», «Выход») тоном отличаются от центральной («Настройки»), как слои в n8n
+function Column({
+  title,
+  side = false,
+  children,
+}: {
+  title: string;
+  side?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <section aria-label={title} className="flex min-h-0 flex-col border-r last:border-r-0">
-      <h2 className="border-b px-4 py-2 text-sm font-semibold">{title}</h2>
+    <section
+      aria-label={title}
+      className={cn(
+        'flex min-h-0 flex-col border-r border-border last:border-r-0',
+        side && 'bg-muted/40',
+      )}
+    >
+      <h2 className="border-b border-border px-4 py-2 text-sm font-semibold text-foreground">
+        {title}
+      </h2>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
     </section>
   );
@@ -82,7 +100,7 @@ function DialogBody({
           if (isTextField(event.target)) setTarget(null);
         }}
       >
-        <header className="flex items-center gap-3 border-b py-3 pr-12 pl-4">
+        <header className="flex items-center gap-3 border-b border-border bg-muted/40 py-3 pr-12 pl-4">
           <span
             className="flex size-9 shrink-0 items-center justify-center rounded-md text-white"
             style={{ backgroundColor: meta.color }}
@@ -101,7 +119,7 @@ function DialogBody({
           </span>
         </header>
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_minmax(0,1fr)]">
-          <Column title={t.input}>
+          <Column title={t.input} side>
             <InputPane
               variables={variables}
               titles={titles}
@@ -118,7 +136,7 @@ function DialogBody({
               onChange={(data) => onChange(node.id, data)}
             />
           </Column>
-          <Column title={t.output}>
+          <Column title={t.output} side>
             <OutputPane node={node} nodes={nodes} edges={edges} testValues={testValues} />
           </Column>
         </div>
@@ -163,7 +181,7 @@ export function BlockDialog({
     <Dialog open={node !== undefined} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         aria-label={t.label}
-        className="flex h-[90vh] max-w-[90vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-[90vw]"
+        className="flex h-[90vh] max-w-[90vw] flex-col gap-0 overflow-hidden border-border bg-card p-0 text-card-foreground sm:max-w-[90vw]"
         // Не уводим фокус на первое поле само по себе — фокус на окне (иначе он остался бы на холсте
         // и Tab открыл бы панель блоков); для «Переименовать» — в название
         onOpenAutoFocus={(event) => {

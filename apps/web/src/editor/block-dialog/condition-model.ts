@@ -94,6 +94,11 @@ function unquote(literalText: string): string | null {
   return unknown ? null : text;
 }
 
+// Значение записывается в выражение числом (без кавычек), а не строкой
+export function isPlainNumber(value: string): boolean {
+  return PLAIN_NUMBER_REGEX.test(value);
+}
+
 function literal(value: string): string {
   return PLAIN_NUMBER_REGEX.test(value) ? value : quote(value);
 }

@@ -10,7 +10,20 @@ import { BlockDialog } from './BlockDialog';
 
 beforeAll(() => {
   setupCodeMirrorJsdom();
+  // Radix Select в jsdom: нет захвата указателя и прокрутки к элементу
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.setPointerCapture ??= () => {};
+  Element.prototype.releasePointerCapture ??= () => {};
+  Element.prototype.scrollIntoView ??= () => {};
 });
+
+// Выбор пункта в выпадающем списке shadcn: открыть с клавиатуры и кликнуть по пункту
+async function choose(label: string, option: string) {
+  const trigger = screen.getByRole('combobox', { name: label });
+  trigger.focus();
+  fireEvent.keyDown(trigger, { key: 'Enter' });
+  fireEvent.click(await screen.findByRole('option', { name: option }));
+}
 afterEach(cleanup);
 
 const flow = scenarioToFlow({
@@ -231,19 +244,19 @@ describe('BlockDialog', () => {
 
       fireEvent.click(screen.getByRole('button', { name: ru.condition.add }));
       fireEvent.change(screen.getByLabelText('Переменная 2'), { target: { value: 'name' } });
-      fireEvent.change(screen.getByLabelText('Оператор 2'), { target: { value: 'notEmpty' } });
-      fireEvent.change(screen.getByLabelText(ru.condition.join), { target: { value: 'or' } });
+      await choose('Оператор 2', ru.condition.operators.notEmpty);
+      await choose(ru.condition.join, ru.condition.any);
       expect(spy).toHaveBeenLastCalledWith(
         'cond',
         expect.objectContaining({ expression: 'name == "Ольга" || name != ""' }),
       );
     });
 
-    it('предупреждает о переменной, которой нет выше по сценарию', () => {
+    it('предупреждает о переменной, которой нет выше по сценарию', async () => {
       render(<Harness nodeId="cond" />);
       fireEvent.change(screen.getByLabelText('Переменная 1'), { target: { value: 'ghost' } });
       expect(screen.getByText(ru.condition.unknownVariable('ghost'))).toBeTruthy();
-      fireEvent.change(screen.getByLabelText('Оператор 1'), { target: { value: 'empty' } });
+      await choose('Оператор 1', ru.condition.operators.empty);
       expect(screen.getByText(ru.condition.unknownVariable('ghost'))).toBeTruthy();
     });
 
@@ -300,6 +313,45 @@ describe('BlockDialog', () => {
       value.setSelectionRange(1, 1);
       fireEvent.click(screen.getByRole('button', { name: `${ru.blockDialog.insert} name` }));
       expect(value.value).toBe('Аnameнна');
+    });
+
+    it('список операторов — shadcn Select с группами «Сравнение / Числа / Пустота»', async () => {
+      render(<Harness nodeId="cond" />);
+      expect(document.querySelector('select')).toBeNull();
+      const trigger = screen.getByRole('combobox', { name: 'Оператор 1' });
+      trigger.focus();
+      fireEvent.keyDown(trigger, { key: 'Enter' });
+      const listbox = await screen.findByRole('listbox');
+      for (const label of Object.values(ru.condition.groups)) {
+        expect(within(listbox).getByText(label)).toBeTruthy();
+      }
+    });
+
+    it('сравнение чисел с нечисловым значением предупреждает о строковом сравнении', async () => {
+      render(<Harness nodeId="cond" />);
+      expect(screen.queryByText(ru.condition.stringCompare)).toBeNull();
+      await choose('Оператор 1', ru.condition.operators.gt);
+      // значение «Анна» — не число
+      expect(screen.getByText(ru.condition.stringCompare)).toBeTruthy();
+      fireEvent.change(screen.getByLabelText('Значение 1'), { target: { value: '5' } });
+      expect(screen.queryByText(ru.condition.stringCompare)).toBeNull();
+    });
+
+    it('удаление строки не сдвигает чужие значения, а её цель «Вставить» сбрасывается', () => {
+      render(<Harness nodeId="cond" />);
+      fireEvent.click(screen.getByRole('button', { name: ru.condition.add }));
+      fireEvent.change(screen.getByLabelText('Переменная 2'), { target: { value: 'second' } });
+      const firstVariable = screen.getByLabelText('Переменная 1');
+      fireEvent.focus(firstVariable);
+      fireEvent.click(screen.getAllByRole('button', { name: ru.condition.remove })[0]!);
+
+      expect(screen.getAllByTestId('condition-row')).toHaveLength(1);
+      expect((screen.getByLabelText('Переменная 1') as HTMLInputElement).value).toBe('second');
+      // Цель удалённой строки сброшена: «Вставить» недоступна
+      expect(
+        (screen.getByRole('button', { name: `${ru.blockDialog.insert} name` }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(true);
     });
 
     it('показывает ошибку выражения, собранного конструктором', () => {

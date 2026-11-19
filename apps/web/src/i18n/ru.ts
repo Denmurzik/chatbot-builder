@@ -305,6 +305,7 @@ export const ru = {
     value: 'Значение',
     unknownVariable: (name: string) =>
       `Переменной «${name}» нет выше по сценарию: во время диалога это будет ошибкой`,
+    stringCompare: 'Значение не число: сравнение будет строковым («10» меньше «9»)',
     groups: { compare: 'Сравнение', number: 'Числа', empty: 'Пустота' },
     operators: {
       eq: 'равно',

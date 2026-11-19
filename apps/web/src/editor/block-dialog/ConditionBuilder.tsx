@@ -1,21 +1,30 @@
 import { Plus, Trash2, TriangleAlert } from 'lucide-react';
-import { useEffect, useId, useRef, useState, type ComponentProps } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ru } from '@/i18n/ru';
-import { cn } from '@/lib/utils';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { ExpressionInput } from '../fields/ExpressionInput';
 import { expressionIssue } from '../validate';
 import {
   conditionToExpression,
   emptyCondition,
   expressionToCondition,
+  isPlainNumber,
   type ConditionJoin,
   type ConditionModel,
   type ConditionOperator,
   type ConditionRow,
 } from './condition-model';
 import { InsertableInput } from './InsertableInput';
-import { useCodeMirrorInsertTarget } from './insert-target';
+import { useCodeMirrorInsertTarget, useInsertRegistry } from './insert-target';
 
 const t = ru.condition;
 
@@ -25,18 +34,56 @@ const OPERATOR_GROUPS: { label: string; operators: ConditionOperator[] }[] = [
   { label: t.groups.empty, operators: ['empty', 'notEmpty'] },
 ];
 
-// Нативный select: поддерживает группы операторов и работает с клавиатуры
-function NativeSelect({ className, ...props }: ComponentProps<'select'>) {
+// Выпадающий список shadcn (Radix): темы оформления применяются и к списку; пункты — группами
+function GroupedSelect({
+  value,
+  onValueChange,
+  groups,
+  ariaLabel,
+  className,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+  groups: { label?: string; options: { value: string; label: string }[] }[];
+  ariaLabel: string;
+  className?: string;
+}) {
   return (
-    <select
-      className={cn(
-        'h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
-        className,
-      )}
-      {...props}
-    />
+    <Select value={value} onValueChange={onValueChange}>
+      <SelectTrigger aria-label={ariaLabel} className={className}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {groups.map((group, index) => (
+          <SelectGroup key={group.label ?? index}>
+            {group.label && <SelectLabel>{group.label}</SelectLabel>}
+            {group.options.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
+
+const OPERATOR_SELECT_GROUPS = OPERATOR_GROUPS.map((group) => ({
+  label: group.label,
+  options: group.operators.map((op) => ({ value: op, label: t.operators[op] })),
+}));
+
+const JOIN_SELECT_GROUPS = [
+  {
+    options: [
+      { value: 'and', label: t.all },
+      { value: 'or', label: t.any },
+    ],
+  },
+];
+
+const NUMERIC_OPERATORS: ConditionOperator[] = ['gt', 'lt', 'gte', 'lte'];
 
 // Переменная в строке: имя из доступных блоков или ссылка {{env.ИМЯ}}
 function isKnownVariable(name: string, variables: string[]): boolean {
@@ -64,6 +111,9 @@ function RowEditor({
 }) {
   const needsValue = row.op !== 'empty' && row.op !== 'notEmpty';
   const unknown = !isKnownVariable(row.variable.trim(), variables);
+  // Движок сравнивает числа, только если обе стороны числа; иначе — строки
+  const stringCompare =
+    NUMERIC_OPERATORS.includes(row.op) && row.value.trim() !== '' && !isPlainNumber(row.value);
   return (
     <div className="flex flex-col gap-1" data-testid="condition-row">
       <div className="flex items-center gap-1.5">
@@ -76,21 +126,12 @@ function RowEditor({
           isAlive={isAlive}
           onValueChange={(variable) => onChange({ variable })}
         />
-        <NativeSelect
-          aria-label={`${t.operator} ${index + 1}`}
+        <GroupedSelect
+          ariaLabel={`${t.operator} ${index + 1}`}
           value={row.op}
-          onChange={(event) => onChange({ op: event.target.value as ConditionOperator })}
-        >
-          {OPERATOR_GROUPS.map((group) => (
-            <optgroup key={group.label} label={group.label}>
-              {group.operators.map((op) => (
-                <option key={op} value={op}>
-                  {t.operators[op]}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </NativeSelect>
+          groups={OPERATOR_SELECT_GROUPS}
+          onValueChange={(op) => onChange({ op: op as ConditionOperator })}
+        />
         {needsValue ? (
           <InsertableInput
             className="min-w-0 flex-1"
@@ -115,6 +156,12 @@ function RowEditor({
           <Trash2 className="size-4" />
         </Button>
       </div>
+      {stringCompare && (
+        <p role="status" className="flex items-start gap-1.5 text-xs text-amber-600">
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+          {t.stringCompare}
+        </p>
+      )}
       {unknown && (
         <p role="status" className="flex items-start gap-1.5 text-xs text-amber-600">
           <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
@@ -139,6 +186,12 @@ export function ConditionBuilder({ expression, onChange, variables }: ConditionF
   const [mode, setMode] = useState<'builder' | 'expression'>(initial ? 'builder' : 'expression');
   // Свежая модель для обработчиков, живущих дольше рендера (цель «Вставить»)
   const modelRef = useRef(model);
+  // Стабильные id строк (только для интерфейса): ключи React и «жива ли строка» для цели «Вставить»
+  const idsRef = useRef<string[]>([]);
+  const nextIdRef = useRef(0);
+  const newId = () => `row-${nextIdRef.current++}`;
+  if (idsRef.current.length === 0) idsRef.current = initial ? initial.rows.map(newId) : [newId()];
+  const { target, setTarget } = useInsertRegistry();
   const onCreateEditor = useCodeMirrorInsertTarget('expression');
 
   const commit = (next: ConditionModel) => {
@@ -156,6 +209,7 @@ export function ConditionBuilder({ expression, onChange, variables }: ConditionF
     const next = expressionToCondition(expression);
     if (next) {
       modelRef.current = next;
+      idsRef.current = next.rows.map(newId);
       setModel(next);
     } else {
       setMode('expression');
@@ -171,6 +225,7 @@ export function ConditionBuilder({ expression, onChange, variables }: ConditionF
     if (next === 'builder') {
       if (!parsed) return;
       modelRef.current = parsed;
+      idsRef.current = parsed.rows.map(newId);
       setModel(parsed);
     }
     setMode(next);
@@ -216,56 +271,65 @@ export function ConditionBuilder({ expression, onChange, variables }: ConditionF
               <option key={name} value={name} />
             ))}
           </datalist>
-          {model.rows.map((row, index) => (
-            <RowEditor
-              key={index}
-              row={row}
-              index={index}
-              variables={variables}
-              listId={listId}
-              canRemove={model.rows.length > 1}
-              isAlive={() => index < modelRef.current.rows.length}
-              onChange={(patch) =>
-                update((prev) =>
-                  index < prev.rows.length
-                    ? {
-                        ...prev,
-                        rows: prev.rows.map((r, i) => (i === index ? { ...r, ...patch } : r)),
-                      }
-                    : prev,
-                )
-              }
-              onRemove={() =>
-                update((prev) => ({ ...prev, rows: prev.rows.filter((_, i) => i !== index) }))
-              }
-            />
-          ))}
+          {model.rows.map((row, index) => {
+            const rowId = idsRef.current[index]!;
+            return (
+              <RowEditor
+                key={rowId}
+                row={row}
+                index={index}
+                variables={variables}
+                listId={listId}
+                canRemove={model.rows.length > 1}
+                isAlive={() => idsRef.current.includes(rowId)}
+                onChange={(patch) =>
+                  update((prev) => {
+                    // Строку ищем по id, а не по номеру: после удаления соседних номера сдвигаются
+                    const at = idsRef.current.indexOf(rowId);
+                    return at === -1
+                      ? prev
+                      : {
+                          ...prev,
+                          rows: prev.rows.map((r, i) => (i === at ? { ...r, ...patch } : r)),
+                        };
+                  })
+                }
+                onRemove={() => {
+                  const at = idsRef.current.indexOf(rowId);
+                  if (at === -1) return;
+                  idsRef.current = idsRef.current.filter((_, i) => i !== at);
+                  update((prev) => ({ ...prev, rows: prev.rows.filter((_, i) => i !== at) }));
+                  // Цель «Вставить» исчезнувшей строки сбрасываем сразу
+                  if (target && !target.isAlive()) setTarget(null);
+                }}
+              />
+            );
+          })}
           <div className="flex items-center gap-2">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() =>
+              onClick={() => {
+                idsRef.current = [...idsRef.current, newId()];
                 update((prev) => ({
                   ...prev,
                   rows: [...prev.rows, { variable: '', op: 'eq', value: '' }],
-                }))
-              }
+                }));
+              }}
             >
               <Plus className="size-4" />
               {t.add}
             </Button>
             {model.rows.length > 1 && (
-              <NativeSelect
-                aria-label={t.join}
+              <GroupedSelect
+                ariaLabel={t.join}
                 value={model.join}
-                onChange={(event) =>
-                  update((prev) => ({ ...prev, join: event.target.value as ConditionJoin }))
+                groups={JOIN_SELECT_GROUPS}
+                onValueChange={(join) =>
+                  update((prev) => ({ ...prev, join: join as ConditionJoin }))
                 }
-              >
-                <option value="and">{t.all}</option>
-                <option value="or">{t.any}</option>
-              </NativeSelect>
+              />
             )}
           </div>
           {builderIssue && (

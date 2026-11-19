@@ -75,9 +75,9 @@ export function Canvas({
         <MiniMap
           pannable
           zoomable
-          bgColor="var(--card)"
-          maskColor="color-mix(in oklab, var(--muted-foreground) 25%, transparent)"
-          className="!border !border-border"
+          bgColor="color-mix(in oklab, var(--card) 60%, transparent)"
+          maskColor="color-mix(in oklab, var(--muted-foreground) 15%, transparent)"
+          className="!border !border-border rounded-md overflow-hidden backdrop-blur-sm opacity-75 transition-[opacity,background-color] hover:opacity-100 hover:!bg-card"
           nodeColor={(node) => BLOCK_META[(node as BlockNodeType).data.type].color}
         />
       </ReactFlow>

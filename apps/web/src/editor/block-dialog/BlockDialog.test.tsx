@@ -194,6 +194,15 @@ describe('BlockDialog', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('«Результат» в поле настроек использует тестовые значения из колонки «Вход»', () => {
+    render(<Harness nodeId="msg" />);
+    fireEvent.change(screen.getByLabelText(/Тестовое значение: name/), {
+      target: { value: 'Анна' },
+    });
+    fireEvent.focus(screen.getByLabelText(ru.fields.text));
+    expect(screen.getByTestId('result-value').textContent).toBe('Здравствуйте, Анна!');
+  });
+
   it('«Вставить» ставит переменную в шаблон по позиции курсора', async () => {
     render(<Harness nodeId="msg" />);
     const editor = screen.getByLabelText(ru.fields.text);

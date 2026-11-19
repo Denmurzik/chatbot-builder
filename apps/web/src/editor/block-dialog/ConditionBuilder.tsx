@@ -345,6 +345,7 @@ export function ConditionBuilder({ expression, onChange, variables }: ConditionF
           variables={variables}
           envNames={[]}
           ariaLabel={ru.fields.expression}
+          resultKind="condition"
           onCreateEditor={onCreateEditor}
         />
       )}

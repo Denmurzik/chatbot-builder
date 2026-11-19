@@ -1,5 +1,6 @@
 import type { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 import { ru } from '@/i18n/ru';
+import { docNode, operatorDoc, variableInfoText, variableNode } from './docs';
 
 const t = ru.fieldInput;
 
@@ -18,18 +19,45 @@ const OPERATORS: ReadonlyArray<{ label: string; detail: string }> = [
   { label: 'false', detail: t.operators.false },
 ];
 
+// Данные для документации подсказок переменных: тестовые значения и блоки-источники
+export interface CompletionDocs {
+  testValues?: Record<string, string>;
+  sources?: Record<string, string>;
+}
+
+function hasOwn(values: Record<string, string> | undefined, name: string): boolean {
+  return values !== undefined && Object.prototype.hasOwnProperty.call(values, name);
+}
+
+// Панель info для переменной: «из блока „…“, тестовое значение: …»
+function variableInfo(name: string, docs: CompletionDocs | undefined): () => Node {
+  return () =>
+    variableNode(
+      name,
+      variableInfoText(
+        hasOwn(docs?.sources, name) ? docs?.sources?.[name] : undefined,
+        hasOwn(docs?.testValues, name) ? docs?.testValues?.[name] : undefined,
+      ),
+    );
+}
+
 // Убирает пустые имена и дубликаты, сохраняя порядок
 function uniqueNames(names: readonly string[]): string[] {
   return [...new Set(names.filter((name) => name.length > 0))];
 }
 
 // Подсказки для выражения: переменные, {{env.ИМЯ}}, операторы и литералы
-export function buildCompletions(variables: readonly string[], envNames: readonly string[]): Completion[] {
+export function buildCompletions(
+  variables: readonly string[],
+  envNames: readonly string[],
+  docs?: CompletionDocs,
+): Completion[] {
   return [
     ...uniqueNames(variables).map<Completion>((name) => ({
       label: name,
       type: 'variable',
       detail: t.variableDetail,
+      info: variableInfo(name, docs),
     })),
     ...uniqueNames(envNames).map<Completion>((name) => ({
       label: `{{env.${name}}}`,
@@ -40,6 +68,7 @@ export function buildCompletions(variables: readonly string[], envNames: readonl
       label: op.label,
       type: op.label === 'true' || op.label === 'false' ? 'keyword' : 'operator',
       detail: op.detail,
+      info: () => docNode(operatorDoc(op.label)!),
     })),
   ];
 }
@@ -48,12 +77,14 @@ export function buildCompletions(variables: readonly string[], envNames: readonl
 export function buildTemplateCompletions(
   variables: readonly string[],
   envNames: readonly string[],
+  docs?: CompletionDocs,
 ): Completion[] {
   return [
     ...uniqueNames(variables).map<Completion>((name) => ({
       label: name,
       type: 'variable',
       detail: t.variableDetail,
+      info: variableInfo(name, docs),
     })),
     ...uniqueNames(envNames).map<Completion>((name) => ({
       label: `env.${name}`,
@@ -67,8 +98,9 @@ export function buildTemplateCompletions(
 export function createExpressionCompletionSource(
   variables: readonly string[],
   envNames: readonly string[],
+  docs?: CompletionDocs,
 ): (context: CompletionContext) => CompletionResult | null {
-  const options = buildCompletions(variables, envNames);
+  const options = buildCompletions(variables, envNames, docs);
   return (context) => {
     const word = context.matchBefore(/\{\{[\w.]*|[A-Za-z_]\w*|[=!<>&|]+/);
     if (!word && !context.explicit) return null;
@@ -80,8 +112,9 @@ export function createExpressionCompletionSource(
 export function createTemplateCompletionSource(
   variables: readonly string[],
   envNames: readonly string[],
+  docs?: CompletionDocs,
 ): (context: CompletionContext) => CompletionResult | null {
-  const items = buildTemplateCompletions(variables, envNames);
+  const items = buildTemplateCompletions(variables, envNames, docs);
   return (context) => {
     const match = context.matchBefore(/\{\{\s*[\w.]*/);
     if (!match) return null;

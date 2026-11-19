@@ -1,5 +1,19 @@
-import { EditorState, Transaction, type ChangeSpec, type Extension, type Range } from '@codemirror/state';
-import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from '@codemirror/view';
+import {
+  EditorState,
+  Prec,
+  Transaction,
+  type ChangeSpec,
+  type Extension,
+  type Range,
+} from '@codemirror/state';
+import {
+  Decoration,
+  EditorView,
+  ViewPlugin,
+  keymap,
+  type DecorationSet,
+  type ViewUpdate,
+} from '@codemirror/view';
 
 // Тема в токенах shadcn: работает и в светлой, и в тёмной теме через CSS-переменные
 export function fieldTheme(multiline: boolean): Extension {
@@ -37,8 +51,33 @@ export function fieldTheme(multiline: boolean): Extension {
       textUnderlineOffset: '3px',
     },
     '.cm-expr-op': { color: 'var(--muted-foreground)', fontWeight: '600' },
-    '.cm-expr-number, .cm-expr-keyword': { color: 'var(--chart-1, var(--primary))' },
+    '.cm-expr-number': { color: 'var(--chart-1, var(--primary))' },
+    '.cm-expr-keyword': { color: 'var(--chart-4, var(--primary))', fontWeight: '600' },
     '.cm-expr-string': { color: 'var(--chart-2, var(--primary))' },
+    '.cm-expr-env': { color: 'var(--chart-3, var(--primary))' },
+    '.cm-expr-var': {
+      color: 'var(--primary)',
+      backgroundColor: 'color-mix(in oklab, var(--primary) 12%, transparent)',
+      borderRadius: '4px',
+      padding: '0 0.15rem',
+    },
+    '.cm-expr-var-unknown': {
+      textDecoration: 'underline wavy var(--destructive)',
+      textUnderlineOffset: '3px',
+    },
+    '.cm-doc': { padding: '0.25rem 0.5rem', maxWidth: '18rem', fontSize: '0.8125rem' },
+    '.cm-doc-signature': {
+      fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
+      fontWeight: '600',
+    },
+    '.cm-doc-description': { margin: '0.25rem 0' },
+    '.cm-doc-label': { color: 'var(--muted-foreground)', fontSize: '0.75rem' },
+    '.cm-doc-example': {
+      fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
+      backgroundColor: 'var(--muted)',
+      borderRadius: '4px',
+      padding: '0 0.25rem',
+    },
     '.cm-tooltip': {
       border: '1px solid var(--border)',
       backgroundColor: 'var(--popover)',
@@ -52,6 +91,34 @@ export function fieldTheme(multiline: boolean): Extension {
     '.cm-completionDetail': { marginLeft: '0.75rem', fontStyle: 'normal', opacity: '0.7' },
   });
 }
+
+// Ввод «{{» в шаблоне сам ставит «}}» и оставляет курсор между скобками
+export const templateAutoClose: Extension = EditorView.inputHandler.of((view, from, to, text) => {
+  if (text !== '{' || from !== to || from === 0) return false;
+  if (view.state.sliceDoc(from - 1, from) !== '{') return false;
+  // Уже «{{» перед курсором (третья скобка) или «}}» сразу после — не дублируем
+  if (from >= 2 && view.state.sliceDoc(from - 2, from) === '{{') return false;
+  if (view.state.sliceDoc(from, from + 2) === '}}') return false;
+  view.dispatch({
+    changes: { from, to, insert: '{}}' },
+    selection: { anchor: from + 1 },
+    userEvent: 'input.type',
+  });
+  return true;
+});
+
+// Однострочное поле: переводы строк в начальном значении заменяются пробелами
+export function toSingleLine(value: string): string {
+  return value.replace(/\r\n|\r|\n/g, ' ');
+}
+
+// Однострочное поле: Enter ничего не делает (перевод строки недопустим)
+export const singleLineEnter: Extension = Prec.high(keymap.of([{ key: 'Enter', run: () => true }]));
+
+// Отступ справа под кнопку «развернуть»
+export const expandPadding: Extension = EditorView.theme({
+  '.cm-scroller': { paddingRight: '1.75rem' },
+});
 
 // Однострочное поле: переводы строки во вставляемом тексте заменяются пробелами.
 // Длина вставки сохраняется (CRLF считается одним переводом строки), поэтому выделение остаётся валидным

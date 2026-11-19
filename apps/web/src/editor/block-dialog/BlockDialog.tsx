@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { ru } from '@/i18n/ru';
 import { cn } from '@/lib/utils';
 import { BLOCK_META } from '../block-meta';
+import { FieldContext } from '../fields/field-context';
 import { flowToScenario, type BlockNode, type BlockNodeData } from '../convert';
 import { InputPane } from './InputPane';
 import { InsertContext, type InsertTarget } from './insert-target';
@@ -88,6 +89,16 @@ function DialogBody({
     [nodes, edges, node.id],
   );
   const titles = useMemo(() => new Map(nodes.map((n) => [n.id, n.data.title])), [nodes]);
+  // Тестовые значения и блоки-источники для «Результата» и документации подсказок в полях
+  const fieldContext = useMemo(
+    () => ({
+      testValues,
+      sources: Object.fromEntries(
+        variables.map((variable) => [variable.name, titles.get(variable.sourceBlockId) ?? '']),
+      ),
+    }),
+    [testValues, variables, titles],
+  );
   const meta = BLOCK_META[node.data.type];
   const Icon = meta.icon;
 
@@ -130,11 +141,13 @@ function DialogBody({
             />
           </Column>
           <Column title={t.settings}>
-            <SettingsPane
-              data={node.data}
-              variables={variables.map((variable) => variable.name)}
-              onChange={(data) => onChange(node.id, data)}
-            />
+            <FieldContext.Provider value={fieldContext}>
+              <SettingsPane
+                data={node.data}
+                variables={variables.map((variable) => variable.name)}
+                onChange={(data) => onChange(node.id, data)}
+              />
+            </FieldContext.Provider>
           </Column>
           <Column title={t.output} side>
             <OutputPane node={node} nodes={nodes} edges={edges} testValues={testValues} />

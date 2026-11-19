@@ -1,5 +1,6 @@
 import type { EditorView } from '@codemirror/view';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { EditorView as CmView, runScopeHandlers } from '@codemirror/view';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { setupCodeMirrorJsdom } from './cm-test-setup';
 import { ExpressionInput } from './ExpressionInput';
@@ -202,5 +203,128 @@ describe('ExpressionInput', () => {
     const alert = screen.getByRole('alert');
     expect(content.getAttribute('aria-invalid')).toBe('true');
     expect(content.getAttribute('aria-describedby')).toBe(alert.id);
+  });
+
+  it('Enter в однострочном поле перехватывается и ничего не делает', () => {
+    let view: EditorView | null = null;
+    render(
+      <ExpressionInput
+        value="a"
+        onChange={vi.fn()}
+        variables={['a']}
+        envNames={[]}
+        onCreateEditor={(v) => {
+          view = v;
+        }}
+      />,
+    );
+    const handled = runScopeHandlers(
+      view!,
+      new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13 }),
+      'editor',
+    );
+    expect(handled).toBe(true);
+    expect(view!.state.doc.toString()).toBe('a');
+  });
+
+  it('Tab не обрабатывается: фокус уходит из поля, отступ не ставится', () => {
+    let view: EditorView | null = null;
+    render(
+      <ExpressionInput
+        value="a"
+        onChange={vi.fn()}
+        variables={['a']}
+        envNames={[]}
+        onCreateEditor={(v) => {
+          view = v;
+        }}
+      />,
+    );
+    const handled = runScopeHandlers(
+      view!,
+      new KeyboardEvent('keydown', { key: 'Tab', keyCode: 9 }),
+      'editor',
+    );
+    expect(handled).toBe(false);
+  });
+
+  it('начальное значение с переводами строк нормализуется в пробелы', () => {
+    let view: EditorView | null = null;
+    render(
+      <ExpressionInput
+        value={'a\n&& b'}
+        onChange={vi.fn()}
+        variables={['a', 'b']}
+        envNames={[]}
+        onCreateEditor={(v) => {
+          view = v;
+        }}
+      />,
+    );
+    expect(view!.state.doc.toString()).toBe('a && b');
+  });
+
+  it('ввод кавычки ставит парную', () => {
+    let view: EditorView | null = null;
+    render(
+      <ExpressionInput
+        value="name == "
+        onChange={vi.fn()}
+        variables={['name']}
+        envNames={[]}
+        onCreateEditor={(v) => {
+          view = v;
+        }}
+      />,
+    );
+    act(() => view!.dispatch({ selection: { anchor: 8 } }));
+    act(() => {
+      const handled = view!.state
+        .facet(CmView.inputHandler)
+        .some((handler) => handler(view!, 8, 8, '"', () => view!.state.update({})));
+      expect(handled).toBe(true);
+    });
+    expect(view!.state.doc.toString()).toBe('name == ""');
+  });
+
+  it('подсветка: переменная, неизвестная переменная, строка, число, оператор, литерал разными классами', () => {
+    const { container } = render(
+      <ExpressionInput
+        value={'name == "Аня" && tries < 3 && ghost && true'}
+        onChange={vi.fn()}
+        variables={['name', 'tries']}
+        envNames={[]}
+      />,
+    );
+    expect(container.querySelector('.cm-expr-var')?.textContent).toBe('name');
+    expect(container.querySelector('.cm-expr-var-unknown')?.textContent).toBe('ghost');
+    expect(container.querySelector('.cm-expr-string')?.textContent).toBe('"Аня"');
+    expect(container.querySelector('.cm-expr-number')?.textContent).toBe('3');
+    expect(container.querySelector('.cm-expr-op')).not.toBeNull();
+    expect(container.querySelector('.cm-expr-keyword')?.textContent).toBe('true');
+  });
+
+  it('показывает маркер fx и «Результат» только в фокусе', () => {
+    const { container } = render(
+      <ExpressionInput
+        value="tries < 3"
+        onChange={vi.fn()}
+        variables={['tries']}
+        envNames={[]}
+        testValues={{ tries: '1' }}
+      />,
+    );
+    expect(screen.getByText('fx')).toBeTruthy();
+    expect(screen.queryByTestId('result-value')).toBeNull();
+    fireEvent.focus(container.querySelector('.cm-content') as HTMLElement);
+    expect(screen.getByTestId('result-value').textContent).toBe('да');
+  });
+
+  it('кнопка «развернуть» открывает большой редактор', () => {
+    render(
+      <ExpressionInput value="tries < 3" onChange={vi.fn()} variables={['tries']} envNames={[]} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Развернуть редактор' }));
+    expect(screen.getByRole('dialog')).toBeTruthy();
   });
 });

@@ -1,5 +1,6 @@
 import type { EditorView } from '@codemirror/view';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { EditorView as CmView, runScopeHandlers } from '@codemirror/view';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { setupCodeMirrorJsdom } from './cm-test-setup';
 import { TemplateInput } from './TemplateInput';
@@ -115,5 +116,93 @@ describe('TemplateInput', () => {
     expect(content.getAttribute('role')).toBe('textbox');
     expect(content.getAttribute('aria-labelledby')).toBe('lbl');
     expect(content.getAttribute('aria-multiline')).toBe('true');
+  });
+
+  // Имитация набора символа: вызываем обработчики ввода CodeMirror так же, как при вводе с клавиатуры
+  function typeChar(view: EditorView, char: string): void {
+    const { from, to } = view.state.selection.main;
+    act(() => {
+      const handled = view.state
+        .facet(CmView.inputHandler)
+        .some((handler) => handler(view, from, to, char, () => view.state.update({})));
+      if (!handled) {
+        view.dispatch({ changes: { from, to, insert: char }, selection: { anchor: from + 1 } });
+      }
+    });
+  }
+
+  it('ввод «{{» ставит «}}» и курсор между скобками', () => {
+    let view: EditorView | null = null;
+    render(
+      <TemplateInput
+        value="Привет, "
+        onChange={vi.fn()}
+        variables={['name']}
+        envNames={[]}
+        onCreateEditor={(v) => {
+          view = v;
+        }}
+      />,
+    );
+    act(() => view!.dispatch({ selection: { anchor: 8 } }));
+    typeChar(view!, '{');
+    expect(view!.state.doc.toString()).toBe('Привет, {');
+    typeChar(view!, '{');
+    expect(view!.state.doc.toString()).toBe('Привет, {{}}');
+    expect(view!.state.selection.main.head).toBe(10);
+  });
+
+  it('Tab не обрабатывается редактором: фокус уходит из поля, отступ не ставится', () => {
+    let view: EditorView | null = null;
+    render(
+      <TemplateInput
+        value="a"
+        onChange={vi.fn()}
+        variables={[]}
+        envNames={[]}
+        multiline
+        onCreateEditor={(v) => {
+          view = v;
+        }}
+      />,
+    );
+    const handled = runScopeHandlers(
+      view!,
+      new KeyboardEvent('keydown', { key: 'Tab', keyCode: 9 }),
+      'editor',
+    );
+    expect(handled).toBe(false);
+    expect(view!.state.doc.toString()).toBe('a');
+  });
+
+  it('значение с переводами строк в однострочном поле показывается с пробелами', () => {
+    let view: EditorView | null = null;
+    render(
+      <TemplateInput
+        value={'a\nb'}
+        onChange={vi.fn()}
+        variables={[]}
+        envNames={[]}
+        onCreateEditor={(v) => {
+          view = v;
+        }}
+      />,
+    );
+    expect(view!.state.doc.toString()).toBe('a b');
+  });
+
+  it('фокус показывает «Результат» с подставленным тестовым значением', () => {
+    const { container } = render(
+      <TemplateInput
+        value="Привет, {{name}}"
+        onChange={vi.fn()}
+        variables={['name']}
+        envNames={[]}
+        testValues={{ name: 'Аня' }}
+      />,
+    );
+    expect(screen.queryByTestId('result-value')).toBeNull();
+    fireEvent.focus(container.querySelector('.cm-content') as HTMLElement);
+    expect(screen.getByTestId('result-value').textContent).toBe('Привет, Аня');
   });
 });

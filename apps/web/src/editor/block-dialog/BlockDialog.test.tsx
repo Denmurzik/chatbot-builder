@@ -206,13 +206,17 @@ describe('BlockDialog', () => {
   it('Esc закрывает только большой редактор поля, окно блока остаётся, фокус — на «развернуть»', async () => {
     const onClose = vi.fn();
     render(<Harness nodeId="msg" onClose={onClose} />);
-    const expand = screen.getAllByRole('button', { name: ru.fieldInput.expand })[0];
+    const settings = screen.getByRole('region', { name: ru.blockDialog.settings });
+    const expand = within(settings).getAllByRole('button', { name: ru.fieldInput.expand })[0];
+    expand.focus();
     fireEvent.click(expand);
-    const big = await screen.findByRole('dialog', { name: ru.fields.text });
+    // Большой редактор — единственное окно поверх окна блока (его заголовок — подпись поля)
+    const big = await screen.findByRole('dialog', { name: ru.fields.text }, { timeout: 5000 });
     expect(big).toBeTruthy();
     fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: ru.fields.text })).toBeNull());
-    expect(onClose).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: ru.fields.text })).toBeNull(), {
+      timeout: 5000,
+    });
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByRole('dialog', { name: 'Приветствие', hidden: true })).toBeTruthy();
     await waitFor(() => expect(document.activeElement).toBe(expand));

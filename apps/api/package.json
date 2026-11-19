@@ -2,12 +2,12 @@
   "name": "@chatbot/api",
   "version": "0.1.0",
   "private": true,
-  "main": "./dist/index.js",
+  "main": "./dist/main.js",
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
-    "dev": "tsx watch src/index.ts",
-    "start": "node dist/index.js",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
     "test": "vitest run --root ../.. --project api apps/api"
   },
   "dependencies": {

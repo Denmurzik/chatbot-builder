@@ -37,7 +37,7 @@ import {
   type BlockNodeData,
 } from './convert';
 import { layoutScenario } from './layout';
-import { NODE_HEIGHT, NODE_WIDTH, snapToGrid } from './placement';
+import { NODE_HEIGHT, NODE_WIDTH, findFreeSpot, snapToGrid } from './placement';
 import { nodeIssues } from './validate';
 import { FirstStepCard, WelcomeOverlay } from './onboarding/EmptyState';
 import type { ScenarioTemplate } from './onboarding/templates';
@@ -46,6 +46,9 @@ import { addFree, addFromOutput, insertOnEdge, type GraphResult } from './picker
 import { nextBlockId } from './ids';
 import { sameSnapshot, snapshotOf, useHistory, type Snapshot } from './history';
 import { ShortcutsHelp } from './ShortcutsHelp';
+
+// Окно, в пределах которого серия сдвигов стрелками считается одним действием
+const KEY_MOVE_SERIES_MS = 500;
 
 // Выбор и размеры узлов не меняют сценарий — не считаем их несохранёнными изменениями
 function isMeaningfulNodeChange(change: NodeChange<BlockNode>): boolean {
@@ -63,12 +66,14 @@ function isBlankFlow(nodes: BlockNode[], edges: Edge[]): boolean {
   return nodes.length === 1 && nodes[0]!.data.type === 'ENTRY_POINT' && edges.length === 0;
 }
 
-// Фокус не в поле ввода: Tab открывает панель только с холста или «пустого» места
+// Tab открывает панель только с «пустого» места: фокус на body, самом холсте или его фоне
+// (на кнопках, ссылках и полях Tab остаётся обычным переходом по фокусу)
 function isFocusOnCanvasOrBody(): boolean {
   const active = document.activeElement;
+  if (active === document.body || active === null) return true;
   return (
-    active === document.body ||
-    (active instanceof Element && active.closest('.react-flow') !== null)
+    active instanceof Element &&
+    (active.classList.contains('react-flow') || active.classList.contains('react-flow__pane'))
   );
 }
 
@@ -143,6 +148,8 @@ function ScenarioEditor({
   // Базовые снимки: начало перетаскивания и открытие окна блока (шаг — по итогу)
   const dragBaseRef = useRef<Snapshot | null>(null);
   const dialogBaseRef = useRef<Snapshot | null>(null);
+  // Время последнего сдвига стрелками: серия нажатий в пределах 500 мс — один шаг истории
+  const keyMoveAtRef = useRef(0);
 
   const blank = isBlankFlow(nodes, edges);
   const showWelcome = welcomePending && blank;
@@ -187,6 +194,15 @@ function ScenarioEditor({
   const handleNodesChange = useCallback(
     (changes: NodeChange<BlockNode>[]) => {
       if (changes.some((change) => change.type === 'remove')) record();
+      // Сдвиг стрелками клавиатуры (не перетаскивание): шаг истории на серию нажатий
+      if (
+        dragBaseRef.current === null &&
+        changes.some((change) => change.type === 'position' && !change.dragging)
+      ) {
+        const now = Date.now();
+        if (now - keyMoveAtRef.current > KEY_MOVE_SERIES_MS) record();
+        keyMoveAtRef.current = now;
+      }
       const next = applyNodeChanges(changes, nodesRef.current);
       commitNodes(next);
       // Удаление блока убирает и его рёбра
@@ -243,8 +259,10 @@ function ScenarioEditor({
       result = addFromOutput(nodes, edges, target, type, point);
     } else if (target.kind === 'edge') {
       result = insertOnEdge(nodes, edges, target.edgeId, type, point);
+      if (!edges.some((edge) => edge.id === target.edgeId)) toast.error(ru.editor.edgeGone);
     } else {
-      result = addFree(nodes, edges, type, point ?? visibleCenter());
+      // Кнопка «+» и Tab кладут блок в центр вида, но не поверх других блоков
+      result = addFree(nodes, edges, type, point ?? findFreeSpot(nodes, visibleCenter()));
     }
     if (result) applyGraph(result);
     setPicker(null);
@@ -405,7 +423,7 @@ function ScenarioEditor({
       return;
     }
     const sentRevision = revisionRef.current;
-    save.mutate(scenario, {
+    save.mutate(parsed.data, {
       onSuccess: () => {
         // Если граф менялся, пока шёл запрос, изменения остаются несохранёнными
         if (revisionRef.current === sentRevision) setDirty(false);
@@ -467,13 +485,14 @@ function ScenarioEditor({
       if (event.key !== 'Tab' || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) {
         return;
       }
-      if (!isFocusOnCanvasOrBody()) return;
+      // Под оверлеем приветствия и пока открыто окно или панель Tab не трогаем
+      if (showWelcome || overlayOpen || !isFocusOnCanvasOrBody()) return;
       event.preventDefault();
       setPicker({ kind: 'free' });
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [showWelcome, overlayOpen]);
 
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>

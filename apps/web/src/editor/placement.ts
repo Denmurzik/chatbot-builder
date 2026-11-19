@@ -80,6 +80,14 @@ function searchFree(boxes: Box[], start: { x: number; y: number }, columnTop: nu
   return { x: candidate.x, y: candidate.y };
 }
 
+// Ближайшее свободное место от точки start (по сетке): вниз, затем в следующие колонки
+export function findFreeSpot(
+  nodes: readonly PlacedNode[],
+  start: { x: number; y: number },
+): { x: number; y: number } {
+  return searchFree(nodes.map(boxOf), start, snapUp(start.y));
+}
+
 // Новый блок — справа от источника; если место занято, сдвиг вниз, затем вправо
 export function placeNear(
   source: PlacedNode,

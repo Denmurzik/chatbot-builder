@@ -4,6 +4,7 @@ import {
   NODE_HEIGHT,
   NODE_WIDTH,
   findFreePosition,
+  findFreeSpot,
   placeNear,
   snapToGrid,
 } from './placement';
@@ -79,5 +80,16 @@ describe('findFreePosition', () => {
       expect(nodes.some((n) => intersects(n, p))).toBe(false);
       nodes.push({ position: p });
     }
+  });
+});
+
+describe('findFreeSpot', () => {
+  it('занятое место сдвигает вниз по сетке, свободное оставляет как есть', () => {
+    const occupied = [{ position: { x: 0, y: 0 }, measured: { width: 320, height: 160 } }];
+    expect(findFreeSpot([], { x: 100, y: 100 })).toEqual({ x: 100, y: 100 });
+    const spot = findFreeSpot(occupied, { x: 20, y: 20 });
+    expect(spot.x % 20).toBe(0);
+    expect(spot.y % 20).toBe(0);
+    expect(spot.y).toBeGreaterThanOrEqual(160 + 40);
   });
 });

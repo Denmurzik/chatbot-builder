@@ -2,7 +2,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { emptyScenario, type Scenario } from '@chatbot/model';
+import { emptyScenario, scenarioSchema, type Scenario } from '@chatbot/model';
 import { ru } from '@/i18n/ru';
 import { createQueryClient } from '@/app/queryClient';
 import { EditorPage } from './EditorPage';
@@ -315,6 +315,79 @@ describe('EditorPage', () => {
       expect(saved.transitions[0]!.source).toEqual({ blockId: 'entry', output: 'default' });
     });
 
+    it('карточка первого шага принимает клики: pointer-events-auto, nodrag, nopan; клик открывает «Что дальше?»', async () => {
+      stubFetch();
+      renderEditor();
+      await screen.findByText('Старт');
+      fireEvent.click(
+        screen.getByRole('button', { name: new RegExp(ru.editor.onboarding.welcomeEmpty) }),
+      );
+      const card = await screen.findByRole('button', {
+        name: new RegExp(ru.editor.onboarding.firstStep),
+      });
+      for (const cls of ['pointer-events-auto', 'nodrag', 'nopan']) {
+        expect(card.classList.contains(cls)).toBe(true);
+      }
+      fireEvent.click(card);
+      expect(await screen.findByText(ru.editor.picker.title)).toBeTruthy();
+    });
+
+    it('Tab открывает панель только с body или холста, не с кнопки и не под приветствием', async () => {
+      stubFetch(chain);
+      renderEditor();
+      await screen.findByText('Привет');
+
+      // Фокус на кнопке: Tab остаётся обычным переходом
+      const button = screen.getByRole('button', { name: ru.editor.addBlock });
+      button.focus();
+      fireEvent.keyDown(button, { key: 'Tab', code: 'Tab' });
+      expect(screen.queryByTestId('node-picker')).toBeNull();
+
+      // Фокус на фоне холста: панель открывается
+      (document.activeElement as HTMLElement | null)?.blur();
+      fireEvent.keyDown(document.body, { key: 'Tab', code: 'Tab' });
+      expect(await screen.findByTestId('node-picker')).toBeTruthy();
+    });
+
+    it('Tab не открывает панель под оверлеем приветствия', async () => {
+      stubFetch();
+      renderEditor();
+      await screen.findByText(ru.editor.onboarding.welcomeTitle);
+      fireEvent.keyDown(document.body, { key: 'Tab', code: 'Tab' });
+      expect(screen.queryByTestId('node-picker')).toBeNull();
+    });
+
+    it('«+» холста ставит блок на свободное место, а не поверх существующего', async () => {
+      const fetchMock = stubFetch(chain);
+      renderEditor();
+      await screen.findByText('Привет');
+      // Блоки без размеров в jsdom считаются 320×160; центр вида — (0, 0) по умолчанию
+      fireEvent.click(screen.getByRole('button', { name: ru.editor.addBlock }));
+      fireEvent.click(await screen.findByRole('button', { name: /^Сообщение/ }));
+      await waitFor(() => expect(screen.queryByTestId('node-picker')).toBeNull());
+
+      const saved = await savedScenario(fetchMock);
+      const created = saved.blocks.find((b) => b.id !== 'entry' && b.id !== 'msg_1')!;
+      const overlaps = saved.blocks
+        .filter((b) => b.id !== created.id)
+        .some(
+          (b) =>
+            created.x < b.x + 320 &&
+            b.x < created.x + 320 &&
+            created.y < b.y + 160 &&
+            b.y < created.y + 160,
+        );
+      expect(overlaps).toBe(false);
+    });
+
+    it('сохранение отправляет данные, очищенные схемой', async () => {
+      const fetchMock = stubFetch(chain);
+      renderEditor();
+      await screen.findByText('Привет');
+      const saved = await savedScenario(fetchMock);
+      expect(saved).toEqual(scenarioSchema.parse(saved));
+    });
+
     it('шаблон «Запись к врачу» заменяет пустой сценарий', async () => {
       const fetchMock = stubFetch();
       renderEditor();
@@ -357,6 +430,38 @@ describe('EditorPage', () => {
 
       fireEvent.keyDown(window, { key: 'я', code: 'KeyZ', ctrlKey: true });
       await waitFor(() => expect(document.querySelectorAll('.react-flow__edge')).toHaveLength(1));
+    });
+  });
+
+  describe('сдвиг блока стрелками', () => {
+    const scenario: Scenario = {
+      formatVersion: 1,
+      blocks: [
+        { id: 'entry', type: 'ENTRY_POINT', title: 'Старт', x: 0, y: 0 },
+        { id: 'msg_1', type: 'TEXT_MESSAGE', title: 'Привет', text: 'Здравствуйте', x: 400, y: 0 },
+      ],
+      transitions: [{ source: { blockId: 'entry', output: 'default' }, target: 'msg_1' }],
+    };
+
+    it('серия нажатий — один шаг истории: одна отмена возвращает блок', async () => {
+      stubLayout();
+      const fetchMock = stubFetch(scenario);
+      renderEditor();
+      fireEvent.click(await screen.findByText('Привет'));
+      const node = document.querySelector<HTMLElement>('.react-flow__node[data-id="msg_1"]')!;
+      node.focus();
+      for (let i = 0; i < 3; i += 1)
+        fireEvent.keyDown(node, { key: 'ArrowRight', code: 'ArrowRight' });
+      await waitFor(() => expect(screen.getByText(ru.editor.unsaved)).toBeTruthy());
+
+      fireEvent.keyDown(window, { key: 'я', code: 'KeyZ', ctrlKey: true });
+      fireEvent.keyDown(window, { key: 's', code: 'KeyS', ctrlKey: true });
+      await waitFor(() =>
+        expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(true),
+      );
+      const call = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT')!;
+      const saved = JSON.parse(String(call[1]!.body)) as Scenario;
+      expect(saved.blocks.find((b) => b.id === 'msg_1')!.x).toBe(400);
     });
   });
 

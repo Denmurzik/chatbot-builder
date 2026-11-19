@@ -60,6 +60,7 @@ export const ru = {
     autoLayout: 'Упорядочить',
     autoLayoutHint: 'Расставить блоки слева направо',
     addBlock: 'Добавить блок',
+    edgeGone: 'Связь уже удалена',
     undo: 'Отменить',
     redo: 'Повторить',
     blockErrors: (count: number) => `Ошибок в блоке: ${count}`,
@@ -67,7 +68,7 @@ export const ru = {
     shortcuts: {
       open: 'Горячие клавиши',
       title: 'Горячие клавиши',
-      description: 'Работают, когда фокус на холсте',
+      description: 'Горячие клавиши редактора',
       items: [
         { keys: 'Ctrl+S', action: 'Сохранить сценарий' },
         { keys: 'Ctrl+Z', action: 'Отменить действие' },

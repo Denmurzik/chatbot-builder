@@ -3,8 +3,10 @@ import type { EventQueue } from '@chatbot/queue';
 import { Module } from '@nestjs/common';
 import { EVENT_QUEUE, PRISMA } from '../infra/tokens';
 import { ExternalApiClient } from './external-api-client';
+import { HttpRequestExecutor } from './http-request-executor';
 import { HttpRequestLauncher, NoopHttpRequestLauncher } from './http-request-launcher';
 import { QueueHttpResultSink } from './queue-http-result-sink';
+import { ResponseParser } from './response-parser';
 
 @Module({
   providers: [
@@ -19,8 +21,16 @@ import { QueueHttpResultSink } from './queue-http-result-sink';
       inject: [QueueHttpResultSink],
       useFactory: (sink: QueueHttpResultSink) => new ExternalApiClient(sink),
     },
+    ResponseParser,
+    HttpRequestExecutor,
     { provide: HttpRequestLauncher, useClass: NoopHttpRequestLauncher },
   ],
-  exports: [ExternalApiClient, QueueHttpResultSink, HttpRequestLauncher],
+  exports: [
+    ExternalApiClient,
+    QueueHttpResultSink,
+    ResponseParser,
+    HttpRequestExecutor,
+    HttpRequestLauncher,
+  ],
 })
 export class HttpModule {}

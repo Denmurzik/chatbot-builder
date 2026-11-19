@@ -1,5 +1,12 @@
 import { Prisma } from '@chatbot/db';
-import { parseScenario, type Scenario } from '@chatbot/model';
+import {
+  NotImplementedError,
+  parseScenario,
+  type Block,
+  type BlockType,
+  type Scenario,
+  type Transition,
+} from '@chatbot/model';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ZodError } from 'zod';
 import { createValidationException } from '../common/zod-body.pipe';
@@ -56,5 +63,26 @@ export class ScenarioEditor {
       }
       throw err;
     }
+  }
+
+  // Операции модели BCE (редактирование графа выполняется на клиенте и сохраняется целиком; UC-A-05..A-19, спринт 2)
+  addBlock(_scenario: Scenario, _type: BlockType, _x: number, _y: number): Block {
+    throw new NotImplementedError('ScenarioEditor.addBlock');
+  }
+
+  updateBlockSettings(_block: Block, _settings: Record<string, unknown>): void {
+    throw new NotImplementedError('ScenarioEditor.updateBlockSettings');
+  }
+
+  deleteBlock(_block: Block): void {
+    throw new NotImplementedError('ScenarioEditor.deleteBlock');
+  }
+
+  connect(_output: { blockId: string; output: string }, _target: Block): Transition {
+    throw new NotImplementedError('ScenarioEditor.connect');
+  }
+
+  deleteTransition(_transition: Transition): void {
+    throw new NotImplementedError('ScenarioEditor.deleteTransition');
   }
 }

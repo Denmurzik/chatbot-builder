@@ -5,7 +5,7 @@ import {
   randomBytes,
   timingSafeEqual,
 } from 'node:crypto';
-import type { EncryptedSecret } from '@chatbot/model';
+import { NotImplementedError, type EncryptedSecret } from '@chatbot/model';
 
 const ALGORITHM = 'aes-256-gcm';
 const FORMAT_VERSION = 'v1';
@@ -133,6 +133,11 @@ export class SecretVault {
     } catch {
       throw new Error('Не удалось расшифровать секрет: неверный ключ, AAD или повреждённые данные');
     }
+  }
+
+  // Возвращает маскированное представление секрета (класс модели SecretVault, спринт 2)
+  mask(_secret: EncryptedSecret): string {
+    throw new NotImplementedError('SecretVault.mask');
   }
 
   // Вычисляет детерминированный HMAC-SHA-256 (hex) для проверки уникальности токена

@@ -1,3 +1,4 @@
+import { NotImplementedError } from '@chatbot/model';
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { type AuthenticatedAuthor, CurrentAuthor } from '../auth/current-author.decorator';
@@ -60,5 +61,15 @@ export class ProjectController {
     @Body() body: unknown,
   ): Promise<{ updatedAt: Date }> {
     return this.scenarioEditor.saveScenario(author.id, id, body);
+  }
+
+  // Переименование проекта (класс модели ProjectController, UC-A-04, после MVP)
+  renameProject(_projectId: string, _name: string): void {
+    throw new NotImplementedError('ProjectController.renameProject');
+  }
+
+  // Удаление проекта (класс модели ProjectController, UC-A-04, после MVP)
+  deleteProject(_projectId: string): void {
+    throw new NotImplementedError('ProjectController.deleteProject');
   }
 }

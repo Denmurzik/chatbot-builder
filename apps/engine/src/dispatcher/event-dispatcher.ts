@@ -1,4 +1,9 @@
-import { chatEventSchema } from '@chatbot/model';
+import {
+  chatEventSchema,
+  NotImplementedError,
+  type ChatEvent,
+  type EventType,
+} from '@chatbot/model';
 import { PARTITIONS, createRedisConnection, queueName, type EventQueue } from '@chatbot/queue';
 import {
   Inject,
@@ -57,6 +62,21 @@ export class EventDispatcher implements OnApplicationBootstrap, OnModuleDestroy 
     } catch (error) {
       this.logger.error(`Задание ${job.id} завершилось ошибкой`, error);
     }
+  }
+
+  // Проверка актуальности события HTTP-ответа по текущему контексту (SD-4, спринт 2)
+  isStale(_event: ChatEvent, _ctx: unknown): boolean {
+    throw new NotImplementedError('EventDispatcher.isStale');
+  }
+
+  // Рассылка служебного события по всем диалогам бота, например при переопубликации (UC-U-07, SD-6, спринт 3)
+  broadcast(_botId: string, _type: EventType): Promise<void> {
+    throw new NotImplementedError('EventDispatcher.broadcast');
+  }
+
+  // Извлечение следующего события из очереди диалога (SD-1, спринт 2)
+  takeNext(_botId: string | null, _chatId: string): ChatEvent | null {
+    throw new NotImplementedError('EventDispatcher.takeNext');
   }
 
   // Воркеры закрываются раньше Prisma и очереди (они закрываются в onApplicationShutdown InfraModule)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PARTITIONS, dialogKey, partitionOf, queueName } from './partition';
+import { PARTITIONS, dialogKey, fnv1a32, partitionOf, queueName } from './partition';
 
 // Эталонная реализация FNV-1a 32 бита по UTF-8 байтам (независимая от кода пакета)
 function referenceFnv1a(key: string): number {
@@ -38,6 +38,12 @@ describe('partition', () => {
     for (const key of ['', 'a', 'бот:чат-1', 'bot:😀']) {
       expect(partitionOf(key)).toBe(referenceFnv1a(key) % 16);
     }
+  });
+
+  it('fnv1a32 совпадает с известными векторами FNV-1a 32', () => {
+    expect(fnv1a32('')).toBe(0x811c9dc5);
+    expect(fnv1a32('a')).toBe(0xe40c292c);
+    expect(fnv1a32('foobar')).toBe(0xbf9cf968);
   });
 
   it('распределяет ключи по разным разделам', () => {

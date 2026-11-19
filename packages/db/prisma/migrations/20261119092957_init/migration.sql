@@ -122,7 +122,7 @@ ALTER TABLE "bot" ADD CONSTRAINT "bot_project_id_fkey" FOREIGN KEY ("project_id"
 ALTER TABLE "messenger_connection" ADD CONSTRAINT "messenger_connection_bot_id_fkey" FOREIGN KEY ("bot_id") REFERENCES "bot"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "dialog_context" ADD CONSTRAINT "dialog_context_bot_id_fkey" FOREIGN KEY ("bot_id") REFERENCES "bot"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "dialog_context" ADD CONSTRAINT "dialog_context_bot_id_fkey" FOREIGN KEY ("bot_id") REFERENCES "bot"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "dialog_context" ADD CONSTRAINT "dialog_context_current_request_id_fkey" FOREIGN KEY ("current_request_id") REFERENCES "http_request"("id") ON DELETE SET NULL ON UPDATE CASCADE;

@@ -103,7 +103,7 @@ model DialogContext {
   variables        Json
   currentRequestId String?       @map("current_request_id")
   updatedAt        DateTime      @updatedAt @map("updated_at")
-  bot              Bot?          @relation(fields: [botId], references: [id])
+  bot              Bot?          @relation(fields: [botId], references: [id], onDelete: Restrict)
   currentRequest   HttpRequest?  @relation("CurrentRequest", fields: [currentRequestId], references: [id])
   requests         HttpRequest[] @relation("RequestOwner")
 

@@ -12,16 +12,16 @@
       "id": "hello",
       "type": "TEXT_MESSAGE",
       "title": "Приветствие",
-      "x": 1,
-      "y": 0,
+      "x": 0,
+      "y": 160,
       "text": "Здравствуйте! Запишу вас к врачу."
     },
     {
       "id": "fio",
       "type": "TEXT_INPUT",
       "title": "ФИО",
-      "x": 2,
-      "y": 0,
+      "x": 0,
+      "y": 320,
       "question": "Как вас зовут?",
       "variableName": "fio"
     },
@@ -29,8 +29,8 @@
       "id": "doctor",
       "type": "OPTION_CHOICE",
       "title": "Выбор врача",
-      "x": 3,
-      "y": 0,
+      "x": 0,
+      "y": 480,
       "question": "К какому врачу записать, {{fio}}?",
       "options": [
         "Терапевт",
@@ -43,8 +43,8 @@
       "id": "confirm",
       "type": "OPTION_CHOICE",
       "title": "Подтверждение",
-      "x": 4,
-      "y": 0,
+      "x": 0,
+      "y": 640,
       "question": "Записать вас к врачу: {{doctor}}?",
       "options": [
         "Да",
@@ -56,24 +56,24 @@
       "id": "done",
       "type": "TEXT_MESSAGE",
       "title": "Готово",
-      "x": 5,
-      "y": 0,
+      "x": 0,
+      "y": 800,
       "text": "{{fio}}, вы записаны к врачу: {{doctor}}. Ждём вас!"
     },
     {
       "id": "cancel",
       "type": "TEXT_MESSAGE",
       "title": "Отмена",
-      "x": 6,
-      "y": 0,
+      "x": 260,
+      "y": 800,
       "text": "Запись отменена. Напишите нам снова."
     },
     {
       "id": "end",
       "type": "EXIT_POINT",
       "title": "Выход",
-      "x": 7,
-      "y": 0
+      "x": 130,
+      "y": 960
     }
   ],
   "transitions": [

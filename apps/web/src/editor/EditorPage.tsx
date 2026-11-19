@@ -37,10 +37,8 @@ import {
   type BlockNode,
   type BlockNodeData,
 } from './convert';
+import { findFreePosition } from './placement';
 import { nodeIssues } from './validate';
-
-// Сдвиг каждого следующего добавленного блока, px
-const ADD_OFFSET = 24;
 
 // Выбор и размеры узлов не меняют сценарий — не считаем их несохранёнными изменениями
 function isMeaningfulNodeChange(change: NodeChange<BlockNode>): boolean {
@@ -158,16 +156,7 @@ function ScenarioEditor({
         })
       : { x: 0, y: 0 };
     const current = nodesRef.current;
-    const position = { x: Math.round(center.x), y: Math.round(center.y) };
-    // Подряд добавленные блоки сдвигаем, чтобы они не ложились друг на друга
-    while (
-      current.some(
-        (n) => Math.abs(n.position.x - position.x) < 12 && Math.abs(n.position.y - position.y) < 12,
-      )
-    ) {
-      position.x += ADD_OFFSET;
-      position.y += ADD_OFFSET;
-    }
+    const position = findFreePosition(current, center);
     const node: BlockNode = {
       id: nextBlockId(type, current),
       type: BLOCK_NODE_TYPE,

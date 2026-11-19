@@ -4,6 +4,7 @@ import type { BlockType } from '@chatbot/model';
 import { cn } from '@/lib/utils';
 import { ru } from '@/i18n/ru';
 import { BLOCK_META } from '../block-meta';
+import { blockPreview } from '../preview';
 import { safeOutputs, type BlockNode as BlockNodeType } from '../convert';
 
 // Служебные выходы, имена которых переводим, — только для своих типов блоков
@@ -31,6 +32,7 @@ export function BlockNode({ id, data, selected }: NodeProps<BlockNodeType>) {
   const meta = BLOCK_META[data.type];
   const Icon = meta.icon;
   const outputs = safeOutputs(data);
+  const preview = blockPreview(data);
   const outputsKey = JSON.stringify(outputs);
 
   // После смены набора ручек React Flow нужно пересчитать их положение
@@ -61,6 +63,11 @@ export function BlockNode({ id, data, selected }: NodeProps<BlockNodeType>) {
           <div className="truncate text-xs text-muted-foreground">{meta.label}</div>
         </div>
       </div>
+      {preview && (
+        <div className="line-clamp-2 break-words px-3 pb-2 text-xs text-muted-foreground">
+          {preview}
+        </div>
+      )}
       {outputs.length > 0 && (
         <div className="flex flex-col border-t py-1">
           {outputs.map((output) => (

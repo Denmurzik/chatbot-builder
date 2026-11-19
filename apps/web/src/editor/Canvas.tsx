@@ -9,6 +9,7 @@ import {
   type NodeChange,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { useColorMode } from '@/app/theme';
 import { BLOCK_META } from './block-meta';
 import { BLOCK_NODE_TYPE, connectEdges, type BlockNode as BlockNodeType } from './convert';
 import { BlockNode } from './nodes/BlockNode';
@@ -41,6 +42,8 @@ export function Canvas({
   onEdgesChange,
   onEdgesReplace,
 }: CanvasProps) {
+  const colorMode = useColorMode();
+
   // Из одного выхода — один переход: новое соединение заменяет прежнее
   function handleConnect(connection: Connection) {
     const { source, sourceHandle, target } = connection;
@@ -59,9 +62,12 @@ export function Canvas({
         onConnect={handleConnect}
         deleteKeyCode="Delete"
         onBeforeDelete={async () => !isFocusInsidePanel()}
+        colorMode={colorMode}
         fitView
+        fitViewOptions={{ maxZoom: 1, padding: 0.3 }}
         minZoom={0.2}
         maxZoom={2}
+        defaultViewport={{ x: 0, y: 0, zoom: 1 }}
         proOptions={{ hideAttribution: true }}
       >
         <Background />
@@ -69,6 +75,9 @@ export function Canvas({
         <MiniMap
           pannable
           zoomable
+          bgColor="var(--card)"
+          maskColor="color-mix(in oklab, var(--muted-foreground) 25%, transparent)"
+          className="!border !border-border"
           nodeColor={(node) => BLOCK_META[(node as BlockNodeType).data.type].color}
         />
       </ReactFlow>

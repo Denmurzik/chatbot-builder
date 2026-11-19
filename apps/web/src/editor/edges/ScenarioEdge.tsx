@@ -97,7 +97,7 @@ export function ScenarioEdge({
   let path: string;
   let labelX: number;
   let labelY: number;
-  if (isBackward(sourcePoint, targetPoint)) {
+  if (isBackward(sourcePoint, targetPoint, sourceRect)) {
     ({ path, labelX, labelY } = backwardEdgePath(sourcePoint, targetPoint, sourceRect, targetRect));
   } else {
     [path, labelX, labelY] = getBezierPath({

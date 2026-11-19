@@ -10,14 +10,16 @@ export interface Rect {
   height: number;
 }
 
-// Минимальный зазор «выход источника — вход цели», при котором связь считается прямой
-export const FORWARD_GAP = 40;
+// Допуск: вход цели может быть левее выхода источника на столько пикселей и связь остаётся прямой
+export const BACKWARD_TOLERANCE = 10;
 const STUB = 24;
 const DROP = 40;
 const RADIUS = 8;
 
-export function isBackward(source: Point, target: Point): boolean {
-  return target.x - source.x < FORWARD_GAP;
+// Связь назад — только если вход цели левее выхода источника (с допуском) и левее всего
+// блока-источника. Блоки вплотную или внахлёст (вход над телом источника) — прямая связь
+export function isBackward(source: Point, target: Point, sourceRect: Rect): boolean {
+  return target.x < source.x - BACKWARD_TOLERANCE && target.x < sourceRect.x;
 }
 
 // Ломаная с округлёнными углами: на каждом внутреннем изломе угол срезается дугой радиуса radius

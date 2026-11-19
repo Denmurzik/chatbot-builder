@@ -107,6 +107,8 @@ describe('ScenarioEdge', () => {
 
     expect(pathOf(200, 400)).toContain('C');
     expect(pathOf(200, 400)).not.toContain('Q');
+    // Блоки вплотную: вход чуть левее выхода — всё равно прямая кривая
+    expect(pathOf(400, 395)).toContain('C');
     const backward = pathOf(400, 100);
     expect(backward).toContain('Q');
     expect(backward).not.toContain('C');

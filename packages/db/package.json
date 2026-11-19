@@ -14,9 +14,9 @@
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --root ../.. --project packages packages/db",
-    "db:generate": "prisma generate",
+    "db:generate": "node scripts/prisma-env.js generate",
     "postinstall": "prisma generate",
-    "db:migrate": "prisma migrate deploy"
+    "db:migrate": "node scripts/prisma-env.js migrate deploy"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0"

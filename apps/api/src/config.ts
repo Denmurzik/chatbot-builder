@@ -1,8 +1,12 @@
+import path from 'node:path';
 import { Global, Module } from '@nestjs/common';
 import dotenv from 'dotenv';
 
-// Загружаем .env без перезаписи уже установленных переменных окружения (важно для тестов)
-dotenv.config();
+// Загружаем корневой .env независимо от текущей рабочей директории (одинаковая глубина из src/ и dist/)
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+
+const DEV_JWT_SECRET = 'change-me-dev-jwt-secret';
+const MIN_PROD_JWT_SECRET_LENGTH = 32;
 
 export const SESSION_COOKIE_NAME = 'session';
 export const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -38,13 +42,23 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   }
 
   const nodeEnv = env.NODE_ENV?.trim() || 'development';
+  const isProduction = nodeEnv === 'production';
+
+  if (
+    isProduction &&
+    (jwtSecret.length < MIN_PROD_JWT_SECRET_LENGTH || jwtSecret === DEV_JWT_SECRET)
+  ) {
+    throw new Error(
+      'В production JWT_SECRET должен быть длиной не менее 32 символов и отличаться от значения по умолчанию',
+    );
+  }
 
   return {
     databaseUrl,
     jwtSecret,
     port,
     nodeEnv,
-    isProduction: nodeEnv === 'production',
+    isProduction,
     telegramPolling: env.TELEGRAM_POLLING !== '0',
   };
 }

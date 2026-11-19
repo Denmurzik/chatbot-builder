@@ -2,7 +2,7 @@
   "name": "@chatbot/api",
   "version": "0.1.0",
   "private": true,
-  "main": "./dist/main.js",
+  "main": "./dist/index.js",
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",

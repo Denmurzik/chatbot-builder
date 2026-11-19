@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import type { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -159,5 +160,47 @@ describe('Auth API (интеграционные тесты)', () => {
 
     // После выхода /me возвращает 401
     await agent.get('/api/auth/me').expect(401);
+  });
+
+  it('GET /api/auth/me — отклоняет (401) токен с неверным секретом, просроченный токен и токен удалённого автора', async () => {
+    const reg = await request(app.getHttpServer())
+      .post('/api/auth/register')
+      .send({ email: 'tokens@example.com', password: 'password123' })
+      .expect(201);
+
+    const authorId = reg.body.id as string;
+
+    // 1. Токен, подписанный чужим секретом → 401
+    const wrongSecretJwt = new JwtService({ secret: 'completely-different-secret-key' });
+    const wrongSecretToken = await wrongSecretJwt.signAsync(
+      { sub: authorId },
+      { algorithm: 'HS256', expiresIn: '7d' },
+    );
+    await request(app.getHttpServer())
+      .get('/api/auth/me')
+      .set('Cookie', [`session=${wrongSecretToken}`])
+      .expect(401);
+
+    // 2. Просроченный токен → 401
+    const realJwt = app.get(JwtService);
+    const expiredToken = await realJwt.signAsync(
+      { sub: authorId },
+      { algorithm: 'HS256', expiresIn: -10 },
+    );
+    await request(app.getHttpServer())
+      .get('/api/auth/me')
+      .set('Cookie', [`session=${expiredToken}`])
+      .expect(401);
+
+    // 3. Токен удалённого автора → 401
+    const validToken = await realJwt.signAsync(
+      { sub: authorId },
+      { algorithm: 'HS256', expiresIn: '7d' },
+    );
+    await db.prisma.author.delete({ where: { id: authorId } });
+    await request(app.getHttpServer())
+      .get('/api/auth/me')
+      .set('Cookie', [`session=${validToken}`])
+      .expect(401);
   });
 });

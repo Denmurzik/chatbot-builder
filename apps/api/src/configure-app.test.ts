@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { Controller, Get, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { Request } from 'express';
 import request from 'supertest';
@@ -11,6 +11,11 @@ class HealthController {
   @Get()
   check(@Req() req: Request) {
     return { ok: true, session: req.cookies?.session ?? null };
+  }
+
+  @Post('large')
+  large(@Body() body: { data: string }) {
+    return { length: body.data.length };
   }
 }
 
@@ -47,6 +52,14 @@ describe('configureApp', () => {
         .post('/webhook/telegram/bot-1')
         .expect(201);
       expect(whRes.body).toEqual({ webhook: true });
+
+      // JSON > 100 КБ (до 1 МБ) принимается без 413
+      const largePayload = 'x'.repeat(200_000);
+      const largeRes = await request(app.getHttpServer())
+        .post('/api/health/large')
+        .send({ data: largePayload })
+        .expect(201);
+      expect(largeRes.body).toEqual({ length: 200_000 });
     } finally {
       await app.close();
     }

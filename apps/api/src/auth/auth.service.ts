@@ -10,6 +10,10 @@ export interface AuthResult {
   token: string;
 }
 
+// Фиктивный argon2id-хеш для выравнивания времени ответа при несуществующем email
+const DUMMY_PASSWORD_HASH =
+  '$argon2id$v=19$m=65536,t=3,p=4$UEOyqFaDj4Jhep7YuKg3Ug$SFw1xPJj8tuz5GVTCOZ3WpbhFAmSp4g4/N9xe2k9nLE';
+
 // Сервис регистрации и аутентификации авторов (argon2id + JWT)
 @Injectable()
 export class AuthService {
@@ -49,6 +53,8 @@ export class AuthService {
     });
 
     if (!author) {
+      // Выполняем проверку против фиктивного хеша, чтобы время ответа не выдавало отсутствие email
+      await argon2.verify(DUMMY_PASSWORD_HASH, password);
       throw new UnauthorizedException('Неверный email или пароль');
     }
 
@@ -65,6 +71,6 @@ export class AuthService {
   }
 
   private signSessionToken(authorId: string): Promise<string> {
-    return this.jwtService.signAsync({ sub: authorId });
+    return this.jwtService.signAsync({ sub: authorId }, { algorithm: 'HS256' });
   }
 }

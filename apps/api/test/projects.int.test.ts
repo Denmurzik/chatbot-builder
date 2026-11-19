@@ -245,6 +245,20 @@ describe('Projects API (интеграционные тесты)', () => {
       .send({ name: 'Секретный проект A' })
       .expect(201);
 
+    // Автор A сохраняет непустой сценарий
+    const scenarioA: Scenario = {
+      formatVersion: 1,
+      blocks: [
+        { id: 'entry', type: 'ENTRY_POINT', title: 'Старт', x: 0, y: 0 },
+        { id: 'msgA', type: 'TEXT_MESSAGE', title: 'Текст A', x: 120, y: 0, text: 'Только для A' },
+      ],
+      transitions: [{ source: { blockId: 'entry', output: 'default' }, target: 'msgA' }],
+    };
+    await agentA
+      .put(`/api/projects/${projectA.body.id}/scenario`)
+      .send(scenarioA)
+      .expect(200);
+
     // Автор B не видит проект A в своём списке
     const listB = await agentB.get('/api/projects').expect(200);
     expect(listB.body).toEqual([]);
@@ -255,5 +269,9 @@ describe('Projects API (интеграционные тесты)', () => {
       .put(`/api/projects/${projectA.body.id}/scenario`)
       .send(emptyScenario())
       .expect(404);
+
+    // Сценарий проекта A остался неизменным после попытки автора B
+    const afterB = await agentA.get(`/api/projects/${projectA.body.id}`).expect(200);
+    expect(afterB.body.scenario).toEqual(scenarioA);
   });
 });

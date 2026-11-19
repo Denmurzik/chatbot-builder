@@ -77,7 +77,11 @@ export default defineWorkspace([
     test: {
       name: 'integration',
       environment: 'node',
-      include: ['packages/*/src/**/*.int.test.ts', 'apps/*/src/**/*.int.test.ts'],
+      include: [
+        'packages/*/src/**/*.int.test.ts',
+        'apps/*/src/**/*.int.test.ts',
+        'apps/*/test/**/*.int.test.ts',
+      ],
       exclude: ['**/node_modules/**', '**/dist/**'],
       fileParallelism: false,
       testTimeout: 30000,

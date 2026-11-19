@@ -12,7 +12,8 @@ import { JwtGuard } from './jwt.guard';
       inject: [API_CONFIG],
       useFactory: (config: ApiConfig) => ({
         secret: config.jwtSecret,
-        signOptions: { expiresIn: SESSION_TTL_SECONDS },
+        signOptions: { expiresIn: SESSION_TTL_SECONDS, algorithm: 'HS256' },
+        verifyOptions: { algorithms: ['HS256'] },
       }),
     }),
   ],

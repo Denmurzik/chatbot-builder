@@ -19,12 +19,15 @@ import { JwtGuard } from './jwt.guard';
 
 const registerBodySchema = z.object({
   email: z.string().trim().email('Некорректный формат email'),
-  password: z.string().min(8, 'Пароль должен содержать не менее 8 символов'),
+  password: z
+    .string()
+    .min(8, 'Пароль должен содержать не менее 8 символов')
+    .max(256, 'Пароль слишком длинный'),
 });
 
 const loginBodySchema = z.object({
   email: z.string().trim().email('Некорректный формат email'),
-  password: z.string().min(1, 'Введите пароль'),
+  password: z.string().min(1, 'Введите пароль').max(256, 'Пароль слишком длинный'),
 });
 
 type RegisterBody = z.infer<typeof registerBodySchema>;

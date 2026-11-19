@@ -1,11 +1,17 @@
 import type { PrismaClient } from '@chatbot/db';
 import type { ChatEvent } from '@chatbot/model';
 import type { EventQueue } from '@chatbot/queue';
+import { Logger } from '@nestjs/common';
 import type { HttpResultSink } from './external-api-client';
+
+const ENQUEUE_ATTEMPTS = 3;
+const ENQUEUE_RETRY_DELAY_MS = 200;
 
 // Приёмник результата HTTP-запроса: обновляет http_request и ставит событие в очередь диалога,
 // чтобы ответ обрабатывался в том же порядке, что и остальные события (п. 2.2)
 export class QueueHttpResultSink implements HttpResultSink {
+  private readonly logger = new Logger(QueueHttpResultSink.name);
+
   constructor(
     private readonly prisma: PrismaClient,
     private readonly queue: EventQueue,
@@ -38,19 +44,31 @@ export class QueueHttpResultSink implements HttpResultSink {
     });
     if (!request) throw new Error(`HTTP-запрос ${requestId} не найден`);
     const context = request.dialogContext;
-    // Сначала событие в очередь (повтор с тем же jobId безопасен), затем статус:
-    // сбой между шагами оставит SENT, а не «потерянный» ответ
-    await this.queue.enqueue(
-      {
-        type,
-        channel: context.channel,
-        botId: context.botId,
-        chatId: context.chatId,
-        userId: context.userId,
-        requestId,
-      },
-      `http-${requestId}-${type}`,
-    );
+    // Сначала фиксируется результат (SENT -> итоговый статус), затем событие в очередь
     await this.prisma.httpRequest.updateMany({ where: { id: requestId, status: 'SENT' }, data });
+    const event: ChatEvent = {
+      type,
+      channel: context.channel,
+      botId: context.botId,
+      chatId: context.chatId,
+      userId: context.userId,
+      requestId,
+    };
+    // Повтор с тем же jobId идемпотентен; восстановление после исчерпания попыток — спринт 2
+    for (let attempt = 1; attempt <= ENQUEUE_ATTEMPTS; attempt++) {
+      try {
+        await this.queue.enqueue(event, `http-${requestId}-${type}`);
+        return;
+      } catch (error) {
+        if (attempt === ENQUEUE_ATTEMPTS) {
+          this.logger.error(
+            `Не удалось поставить событие ${type} запроса ${requestId} в очередь`,
+            error,
+          );
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, ENQUEUE_RETRY_DELAY_MS));
+      }
+    }
   }
 }

@@ -45,6 +45,7 @@ describe('QueueHttpResultSink', () => {
       responseBody: '{"ok":true}',
     });
 
+    expect(row.status).not.toBe('SENT');
     const ctx = await env.db.dialogContext.findUniqueOrThrow({
       where: { id: request.dialogContextId },
     });

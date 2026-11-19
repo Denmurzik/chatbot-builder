@@ -141,7 +141,7 @@ describe('обработка событий диалога (PostgreSQL + Redis)'
 
   it('событие бота со статусом != PUBLISHED пропускается даже при наличии publishedScenario', async () => {
     const draftBot = await env.createBot();
-    await env.db.bot.update({ where: { id: draftBot.id }, data: { status: 'DRAFT' } });
+    await env.db.bot.update({ where: { id: draftBot.id }, data: { status: 'CREATED' } });
     await env.emit(textEvent(draftBot.id, 'tg:7', 'старт'));
 
     // Отправляем событие другому опубликованному боту как барьер обработки

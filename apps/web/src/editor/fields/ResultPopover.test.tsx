@@ -40,6 +40,36 @@ describe('ResultPopover', () => {
     expect(screen.getByText(/нет тестового значения: tries/)).toBeTruthy();
   });
 
+  it('{{env.X}} в шаблоне: «подставится из окружения при запуске», не «нет тестового значения»', () => {
+    render(<ResultPopover kind="template" value="Ключ {{env.API_KEY}}" testValues={{}} />);
+    expect(screen.getByText('подставится из окружения при запуске')).toBeTruthy();
+    expect(screen.queryByText('нет тестового значения')).toBeNull();
+  });
+
+  it('{{env.X}} в выражении не вычисляется и не считается отсутствующим значением', () => {
+    render(<ResultPopover kind="value" value={'{{env.MODE}} == "a"'} testValues={{}} />);
+    expect(screen.getByText('подставится из окружения при запуске')).toBeTruthy();
+  });
+
+  it('с anchor блок рисуется в портале на body, а не внутри поля', () => {
+    const anchor = document.createElement('div');
+    document.body.appendChild(anchor);
+    const { container } = render(
+      <div>
+        <ResultPopover
+          anchor={{ current: anchor }}
+          kind="template"
+          value="Привет"
+          testValues={{}}
+        />
+      </div>,
+    );
+    const value = screen.getByTestId('result-value');
+    expect(container.contains(value)).toBe(false);
+    expect(document.body.contains(value)).toBe(true);
+    anchor.remove();
+  });
+
   it('computeResult: числовое выражение', () => {
     expect(computeResult('value', 'tries + 1', { tries: '2' }).text).toBe('3');
   });

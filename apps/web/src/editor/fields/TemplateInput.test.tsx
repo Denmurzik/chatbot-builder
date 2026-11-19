@@ -152,6 +152,29 @@ describe('TemplateInput', () => {
     expect(view!.state.selection.main.head).toBe(10);
   });
 
+  it('ввод «}» перед уже стоящей «}» сдвигает курсор, а не вставляет скобку', () => {
+    let view: EditorView | null = null;
+    render(
+      <TemplateInput
+        value="Привет, "
+        onChange={vi.fn()}
+        variables={['name']}
+        envNames={[]}
+        onCreateEditor={(v) => {
+          view = v;
+        }}
+      />,
+    );
+    act(() => view!.dispatch({ selection: { anchor: 8 } }));
+    typeChar(view!, '{');
+    typeChar(view!, '{');
+    for (const char of 'name') typeChar(view!, char);
+    typeChar(view!, '}');
+    typeChar(view!, '}');
+    expect(view!.state.doc.toString()).toBe('Привет, {{name}}');
+    expect(view!.state.selection.main.head).toBe(16);
+  });
+
   it('Tab не обрабатывается редактором: фокус уходит из поля, отступ не ставится', () => {
     let view: EditorView | null = null;
     render(

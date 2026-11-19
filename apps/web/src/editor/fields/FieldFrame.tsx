@@ -1,5 +1,5 @@
 import { Maximize2 } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { ru } from '@/i18n/ru';
 import { ExpressionEditorDialog } from './ExpressionEditorDialog';
 import { useFieldContext } from './field-context';
@@ -44,6 +44,8 @@ export function FieldFrame({
   const origins = sources ?? context.sources;
   const [focused, setFocused] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const expandRef = useRef<HTMLButtonElement>(null);
 
   return (
     <div
@@ -54,7 +56,7 @@ export function FieldFrame({
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
       }}
     >
-      <div className="flex items-start gap-1.5">
+      <div ref={anchorRef} className="flex items-start gap-1.5">
         {marker && (
           <span
             aria-hidden="true"
@@ -66,6 +68,7 @@ export function FieldFrame({
         <div className="relative min-w-0 flex-1">
           {children}
           <button
+            ref={expandRef}
             type="button"
             aria-label={t.expand}
             title={t.expand}
@@ -78,7 +81,7 @@ export function FieldFrame({
       </div>
       {footer}
       {focused && !expanded && (
-        <ResultPopover kind={resultKind} value={value} testValues={values} />
+        <ResultPopover anchor={anchorRef} kind={resultKind} value={value} testValues={values} />
       )}
       <ExpressionEditorDialog
         open={expanded}
@@ -92,6 +95,7 @@ export function FieldFrame({
         sources={origins}
         resultKind={resultKind}
         title={ariaLabel}
+        returnFocusTo={expandRef}
       />
     </div>
   );

@@ -89,16 +89,16 @@ function DialogBody({
     [nodes, edges, node.id],
   );
   const titles = useMemo(() => new Map(nodes.map((n) => [n.id, n.data.title])), [nodes]);
-  // Тестовые значения и блоки-источники для «Результата» и документации подсказок в полях
-  const fieldContext = useMemo(
-    () => ({
-      testValues,
-      sources: Object.fromEntries(
-        variables.map((variable) => [variable.name, titles.get(variable.sourceBlockId) ?? '']),
-      ),
-    }),
-    [testValues, variables, titles],
+  // Источники переменных: стабильный объект, пока названия не изменились, иначе расширения
+  // CodeMirror в полях пересоздавались бы при любом изменении узлов (и закрывали список подсказок)
+  const sourcesKey = JSON.stringify(
+    variables.map((variable) => [variable.name, titles.get(variable.sourceBlockId) ?? '']),
   );
+  const sources = useMemo(
+    () => Object.fromEntries(JSON.parse(sourcesKey) as [string, string][]),
+    [sourcesKey],
+  );
+  const fieldContext = useMemo(() => ({ testValues, sources }), [testValues, sources]);
   const meta = BLOCK_META[node.data.type];
   const Icon = meta.icon;
 

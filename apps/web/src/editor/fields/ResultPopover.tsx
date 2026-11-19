@@ -7,6 +7,8 @@ import {
   toBoolean,
 } from '@chatbot/engine-core';
 import { TEMPLATE_VAR_REGEX } from '@chatbot/model';
+import { useLayoutEffect, useState, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { ru } from '@/i18n/ru';
 import { referencedNames } from './highlight';
 
@@ -21,6 +23,8 @@ export interface ResultPart {
   substituted?: boolean;
   // Для переменной нет тестового значения
   missing?: boolean;
+  // Значение env.* подставится только при запуске
+  env?: boolean;
 }
 
 export interface ComputedResult {
@@ -30,6 +34,8 @@ export interface ComputedResult {
   error?: string;
   // Имена без тестового значения (для выражения: вычисление пропущено)
   missingNames: string[];
+  // Ссылки на env.* (при предпросмотре значений нет)
+  envNames: string[];
   // Для condition — выход, который сработает: yes | no
   branch?: 'yes' | 'no';
 }
@@ -50,7 +56,8 @@ function computeTemplate(text: string, testValues: Record<string, string>): Comp
     const from = match.index ?? 0;
     if (from > last) parts.push({ text: text.slice(last, from) });
     const name = match[1];
-    if (hasOwn(testValues, name)) parts.push({ text: testValues[name], substituted: true });
+    if (name.startsWith('env.')) parts.push({ text: '', env: true });
+    else if (hasOwn(testValues, name)) parts.push({ text: testValues[name], substituted: true });
     else {
       parts.push({ text: '', missing: true });
       missingNames.push(name);
@@ -62,6 +69,7 @@ function computeTemplate(text: string, testValues: Record<string, string>): Comp
     parts,
     text: render(text, new MapScope(testValues, {}), 'TEXT'),
     missingNames,
+    envNames: [],
   };
 }
 
@@ -74,10 +82,16 @@ function computeExpression(
   try {
     parseExpression(text);
   } catch (error) {
-    return { parts: [], text: '', missingNames: [], error: errorText(error) };
+    return { parts: [], text: '', missingNames: [], envNames: [], error: errorText(error) };
   }
-  const missingNames = referencedNames(text).filter((name) => !hasOwn(testValues, name));
-  if (missingNames.length > 0) return { parts: [], text: '', missingNames };
+  const names = referencedNames(text);
+  const envNames = names.filter((name) => name.startsWith('env.'));
+  const missingNames = names.filter(
+    (name) => !name.startsWith('env.') && !hasOwn(testValues, name),
+  );
+  if (missingNames.length > 0 || envNames.length > 0) {
+    return { parts: [], text: '', missingNames, envNames };
+  }
   try {
     const value = evaluate(text, new MapScope(testValues, {}));
     const shown = typeof value === 'boolean' ? (value ? t.resultYes : t.resultNo) : String(value);
@@ -85,12 +99,13 @@ function computeExpression(
       parts: [{ text: shown, substituted: true }],
       text: shown,
       missingNames,
+      envNames,
       ...(kind === 'condition'
         ? { branch: toBoolean(value) ? ('yes' as const) : ('no' as const) }
         : {}),
     };
   } catch (error) {
-    return { parts: [], text: '', missingNames, error: errorText(error) };
+    return { parts: [], text: '', missingNames, envNames, error: errorText(error) };
   }
 }
 
@@ -101,7 +116,7 @@ export function computeResult(
   testValues: Record<string, string>,
 ): ComputedResult {
   if (kind === 'template') return computeTemplate(text, testValues);
-  if (text.trim() === '') return { parts: [], text: '', missingNames: [] };
+  if (text.trim() === '') return { parts: [], text: '', missingNames: [], envNames: [] };
   return computeExpression(kind, text, testValues);
 }
 
@@ -128,6 +143,8 @@ export function ResultView({ kind, value, testValues, showTip = true }: ResultVi
         </p>
       ) : kind !== 'template' && result.missingNames.length > 0 ? (
         <p className="text-muted-foreground">{t.noTestValueFor(result.missingNames.join(', '))}</p>
+      ) : kind !== 'template' && result.envNames.length > 0 ? (
+        <p className="text-muted-foreground">{t.envRuntime}</p>
       ) : (
         <div
           data-testid="result-value"
@@ -137,7 +154,11 @@ export function ResultView({ kind, value, testValues, showTip = true }: ResultVi
             <span className="text-muted-foreground">{t.resultEmpty}</span>
           ) : (
             result.parts.map((part, index) =>
-              part.missing ? (
+              part.env ? (
+                <span key={index} className="cm-result-env text-muted-foreground italic">
+                  {t.envRuntime}
+                </span>
+              ) : part.missing ? (
                 <span key={index} className="cm-result-missing text-muted-foreground italic">
                   {t.noTestValue}
                 </span>
@@ -170,16 +191,69 @@ export function ResultView({ kind, value, testValues, showTip = true }: ResultVi
 }
 
 interface ResultPopoverProps extends ResultViewProps {
-  className?: string;
+  // Поле, под которым показывается «Результат». Без него блок выводится на месте (тесты)
+  anchor?: RefObject<HTMLElement | null>;
 }
 
-// Всплывающее «Результат» под полем в фокусе
-export function ResultPopover({ className = '', ...props }: ResultPopoverProps) {
-  return (
+interface PopoverPosition {
+  left: number;
+  width: number;
+  top?: number;
+  bottom?: number;
+}
+
+const GAP = 4;
+// Если снизу меньше места, а сверху больше, блок показывается над полем
+const MIN_BELOW = 180;
+
+function measure(element: HTMLElement): PopoverPosition {
+  const rect = element.getBoundingClientRect();
+  const below = window.innerHeight - rect.bottom;
+  const above = rect.top;
+  return below < MIN_BELOW && above > below
+    ? { left: rect.left, width: rect.width, bottom: window.innerHeight - rect.top + GAP }
+    : { left: rect.left, width: rect.width, top: rect.bottom + GAP };
+}
+
+const POPOVER_CLASS = 'rounded-md border bg-popover p-3 text-popover-foreground shadow-md';
+
+// Всплывающее «Результат» под полем в фокусе. Рисуется в портале поверх всего,
+// поэтому колонка с прокруткой его не обрезает; положение следует за полем
+export function ResultPopover({ anchor, ...props }: ResultPopoverProps) {
+  const [position, setPosition] = useState<PopoverPosition | null>(null);
+
+  useLayoutEffect(() => {
+    const element = anchor?.current;
+    if (!element) return;
+    const update = () => setPosition(measure(element));
+    update();
+    window.addEventListener('resize', update);
+    // Прокрутка любого предка (колонка «Настройки») сдвигает поле
+    window.addEventListener('scroll', update, true);
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+      observer.disconnect();
+    };
+  }, [anchor]);
+
+  if (!anchor) {
+    return (
+      <div className={POPOVER_CLASS}>
+        <ResultView {...props} />
+      </div>
+    );
+  }
+  if (!position) return null;
+  return createPortal(
     <div
-      className={`absolute top-full right-0 left-0 z-30 mt-1 rounded-md border bg-popover p-3 text-popover-foreground shadow-md ${className}`}
+      style={{ position: 'fixed', ...position }}
+      className={`pointer-events-none z-[100] max-h-[50vh] overflow-hidden ${POPOVER_CLASS}`}
     >
       <ResultView {...props} />
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -203,6 +203,37 @@ describe('BlockDialog', () => {
     expect(screen.getByTestId('result-value').textContent).toBe('Здравствуйте, Анна!');
   });
 
+  it('Esc закрывает только большой редактор поля, окно блока остаётся, фокус — на «развернуть»', async () => {
+    const onClose = vi.fn();
+    render(<Harness nodeId="msg" onClose={onClose} />);
+    const expand = screen.getAllByRole('button', { name: ru.fieldInput.expand })[0];
+    fireEvent.click(expand);
+    const big = await screen.findByRole('dialog', { name: ru.fields.text });
+    expect(big).toBeTruthy();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: ru.fields.text })).toBeNull());
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'Приветствие', hidden: true })).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(expand));
+  });
+
+  it('расширения CodeMirror не пересоздаются при несвязанном изменении узлов', () => {
+    render(<Harness nodeId="msg" />);
+    const content = screen.getByLabelText(ru.fields.text);
+    const view = EditorView.findFromDOM(content.closest('.cm-editor') as HTMLElement)!;
+    const spy = vi.spyOn(view, 'dispatch');
+    // Название блока меняет узлы, но не переменные и не их источники
+    fireEvent.change(screen.getByLabelText(ru.blockDialog.titleLabel), {
+      target: { value: 'Другое название' },
+    });
+    const reconfigured = spy.mock.calls.some((call) => {
+      const spec = call[0] as { effects?: unknown } | undefined;
+      return spec !== undefined && typeof spec === 'object' && spec.effects !== undefined;
+    });
+    expect(reconfigured).toBe(false);
+  });
+
   it('«Вставить» ставит переменную в шаблон по позиции курсора', async () => {
     render(<Harness nodeId="msg" />);
     const editor = screen.getByLabelText(ru.fields.text);

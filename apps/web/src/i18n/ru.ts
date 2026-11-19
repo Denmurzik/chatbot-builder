@@ -236,6 +236,7 @@ export const ru = {
     resultNo: 'нет',
     resultEmpty: 'пусто',
     noTestValue: 'нет тестового значения',
+    envRuntime: 'подставится из окружения при запуске',
     noTestValueFor: (names: string) => `нет тестового значения: ${names}`,
     branch: (output: string) => `Сработает выход: ${output}`,
     tipTemplate: 'Внутри {{ }} — имя переменной',

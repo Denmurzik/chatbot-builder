@@ -5,6 +5,7 @@ import { ru } from '@/i18n/ru';
 import { baseSetup, toSingleLine } from './cm-base';
 import { templateExtensions } from './field-extensions';
 import { useFieldContext } from './field-context';
+import { useStableCallback } from './use-stable-callback';
 import { FieldFrame } from './FieldFrame';
 import { findUnknownNames } from './highlight';
 
@@ -41,6 +42,7 @@ export function TemplateInput({
   onCreateEditor,
 }: TemplateInputProps) {
   const context = useFieldContext();
+  const handleChange = useStableCallback((next: string) => onChange(next));
   const values = testValues ?? context.testValues;
   const origins = variableSources ?? context.sources;
   const variablesKey = variables.join('\u0000');
@@ -85,7 +87,7 @@ export function TemplateInput({
       <CodeMirror
         id={id}
         value={multiline ? value : toSingleLine(value)}
-        onChange={(next) => onChange(next)}
+        onChange={handleChange}
         extensions={extensions}
         theme="none"
         basicSetup={baseSetup}

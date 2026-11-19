@@ -40,8 +40,8 @@ export function fieldTheme(multiline: boolean): Extension {
     '.cm-line': { padding: '0 0.5rem' },
     '.cm-placeholder': { color: 'var(--muted-foreground)' },
     '.cm-template-pill': {
-      backgroundColor: 'var(--muted)',
-      border: '1px solid var(--border)',
+      backgroundColor: 'color-mix(in oklab, var(--muted) 60%, transparent)',
+      border: '1px solid color-mix(in oklab, var(--border) 70%, transparent)',
       borderRadius: '9999px',
       padding: '0 0.35rem',
       color: 'var(--foreground)',
@@ -50,18 +50,19 @@ export function fieldTheme(multiline: boolean): Extension {
       textDecoration: 'underline wavy var(--destructive)',
       textUnderlineOffset: '3px',
     },
-    '.cm-expr-op': { color: 'var(--muted-foreground)', fontWeight: '600' },
-    '.cm-expr-number': { color: 'var(--chart-1, var(--primary))' },
-    '.cm-expr-keyword': { color: 'var(--chart-4, var(--primary))', fontWeight: '600' },
-    '.cm-expr-string': { color: 'var(--chart-2, var(--primary))' },
-    '.cm-expr-env': { color: 'var(--chart-3, var(--primary))' },
+    '.cm-expr-op': { color: 'var(--syntax-operator)', fontWeight: '600' },
+    '.cm-expr-number': { color: 'var(--syntax-number)' },
+    '.cm-expr-keyword': { color: 'var(--syntax-keyword)', fontWeight: '600' },
+    '.cm-expr-string': { color: 'var(--syntax-string)' },
+    '.cm-expr-env': { color: 'var(--syntax-env)' },
     '.cm-expr-var': {
-      color: 'var(--primary)',
-      backgroundColor: 'color-mix(in oklab, var(--primary) 12%, transparent)',
+      color: 'var(--syntax-variable)',
+      backgroundColor: 'color-mix(in oklab, var(--syntax-variable) 12%, transparent)',
       borderRadius: '4px',
       padding: '0 0.15rem',
     },
     '.cm-expr-var-unknown': {
+      color: 'var(--syntax-unknown)',
       textDecoration: 'underline wavy var(--destructive)',
       textUnderlineOffset: '3px',
     },
@@ -94,6 +95,11 @@ export function fieldTheme(multiline: boolean): Extension {
 
 // Ввод «{{» в шаблоне сам ставит «}}» и оставляет курсор между скобками
 export const templateAutoClose: Extension = EditorView.inputHandler.of((view, from, to, text) => {
+  // Ввод «}» перед уже стоящей «}» просто сдвигает курсор (иначе «{{|}}» + «name}}» дало бы «}}}}»)
+  if (text === '}' && from === to && view.state.sliceDoc(from, from + 1) === '}') {
+    view.dispatch({ selection: { anchor: from + 1 }, userEvent: 'input.type' });
+    return true;
+  }
   if (text !== '{' || from !== to || from === 0) return false;
   if (view.state.sliceDoc(from - 1, from) !== '{') return false;
   // Уже «{{» перед курсором (третья скобка) или «}}» сразу после — не дублируем

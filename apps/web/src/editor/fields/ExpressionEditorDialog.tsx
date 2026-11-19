@@ -1,12 +1,13 @@
 import type { EditorView } from '@codemirror/view';
 import CodeMirror from '@uiw/react-codemirror';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type RefObject } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { ru } from '@/i18n/ru';
 import { baseSetup } from './cm-base';
 import { expressionExtensions, templateExtensions } from './field-extensions';
 import { ResultView, type ResultKind } from './ResultPopover';
+import { useStableCallback } from './use-stable-callback';
 
 const t = ru.fieldInput;
 
@@ -24,6 +25,8 @@ export interface ExpressionEditorDialogProps {
   sources: Record<string, string>;
   resultKind: ResultKind;
   title?: string;
+  // Куда вернуть фокус после закрытия (кнопка «развернуть»)
+  returnFocusTo?: RefObject<HTMLElement | null>;
 }
 
 function hasOwn(values: Record<string, string>, name: string): boolean {
@@ -53,8 +56,10 @@ export function ExpressionEditorDialog({
   sources,
   resultKind,
   title,
+  returnFocusTo,
 }: ExpressionEditorDialogProps) {
   const [query, setQuery] = useState('');
+  const handleChange = useStableCallback((next: string) => onChange(next));
   const viewRef = useRef<EditorView | null>(null);
 
   const variablesKey = variables.join('\u0000');
@@ -82,6 +87,11 @@ export function ExpressionEditorDialog({
       <DialogContent
         aria-describedby={undefined}
         className="flex h-[92vh] max-w-[95vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-[95vw]"
+        onCloseAutoFocus={(event) => {
+          if (!returnFocusTo?.current) return;
+          event.preventDefault();
+          returnFocusTo.current.focus();
+        }}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           viewRef.current?.focus();
@@ -129,7 +139,7 @@ export function ExpressionEditorDialog({
           <section aria-label={t.editorTitle} className="min-h-0 overflow-y-auto p-4">
             <CodeMirror
               value={value}
-              onChange={(next) => onChange(next)}
+              onChange={handleChange}
               extensions={extensions}
               theme="none"
               basicSetup={baseSetup}

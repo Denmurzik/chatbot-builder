@@ -1,4 +1,10 @@
-import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto';
 import type { EncryptedSecret } from '@chatbot/model';
 
 const ALGORITHM = 'aes-256-gcm';
@@ -8,6 +14,7 @@ const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
 const MASK_PREFIX = '••••';
 const MASK_VISIBLE_CHARS = 4;
+const MASK_MIN_LENGTH_FOR_TAIL = 12;
 const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
 
 // Декодирует ключ из переменной окружения (base64, ровно 32 байта) без утечки значения в ошибки
@@ -51,6 +58,9 @@ export class SecretVault {
     if (!Buffer.isBuffer(hashKey) || hashKey.length !== KEY_LENGTH) {
       throw new Error(`Ключ хеширования должен иметь длину ровно ${KEY_LENGTH} байта`);
     }
+    if (timingSafeEqual(key, hashKey)) {
+      throw new Error('Ключи VAULT_KEY и VAULT_HASH_KEY должны различаться');
+    }
     // Копируем буферы, чтобы внешние изменения не затронули ключи внутри экземпляра
     this.key = Buffer.from(key);
     this.hashKey = Buffer.from(hashKey);
@@ -65,6 +75,10 @@ export class SecretVault {
 
   // Шифрует значение алгоритмом AES-256-GCM с привязкой к AAD и формирует маску
   encrypt(value: string, aad: string): EncryptedSecret {
+    if (!aad) {
+      throw new Error('AAD не может быть пустым');
+    }
+
     const iv = randomBytes(IV_LENGTH);
     const cipher = createCipheriv(ALGORITHM, this.key, iv, { authTagLength: AUTH_TAG_LENGTH });
     cipher.setAAD(Buffer.from(aad, 'utf8'));
@@ -73,7 +87,11 @@ export class SecretVault {
     const tag = cipher.getAuthTag();
 
     const cipherText = `${FORMAT_VERSION}:${iv.toString('base64')}:${tag.toString('base64')}:${encrypted.toString('base64')}`;
-    const tail = Array.from(value).slice(-MASK_VISIBLE_CHARS).join('');
+    const codePoints = Array.from(value);
+    const tail =
+      codePoints.length >= MASK_MIN_LENGTH_FOR_TAIL
+        ? codePoints.slice(-MASK_VISIBLE_CHARS).join('')
+        : '';
     const mask = `${MASK_PREFIX}${tail}`;
 
     return { cipherText, mask };
@@ -81,6 +99,10 @@ export class SecretVault {
 
   // Расшифровывает секрет с проверкой версии, тега аутентификации и AAD
   decrypt(secret: EncryptedSecret, aad: string): string {
+    if (!aad) {
+      throw new Error('AAD не может быть пустым');
+    }
+
     const parts = secret.cipherText.split(':');
     if (parts.length !== 4) {
       throw new Error('Некорректный формат шифротекста');

@@ -100,6 +100,34 @@ describe('SecretVault', () => {
       expect(() => vault.decrypt({ ...encrypted, cipherText: 'invalid-format' }, aad)).toThrow();
     });
 
+    it('отклоняет усечённый 12-байтный тег аутентификации и 16-байтный IV', () => {
+      const vault = new SecretVault(key, hashKey);
+      const aad = 'bot-1:TELEGRAM';
+      const encrypted = vault.encrypt('123456:ABCdef', aad);
+      const [version, ivB64, tagB64, ct] = encrypted.cipherText.split(':');
+
+      const truncatedTag = Buffer.from(tagB64, 'base64').subarray(0, 12).toString('base64');
+      expect(() =>
+        vault.decrypt(
+          { ...encrypted, cipherText: `${version}:${ivB64}:${truncatedTag}:${ct}` },
+          aad,
+        ),
+      ).toThrow();
+
+      const iv16 = randomBytes(16).toString('base64');
+      expect(() =>
+        vault.decrypt({ ...encrypted, cipherText: `${version}:${iv16}:${tagB64}:${ct}` }, aad),
+      ).toThrow();
+    });
+
+    it('отклоняет пустой aad при шифровании и расшифровке', () => {
+      const vault = new SecretVault(key, hashKey);
+      const encrypted = vault.encrypt('123456:ABCdef', 'bot-1:TELEGRAM');
+
+      expect(() => vault.encrypt('123456:ABCdef', '')).toThrow();
+      expect(() => vault.decrypt(encrypted, '')).toThrow();
+    });
+
     it('не включает значение секрета или шифротекст в текст ошибки', () => {
       const vault = new SecretVault(key, hashKey);
       const secretVal = 'TOP_SECRET_DO_NOT_LEAK_9999';
@@ -126,11 +154,12 @@ describe('SecretVault', () => {
       expect(encrypted.mask).toBe('••••Cdef');
     });
 
-    it('корректно формирует маску для коротких строк', () => {
+    it('скрывает короткие значения (< 12 символов) полностью и показывает 4 символа начиная с 12', () => {
       const vault = new SecretVault(key, hashKey);
 
-      expect(vault.encrypt('ab', 'bot-1:VAR').mask).toBe('••••ab');
-      expect(vault.encrypt('1234', 'bot-1:VAR').mask).toBe('••••1234');
+      expect(vault.encrypt('ab', 'bot-1:VAR').mask).toBe('••••');
+      expect(vault.encrypt('12345678901', 'bot-1:VAR').mask).toBe('••••');
+      expect(vault.encrypt('123456789012', 'bot-1:VAR').mask).toBe('••••9012');
     });
   });
 
@@ -161,6 +190,18 @@ describe('SecretVault', () => {
       expect(() => new SecretVault(randomBytes(33), hashKey)).toThrow();
       expect(() => new SecretVault(key, randomBytes(31))).toThrow();
       expect(() => new SecretVault(key, randomBytes(64))).toThrow();
+    });
+
+    it('отклоняет совпадающие key и hashKey в конструкторе и fromEnv', () => {
+      const sameKeyCopy = Buffer.from(key);
+      const sameKeyB64 = key.toString('base64');
+
+      expect(() => new SecretVault(key, sameKeyCopy)).toThrow(
+        'Ключи VAULT_KEY и VAULT_HASH_KEY должны различаться',
+      );
+      expect(() =>
+        SecretVault.fromEnv({ VAULT_KEY: sameKeyB64, VAULT_HASH_KEY: sameKeyB64 }),
+      ).toThrow('Ключи VAULT_KEY и VAULT_HASH_KEY должны различаться');
     });
 
     it('создаёт экземпляр через fromEnv с валидными 32-байтными ключами в base64', () => {

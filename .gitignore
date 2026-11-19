@@ -8,3 +8,4 @@
 
 # VP backups
 *.bak_*
+!/docs/

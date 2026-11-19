@@ -95,4 +95,42 @@ describe('mapUpdate', () => {
       }),
     ).toBeNull();
   });
+
+  it('некорректные обновления без chat или from -> null без TypeError', () => {
+    expect(
+      mapUpdate('bot1', {
+        update_id: 17,
+        message: { message_id: 1, date: 0, from, text: 'привет' } as never,
+      }),
+    ).toBeNull();
+    expect(
+      mapUpdate('bot1', {
+        update_id: 18,
+        message: { message_id: 1, date: 0, chat, text: 'привет' } as never,
+      }),
+    ).toBeNull();
+    expect(
+      mapUpdate('bot1', {
+        update_id: 19,
+        callback_query: {
+          id: 'cb',
+          from,
+          chat_instance: 'x',
+          data: 'a:1',
+          message: { message_id: 5, date: 0 } as never,
+        },
+      }),
+    ).toBeNull();
+    expect(
+      mapUpdate('bot1', {
+        update_id: 20,
+        callback_query: {
+          id: 'cb',
+          chat_instance: 'x',
+          data: 'a:1',
+          message: { message_id: 5, date: 0, chat },
+        } as never,
+      }),
+    ).toBeNull();
+  });
 });

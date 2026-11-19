@@ -8,6 +8,7 @@ import { configureApp } from './configure-app';
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   configureApp(app);
+  app.enableShutdownHooks();
   const config = app.get<ApiConfig>(API_CONFIG);
   await app.listen(config.port);
 }

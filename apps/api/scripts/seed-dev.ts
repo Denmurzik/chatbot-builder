@@ -8,6 +8,11 @@ import dotenv from 'dotenv';
 
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
+if (process.env.NODE_ENV?.trim() === 'production') {
+  console.error('Скрипт seed:dev запрещён в production (NODE_ENV=production)');
+  process.exit(1);
+}
+
 const DEV_EMAIL = 'dev@example.com';
 const DEV_PASSWORD = 'devpassword';
 const NAME = 'Эхо';

@@ -15,7 +15,7 @@ export function mapUpdate(
   if (update.callback_query) {
     const query = update.callback_query;
     const chat = query.message?.chat;
-    if (!chat || typeof query.data !== 'string') return null;
+    if (!chat || !query.from || typeof query.data !== 'string') return null;
     const separator = query.data.indexOf(':');
     const sourceBlockId = separator >= 0 ? query.data.slice(0, separator) : query.data;
     return {
@@ -33,7 +33,7 @@ export function mapUpdate(
   }
 
   const message = update.message;
-  if (!message || !message.from) return null;
+  if (!message?.chat || !message.from) return null;
   const text = message.text;
   const base = {
     channel: 'MESSENGER' as const,

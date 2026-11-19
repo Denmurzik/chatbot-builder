@@ -113,7 +113,17 @@ describe('Webhook Telegram (интеграционные тесты)', () => {
         .send(update(100))
         .expect(200);
     }
-    expect(await countJobs()).toBe(1);
+    const keys = await jobKeys();
+    expect(keys).toHaveLength(1);
+    const rawData = await redis.hget(keys[0]!, 'data');
+    expect(rawData).toBeTruthy();
+    const data = JSON.parse(rawData!);
+    expect(data).toMatchObject({
+      type: 'TEXT_MESSAGE',
+      chatId: 'tg:42',
+      userId: 'tg:7',
+      botId,
+    });
   });
 
   it('неопубликованный бот -> 200 без постановки', async () => {

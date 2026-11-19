@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { Global, Module } from '@nestjs/common';
+import { Global, Logger, Module } from '@nestjs/common';
 import dotenv from 'dotenv';
 
 // Загружаем корневой .env независимо от текущей рабочей директории (одинаковая глубина из src/ и dist/)
@@ -53,13 +53,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     );
   }
 
+  const pollingRequested = env.TELEGRAM_POLLING?.trim() === '1';
+  if (isProduction && pollingRequested) {
+    Logger.warn('TELEGRAM_POLLING=1 игнорируется в production', 'Config');
+  }
+  const telegramPolling = !isProduction && pollingRequested;
+
   return {
     databaseUrl,
     jwtSecret,
     port,
     nodeEnv,
     isProduction,
-    telegramPolling: env.TELEGRAM_POLLING !== '0',
+    telegramPolling,
   };
 }
 

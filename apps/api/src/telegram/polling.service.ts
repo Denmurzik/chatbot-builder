@@ -11,6 +11,11 @@ import { API_CONFIG, type ApiConfig } from '../config';
 import { PrismaService } from '../prisma/prisma.module';
 import { UpdateIngestService } from './update-ingest.service';
 
+// Возвращает только имя типа ошибки, чтобы не утекли URL/токены из сообщения
+function errorName(err: unknown): string {
+  return err instanceof Error ? err.name : 'UnknownError';
+}
+
 // Dev-режим: long polling вместо webhook для опубликованных ботов (TELEGRAM_POLLING=1)
 @Injectable()
 export class PollingService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -41,19 +46,18 @@ export class PollingService implements OnApplicationBootstrap, OnApplicationShut
           try {
             await this.ingestService.ingest(botId, ctx.update);
           } catch (err) {
-            this.logger.error(`Ошибка приёма обновления бота ${botId}: ${(err as Error).name}`);
+            this.logger.error(`Ошибка приёма обновления бота ${botId}: ${errorName(err)}`);
           }
         });
         this.bots.push(bot);
-        // Polling и webhook взаимоисключающи: снимаем webhook, затем запускаем цикл в фоне
-        await bot.api.deleteWebhook();
-        void bot.start().catch((err: Error) => {
-          this.logger.error(`Polling бота ${botId} остановлен: ${err.name}`);
+        // Запускаем polling в фоне без блокировки старта API; bot.start() сам снимает webhook
+        void bot.start().catch((err: unknown) => {
+          this.logger.error(`Polling бота ${botId} остановлен: ${errorName(err)}`);
         });
         this.logger.log(`Long polling запущен для бота ${botId}`);
       } catch (err) {
         // Сообщение ошибки может содержать URL с токеном — логируем только тип
-        this.logger.error(`Не удалось запустить polling бота ${botId}: ${(err as Error).name}`);
+        this.logger.error(`Не удалось запустить polling бота ${botId}: ${errorName(err)}`);
       }
     }
   }

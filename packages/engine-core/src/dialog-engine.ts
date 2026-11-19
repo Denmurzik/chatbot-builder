@@ -127,7 +127,7 @@ export class DialogEngine {
       run.ctx.setVariable(block.variableName, text);
       this.advance(run, block, 'default');
     } else if (block.type === 'OPTION_CHOICE') {
-      const index = this.resolveChoice(event, block.id, block.options);
+      const index = this.matchButton(event, block.id, block.options);
       if (index === null) {
         this.rejectChoice(run, block, event);
         return;
@@ -136,7 +136,7 @@ export class DialogEngine {
       this.advance(run, block, block.options[index]);
     } else if (block.type === 'LIST_CHOICE') {
       const items = this.readList(run, block) ?? [];
-      const index = this.resolveChoice(
+      const index = this.matchButton(
         event,
         block.id,
         items.map((i) => i.label),
@@ -161,7 +161,7 @@ export class DialogEngine {
   }
 
   // Индекс выбранного варианта по кнопке или тексту; null — не распознано или устаревшая кнопка (UC-U-13)
-  private resolveChoice(event: ChatEvent, blockId: string, labels: string[]): number | null {
+  matchButton(event: ChatEvent, blockId: string, labels: string[]): number | null {
     const payload = event.payload ?? '';
     if (event.type === 'BUTTON_PRESS') {
       const sep = payload.lastIndexOf(':');
@@ -182,7 +182,7 @@ export class DialogEngine {
   // Переход по выходу после ответа пользователя и продолжение автопрохода
   private advance(run: DialogRun, block: Block, output: string): void {
     run.ctx.state = 'RUNNING';
-    if (this.moveTo(run, block, output)) this.runAutopass(run);
+    if (this.followOutput(run, block, output)) this.runAutopass(run);
   }
 
   // Автопроход блоков без ожидания (п. 2.3)
@@ -201,82 +201,81 @@ export class DialogEngine {
         this.missingBlock(run);
         return;
       }
-      const scope = run.ctx.scope();
-      let output: string;
-      try {
-        switch (block.type) {
-          case 'ENTRY_POINT':
-            output = 'default';
-            break;
-          case 'TEXT_MESSAGE':
-            run.outbox.push({ kind: 'text', text: render(block.text, scope, 'TEXT') });
-            output = 'default';
-            break;
-          case 'ASSIGNMENT':
-            run.ctx.setVariable(block.variableName, String(evaluate(block.expression, scope)));
-            output = 'default';
-            break;
-          case 'CONDITION':
-            output = toBoolean(evaluate(block.expression, scope)) ? 'yes' : 'no';
-            break;
-          case 'SWITCH': {
-            const value = run.ctx.getVariable(block.variableName) ?? '';
-            output = block.values.includes(value) ? value : 'else';
-            break;
-          }
-          case 'LIST_CHOICE': {
-            const items = this.readList(run, block);
-            if (!items || items.length === 0) {
-              output = 'noOptions';
-              break;
-            }
-            this.sendQuestion(run, block);
-            run.ctx.state = 'WAITING_USER';
-            return;
-          }
-          case 'TEXT_INPUT':
-          case 'OPTION_CHOICE':
-            this.sendQuestion(run, block);
-            run.ctx.state = 'WAITING_USER';
-            return;
-          case 'HTTP_REQUEST':
-            run.httpRequest = {
-              blockId: block.id,
-              method: block.method,
-              url: render(block.url, scope, 'URL'),
-              headers: block.headers.map((h) => ({
-                name: h.name,
-                value: h.secret ? h.value : render(h.value, scope, 'HEADER'),
-                secret: h.secret,
-                ...(h.secretValue !== undefined ? { secretValue: h.secretValue } : {}),
-              })),
-              body: block.body.trim() === '' ? null : render(block.body, scope, 'JSON'),
-              timeoutSec: block.timeoutSec,
-              retryCount: block.retryCount,
-              retryIntervalSec: block.retryIntervalSec,
-            };
-            run.ctx.state = 'WAITING_EXTERNAL';
-            run.ctx.currentRequestId = null;
-            return;
-          case 'EXIT_POINT':
-            this.finishDialog(run);
-            return;
-        }
-      } catch (e) {
-        if (e instanceof ExpressionError) {
-          this.systemMessage(run, `Ошибка в выражении блока «${block.title}»: ${e.message}`);
-          run.highlightBlockId = block.id;
-          this.finishDialog(run);
-          return;
-        }
-        throw e;
-      }
-      if (!this.moveTo(run, block, output)) return;
+      const output = this.executeBlock(block, run);
+      if (output === null) return;
+      if (!this.followOutput(run, block, output)) return;
     }
   }
 
-  // Переход по выходу; false — выход не подключён, диалог завершён
-  private moveTo(run: DialogRun, block: Block, output: string): boolean {
+  // Выполняет один блок сценария; возвращает имя выхода для продолжения автопрохода или null при остановке
+  executeBlock(block: Block, run: DialogRun): string | null {
+    const scope = run.ctx.scope();
+    try {
+      switch (block.type) {
+        case 'ENTRY_POINT':
+          return 'default';
+        case 'TEXT_MESSAGE':
+          run.outbox.push({ kind: 'text', text: render(block.text, scope, 'TEXT') });
+          return 'default';
+        case 'ASSIGNMENT':
+          run.ctx.setVariable(block.variableName, String(evaluate(block.expression, scope)));
+          return 'default';
+        case 'CONDITION':
+          return toBoolean(evaluate(block.expression, scope)) ? 'yes' : 'no';
+        case 'SWITCH': {
+          const value = run.ctx.getVariable(block.variableName) ?? '';
+          return block.values.includes(value) ? value : 'else';
+        }
+        case 'LIST_CHOICE': {
+          const items = this.readList(run, block);
+          if (!items || items.length === 0) {
+            return 'noOptions';
+          }
+          this.sendQuestion(run, block);
+          run.ctx.state = 'WAITING_USER';
+          return null;
+        }
+        case 'TEXT_INPUT':
+        case 'OPTION_CHOICE':
+          this.sendQuestion(run, block);
+          run.ctx.state = 'WAITING_USER';
+          return null;
+        case 'HTTP_REQUEST':
+          run.httpRequest = {
+            blockId: block.id,
+            method: block.method,
+            url: render(block.url, scope, 'URL'),
+            headers: block.headers.map((h) => ({
+              name: h.name,
+              value: h.secret ? h.value : render(h.value, scope, 'HEADER'),
+              secret: h.secret,
+              ...(h.secretValue !== undefined ? { secretValue: h.secretValue } : {}),
+            })),
+            body: block.body.trim() === '' ? null : render(block.body, scope, 'JSON'),
+            timeoutSec: block.timeoutSec,
+            retryCount: block.retryCount,
+            retryIntervalSec: block.retryIntervalSec,
+          };
+          run.ctx.state = 'WAITING_EXTERNAL';
+          run.ctx.currentRequestId = null;
+          return null;
+        case 'EXIT_POINT':
+          this.finishDialog(run);
+          return null;
+      }
+    } catch (e) {
+      if (e instanceof ExpressionError) {
+        this.systemMessage(run, `Ошибка в выражении блока «${block.title}»: ${e.message}`);
+        run.highlightBlockId = block.id;
+        this.finishDialog(run);
+        return null;
+      }
+      throw e;
+    }
+  }
+
+  // Переход по выходу блока; false — выход не подключён, диалог завершён
+  followOutput(run: DialogRun, block: Block, output: string): boolean {
     const transition = getOutputs(block).includes(output)
       ? run.scenario.transitions.find(
           (t) => t.source.blockId === block.id && t.source.output === output,

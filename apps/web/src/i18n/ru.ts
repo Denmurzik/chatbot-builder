@@ -141,6 +141,10 @@ export const ru = {
     retryWarning:
       'Повторы для POST, PUT и PATCH небезопасны: запрос может выполниться на сервере несколько раз',
   },
+  preview: {
+    title: 'Превью сценария',
+    placeholder: 'Превью появится в спринте 3',
+  },
   theme: {
     toggle: 'Сменить тему',
   },

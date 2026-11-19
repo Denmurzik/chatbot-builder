@@ -32,13 +32,13 @@ export class ProjectController {
   ) {}
 
   @Get()
-  list(@CurrentAuthor() author: AuthenticatedAuthor): Promise<ProjectSummary[]> {
+  listProjects(@CurrentAuthor() author: AuthenticatedAuthor): Promise<ProjectSummary[]> {
     return this.projectService.listByAuthor(author.id);
   }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  create(
+  createProject(
     @CurrentAuthor() author: AuthenticatedAuthor,
     @Body(new ZodBodyPipe(createProjectBodySchema)) body: CreateProjectBody,
   ): Promise<CreatedProject> {

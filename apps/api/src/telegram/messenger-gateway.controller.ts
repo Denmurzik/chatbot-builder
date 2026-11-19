@@ -28,10 +28,10 @@ export class MessengerGatewayController {
 
   @Post(':botId')
   @HttpCode(200)
-  async receive(
+  async receiveUpdate(
     @Param('botId') botId: string,
-    @Headers(SECRET_HEADER) secret: string | undefined,
     @Body() update: TelegramUpdate,
+    @Headers(SECRET_HEADER) secret?: string,
   ): Promise<{ ok: true }> {
     if (!secretsEqual(secret, webhookSecret(botId))) {
       throw new UnauthorizedException();

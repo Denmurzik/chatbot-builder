@@ -1,6 +1,12 @@
-import type { PrismaClient } from '@chatbot/db';
+import type { Bot, Prisma, PrismaClient } from '@chatbot/db';
 import { DialogEngine, type EngineResult, type OutgoingMessage } from '@chatbot/engine-core';
-import { environmentSchema, scenarioSchema, type ChatEvent, type Scenario } from '@chatbot/model';
+import {
+  environmentSchema,
+  NotImplementedError,
+  scenarioSchema,
+  type ChatEvent,
+  type Scenario,
+} from '@chatbot/model';
 import { SecretVault } from '@chatbot/vault';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PRISMA } from '../infra/tokens';
@@ -41,7 +47,7 @@ export class DialogService {
     const botId = event.botId;
 
     const processed = await this.prisma.$transaction(async (tx): Promise<Processed | null> => {
-      const bot = await tx.bot.findUnique({ where: { id: botId } });
+      const bot = await this.findBot(botId, tx);
       if (!bot?.publishedScenario) {
         this.logger.warn(`Бот ${botId} не найден или не опубликован, событие пропущено`);
         return null;
@@ -50,7 +56,7 @@ export class DialogService {
       const env = buildEnvironment(botId, environmentSchema.parse(bot.environment), this.vault);
 
       await this.repository.ensureExists(tx, botId, event.chatId, event.userId, event.channel);
-      const row = await this.repository.lockForUpdate(tx, botId, event.chatId);
+      const row = await this.loadContext(tx, botId, event.chatId);
       if (!row) throw new Error('Контекст диалога не найден после создания');
       const result = this.engine.handleEvent(event, toState(row), scenario, env);
 
@@ -104,6 +110,30 @@ export class DialogService {
         request,
       );
     }
+  }
+
+  // Загружает контекст диалога с блокировкой строки (операция DialogEngine.loadContext, I/O-часть)
+  loadContext(
+    tx: Prisma.TransactionClient,
+    botId: string | null,
+    chatId: string,
+  ): Promise<DialogContextRow | null> {
+    return this.repository.lockForUpdate(tx, botId, chatId);
+  }
+
+  // Находит бота по идентификатору (операция DialogEngine.findBot, I/O-часть)
+  findBot(botId: string, tx?: Prisma.TransactionClient): Promise<Bot | null> {
+    return (tx ?? this.prisma).bot.findUnique({ where: { id: botId } });
+  }
+
+  // Возвращает все активные контексты бота (операция DialogEngine.findContexts, SD-6, спринт 3)
+  findContexts(_botId: string): Promise<DialogContextRow[]> {
+    throw new NotImplementedError('DialogService.findContexts');
+  }
+
+  // Сбрасывает все контексты бота при переопубликации (операция DialogEngine.resetDialogs, UC-U-07, SD-6, спринт 3)
+  resetDialogs(_botId: string): Promise<void> {
+    throw new NotImplementedError('DialogService.resetDialogs');
   }
 
   // Ошибка отправки не отменяет сохранённое состояние: пишется в журнал

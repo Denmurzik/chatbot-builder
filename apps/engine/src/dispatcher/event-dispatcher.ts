@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { Worker, type Job } from 'bullmq';
 import type IORedis from 'ioredis';
+import type { DialogContextRow } from '../dialog/context.repository';
 import { DialogService } from '../dialog/dialog.service';
 import { APP_CONFIG, EVENT_QUEUE, type AppConfig } from '../infra/tokens';
 
@@ -64,8 +65,13 @@ export class EventDispatcher implements OnApplicationBootstrap, OnModuleDestroy 
     }
   }
 
+  // Помещает событие в очередь нужного раздела (класс модели EventDispatcher, SD-1, спринт 1)
+  enqueue(event: ChatEvent, jobId: string): Promise<void> {
+    return this.queue.enqueue(event, jobId);
+  }
+
   // Проверка актуальности события HTTP-ответа по текущему контексту (SD-4, спринт 2)
-  isStale(_event: ChatEvent, _ctx: unknown): boolean {
+  isStale(_event: ChatEvent, _ctx: DialogContextRow | null): boolean {
     throw new NotImplementedError('EventDispatcher.isStale');
   }
 

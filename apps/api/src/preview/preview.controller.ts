@@ -1,3 +1,4 @@
+import type { DialogContext } from '@chatbot/db';
 import { NotImplementedError, type Block } from '@chatbot/model';
 import type { EventQueue } from '@chatbot/queue';
 import { Controller, Inject, UseGuards } from '@nestjs/common';
@@ -19,7 +20,7 @@ export class PreviewController {
     private readonly projectService: ProjectService,
   ) {}
 
-  startPreview(_projectId: string): unknown {
+  startPreview(_projectId: string): DialogContext {
     void this.prisma;
     void this.eventQueue;
     void this.projectService;

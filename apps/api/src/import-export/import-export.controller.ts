@@ -1,3 +1,4 @@
+import type { Project } from '@chatbot/db';
 import { NotImplementedError, type Scenario } from '@chatbot/model';
 import { Controller, UseGuards } from '@nestjs/common';
 import { JwtGuard } from '../auth/jwt.guard';
@@ -28,7 +29,7 @@ export class ImportExportController {
     throw new NotImplementedError('ImportExportController.exportScenario');
   }
 
-  importScenario(_authorId: string, _file: string): unknown {
+  importScenario(_authorId: string, _file: string): Project {
     throw new NotImplementedError('ImportExportController.importScenario');
   }
 

@@ -4,6 +4,7 @@ import { SecretVault } from '@chatbot/vault';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from './app.module';
+import { DialogService } from './dialog/dialog.service';
 import { EventDispatcher } from './dispatcher/event-dispatcher';
 import { ExternalApiClient } from './http/external-api-client';
 import { HttpRequestExecutor } from './http/http-request-executor';
@@ -110,6 +111,7 @@ describe('Каркас модулей Engine (skeleton)', () => {
 
   it('заглушки недостающих операций EventDispatcher, ExternalApiClient, MessengerGateway и SecretVault бросают NotImplementedError', () => {
     const dispatcher = moduleRef.get(EventDispatcher);
+    const dialogService = moduleRef.get(DialogService);
     const apiClient = moduleRef.get(ExternalApiClient);
     const gateway = moduleRef.get(MessengerGateway);
     const vault = moduleRef.get(SecretVault);
@@ -127,6 +129,9 @@ describe('Каркас модулей Engine (skeleton)', () => {
       'EventDispatcher.broadcast',
     );
     expect(() => dispatcher.takeNext('bot-1', 'tg:1')).toThrowError('EventDispatcher.takeNext');
+
+    expect(() => dialogService.findContexts('bot-1')).toThrowError('DialogService.findContexts');
+    expect(() => dialogService.resetDialogs('bot-1')).toThrowError('DialogService.resetDialogs');
 
     expect(() => apiClient.findSentRequest('req-1')).toThrowError(
       'ExternalApiClient.findSentRequest',

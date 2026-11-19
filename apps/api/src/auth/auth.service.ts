@@ -24,7 +24,7 @@ export class AuthService {
 
   async register(email: string, password: string): Promise<AuthResult> {
     const normalizedEmail = email.trim().toLowerCase();
-    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+    const passwordHash = await this.hashPassword(password);
 
     try {
       const created = await this.prisma.client.author.create({
@@ -46,19 +46,15 @@ export class AuthService {
   }
 
   async login(email: string, password: string): Promise<AuthResult> {
-    const normalizedEmail = email.trim().toLowerCase();
-    const author = await this.prisma.client.author.findUnique({
-      where: { email: normalizedEmail },
-      select: { id: true, email: true, passwordHash: true },
-    });
+    const author = await this.findAuthorByEmail(email);
 
     if (!author) {
       // Выполняем проверку против фиктивного хеша, чтобы время ответа не выдавало отсутствие email
-      await argon2.verify(DUMMY_PASSWORD_HASH, password);
+      await this.verifyPassword(password, DUMMY_PASSWORD_HASH);
       throw new UnauthorizedException('Неверный email или пароль');
     }
 
-    const passwordValid = await argon2.verify(author.passwordHash, password);
+    const passwordValid = await this.verifyPassword(password, author.passwordHash);
     if (!passwordValid) {
       throw new UnauthorizedException('Неверный email или пароль');
     }
@@ -68,6 +64,27 @@ export class AuthService {
       author: { id: author.id, email: author.email },
       token,
     };
+  }
+
+  // Поиск автора по нормализованному email (операция модели AuthController.findAuthorByEmail)
+  findAuthorByEmail(
+    email: string,
+  ): Promise<{ id: string; email: string; passwordHash: string } | null> {
+    const normalizedEmail = email.trim().toLowerCase();
+    return this.prisma.client.author.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true, email: true, passwordHash: true },
+    });
+  }
+
+  // Хеширование пароля алгоритмом argon2id (операция модели AuthController.hashPassword)
+  hashPassword(password: string): Promise<string> {
+    return argon2.hash(password, { type: argon2.argon2id });
+  }
+
+  // Проверка пароля по хешу argon2id (операция модели AuthController.verifyPassword)
+  verifyPassword(password: string, hash: string): Promise<boolean> {
+    return argon2.verify(hash, password);
   }
 
   private signSessionToken(authorId: string): Promise<string> {

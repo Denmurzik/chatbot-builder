@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@chatbot/db';
+import type { HttpRequest, PrismaClient } from '@chatbot/db';
 import { ExpressionEvaluator } from '@chatbot/engine-core';
 import { NotImplementedError, type HttpRequestBlock } from '@chatbot/model';
 import type { EventQueue } from '@chatbot/queue';
@@ -25,7 +25,7 @@ export class HttpRequestExecutor {
     private readonly vault: SecretVault,
   ) {}
 
-  createAndSend(_block: HttpRequestBlock, _ctxId: string): unknown {
+  createAndSend(_block: HttpRequestBlock, _ctxId: string): HttpRequest {
     void this.prisma;
     void this.queue;
     void this.apiClient;

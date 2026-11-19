@@ -123,5 +123,21 @@ describe('expression', () => {
       expect(evaluator.extractVariableNames('Привет, {{name}}!')).toEqual(['name']);
       expect(evaluator.substitute('q={{q}}', { q: 'a&b' }, 'URL')).toBe('q=a%26b');
     });
+
+    it('evaluateCondition приводит результат выражения к boolean', () => {
+      const evaluator = new ExpressionEvaluator();
+      const scope = new MapScope({ tries: '2', empty: '' }, {});
+
+      expect(evaluator.evaluateCondition('tries > 1', scope)).toBe(true);
+      expect(evaluator.evaluateCondition('empty', scope)).toBe(false);
+    });
+
+    it('evaluateExpression возвращает строковое представление результата', () => {
+      const evaluator = new ExpressionEvaluator();
+      const scope = new MapScope({ tries: '2' }, {});
+
+      expect(evaluator.evaluateExpression('tries + 1', scope)).toBe('3');
+      expect(evaluator.evaluateExpression('tries > 1', scope)).toBe('true');
+    });
   });
 });

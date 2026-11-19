@@ -9,12 +9,14 @@ import { PublicationModule } from './publication/publication.module';
 import { QueueModule } from './queue/queue.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { ValidatorModule } from './validation/validator.module';
+import { VaultModule } from './vault/vault.module';
 
 // Корневой модуль HTTP API приложения
 @Module({
   imports: [
     ConfigModule,
     PrismaModule,
+    VaultModule,
     AuthModule,
     ProjectModule,
     QueueModule,

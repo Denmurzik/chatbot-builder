@@ -1,4 +1,4 @@
-import type { MessengerType } from '@chatbot/db';
+import type { Bot, MessengerType } from '@chatbot/db';
 import { NotImplementedError, type EnvironmentVariable } from '@chatbot/model';
 import type { EventQueue } from '@chatbot/queue';
 import { SecretVault } from '@chatbot/vault';
@@ -24,7 +24,7 @@ export class PublicationController {
     private readonly projectService: ProjectService,
   ) {}
 
-  createBot(_projectId: string, _name: string): unknown {
+  createBot(_projectId: string, _name: string): Bot {
     void this.prisma;
     void this.eventQueue;
     void this.validator;

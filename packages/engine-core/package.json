@@ -13,6 +13,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
+    "chat": "tsx scripts/console-chat.ts",
     "test": "vitest run --root ../.. --project packages packages/engine-core"
   },
   "dependencies": {

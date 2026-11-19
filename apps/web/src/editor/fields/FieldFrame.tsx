@@ -19,6 +19,7 @@ interface FieldFrameProps {
   // Маркер «fx» слева (поле выражения)
   marker?: boolean;
   ariaLabel?: string;
+  ariaLabelledBy?: string;
   // Редактор поля (CodeMirror) и блок ошибки под ним
   children: ReactNode;
   footer?: ReactNode;
@@ -36,6 +37,7 @@ export function FieldFrame({
   sources,
   marker = false,
   ariaLabel,
+  ariaLabelledBy,
   children,
   footer,
 }: FieldFrameProps) {
@@ -94,7 +96,12 @@ export function FieldFrame({
         testValues={values}
         sources={origins}
         resultKind={resultKind}
-        title={ariaLabel}
+        title={
+          ariaLabel ??
+          (ariaLabelledBy
+            ? (document.getElementById(ariaLabelledBy)?.textContent ?? undefined)
+            : undefined)
+        }
         returnFocusTo={expandRef}
       />
     </div>

@@ -76,6 +76,7 @@ export function TemplateInput({
       testValues={values}
       sources={origins}
       ariaLabel={ariaLabel}
+      ariaLabelledBy={ariaLabelledBy}
       footer={
         unknown.length > 0 && (
           <p className="mt-1 text-xs text-destructive">

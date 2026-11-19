@@ -1,0 +1,10 @@
+# Only whitelisted files are tracked
+/*
+!/.gitignore
+!/AGENTS.md
+!/Chatbot Visual Editor.docx
+!/Vision_чат-бот_конструктор.docx
+!/VP-chatbot/
+
+# VP backups
+*.bak_*

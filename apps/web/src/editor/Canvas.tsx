@@ -9,7 +9,8 @@ import {
   type EdgeChange,
   type NodeChange,
 } from '@xyflow/react';
-import { LayoutGrid } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { LayoutGrid, Plus } from 'lucide-react';
 import '@xyflow/react/dist/style.css';
 import { useColorMode } from '@/app/theme';
 import { Button } from '@/components/ui/button';
@@ -20,6 +21,7 @@ import { filterDeletion } from './deletion';
 import { ScenarioEdge } from './edges/ScenarioEdge';
 import { GRID_SIZE } from './placement';
 import { BlockNode } from './nodes/BlockNode';
+import { BLOCK_DRAG_MIME } from './picker/NodePicker';
 
 // Типы узлов вне компонента — иначе React Flow пересоздаёт их на каждом рендере
 const nodeTypes = { [BLOCK_NODE_TYPE]: BlockNode };
@@ -44,6 +46,12 @@ interface CanvasProps {
   onEdgesChange: (changes: EdgeChange[]) => void;
   onEdgesReplace: (updater: (edges: Edge[]) => Edge[]) => void;
   onAutoLayout: () => void;
+  // Кнопка «+» в панели холста
+  onAddClick: () => void;
+  // Блок из панели «Что дальше?» отпущен над холстом (координаты экрана)
+  onBlockDrop: (type: string, point: { x: number; y: number }) => void;
+  // Дополнительные слои внутри холста (приветствие)
+  children?: ReactNode;
 }
 
 export function Canvas({
@@ -53,6 +61,9 @@ export function Canvas({
   onEdgesChange,
   onEdgesReplace,
   onAutoLayout,
+  onAddClick,
+  onBlockDrop,
+  children,
 }: CanvasProps) {
   const colorMode = useColorMode();
 
@@ -64,7 +75,22 @@ export function Canvas({
   }
 
   return (
-    <div className="size-full" data-testid="canvas">
+    <div
+      className="size-full"
+      data-testid="canvas"
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes(BLOCK_DRAG_MIME)) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+        }
+      }}
+      onDrop={(event) => {
+        const type = event.dataTransfer.getData(BLOCK_DRAG_MIME);
+        if (!type) return;
+        event.preventDefault();
+        onBlockDrop(type, { x: event.clientX, y: event.clientY });
+      }}
+    >
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -88,7 +114,21 @@ export function Canvas({
         proOptions={{ hideAttribution: true }}
       >
         <Background gap={GRID_SIZE} />
-        <Panel position="top-right" aria-label={ru.editor.canvasActions}>
+        <Panel
+          position="top-right"
+          aria-label={ru.editor.canvasActions}
+          className="flex flex-col gap-2"
+        >
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            onClick={onAddClick}
+            aria-label={ru.editor.addBlock}
+            title={`${ru.editor.addBlock} (Tab)`}
+          >
+            <Plus className="size-4" />
+          </Button>
           <Button
             type="button"
             size="sm"
@@ -100,6 +140,7 @@ export function Canvas({
             {ru.editor.autoLayout}
           </Button>
         </Panel>
+        {children}
         <Controls showInteractive={false} />
         <MiniMap
           pannable

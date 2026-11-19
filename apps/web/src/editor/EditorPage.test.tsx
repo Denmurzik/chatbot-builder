@@ -1,11 +1,12 @@
 import { QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { emptyScenario, type Scenario } from '@chatbot/model';
 import { ru } from '@/i18n/ru';
 import { createQueryClient } from '@/app/queryClient';
 import { EditorPage } from './EditorPage';
+import { BLOCK_DRAG_MIME } from './picker/NodePicker';
 
 // jsdom не содержит ResizeObserver и DOMMatrixReadOnly, нужных React Flow
 beforeAll(() => {
@@ -64,13 +65,14 @@ describe('EditorPage', () => {
     cleanup();
   });
 
-  it('отрисовывает три колонки и загруженный блок', async () => {
+  it('отрисовывает холст, инспектор и загруженный блок', async () => {
     stubFetch();
     renderEditor();
 
-    expect(await screen.findByText('Запись к врачу')).toBeTruthy();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Запись к врачу' })).toBeTruthy();
     expect(await screen.findByRole('button', { name: /Сохранить/ })).toBeTruthy();
-    expect(screen.getByLabelText('Блоки')).toBeTruthy();
+    // Постоянной левой панели блоков нет
+    expect(screen.queryByLabelText('Блоки')).toBeNull();
     expect(screen.getByLabelText('Свойства блока')).toBeTruthy();
     expect(screen.getByText('Старт')).toBeTruthy();
     expect(screen.getByText('Выберите блок на холсте, чтобы изменить его свойства')).toBeTruthy();
@@ -147,6 +149,124 @@ describe('EditorPage', () => {
       const saved = await savedScenario(fetchMock);
       expect(saved.blocks).toHaveLength(2);
       expect(saved.transitions).toHaveLength(1);
+    });
+  });
+  describe('добавление блоков', () => {
+    const chain: Scenario = {
+      formatVersion: 1,
+      blocks: [
+        { id: 'entry', type: 'ENTRY_POINT', title: 'Старт', x: 0, y: 0 },
+        { id: 'msg_1', type: 'TEXT_MESSAGE', title: 'Привет', text: 'Здравствуйте', x: 400, y: 0 },
+      ],
+      transitions: [{ source: { blockId: 'entry', output: 'default' }, target: 'msg_1' }],
+    };
+
+    async function savedScenario(fetchMock: ReturnType<typeof stubFetch>): Promise<Scenario> {
+      fireEvent.keyDown(window, { key: 's', code: 'KeyS', ctrlKey: true });
+      await waitFor(() =>
+        expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(true),
+      );
+      const call = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT')!;
+      return JSON.parse(String(call[1]!.body)) as Scenario;
+    }
+
+    it('панель «Что дальше?» закрыта по умолчанию и открывается кнопкой «+» холста, Esc закрывает', async () => {
+      stubFetch(chain);
+      renderEditor();
+      await screen.findByText('Привет');
+      expect(screen.queryByTestId('node-picker')).toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: ru.editor.addBlock }));
+      expect(await screen.findByText(ru.editor.picker.title)).toBeTruthy();
+      // «Точку входа» не предлагаем никогда
+      expect(screen.queryByRole('button', { name: /^Точка входа/ })).toBeNull();
+      expect(screen.getByRole('button', { name: /^Точка выхода/ })).toBeTruthy();
+
+      fireEvent.keyDown(screen.getByTestId('node-picker'), { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByTestId('node-picker')).toBeNull());
+    });
+
+    it('«+» неподключённого выхода добавляет блок и связь от этого выхода', async () => {
+      const fetchMock = stubFetch(chain);
+      renderEditor();
+      await screen.findByText('Привет');
+
+      // Единственный неподключённый выход — «Далее» у «Привет»
+      fireEvent.click(await screen.findByLabelText(ru.editor.addNextBlock));
+      fireEvent.click(await screen.findByRole('button', { name: /^Сообщение/ }));
+      await waitFor(() => expect(screen.queryByTestId('node-picker')).toBeNull());
+
+      const saved = await savedScenario(fetchMock);
+      expect(saved.blocks).toHaveLength(3);
+      const created = saved.blocks.find((b) => b.id !== 'entry' && b.id !== 'msg_1')!;
+      expect(created.x).toBeGreaterThan(400);
+      expect(saved.transitions).toContainEqual({
+        source: { blockId: 'msg_1', output: 'default' },
+        target: created.id,
+      });
+      expect(saved.transitions).toHaveLength(2);
+    });
+
+    it('drop из панели создаёт блок в точке отпускания по сетке', async () => {
+      const fetchMock = stubFetch(chain);
+      renderEditor();
+      await screen.findByText('Привет');
+
+      // jsdom не знает DragEvent: координаты и dataTransfer задаём на событии вручную
+      const drop = createEvent.drop(screen.getByTestId('canvas'));
+      Object.defineProperties(drop, {
+        clientX: { value: 205 },
+        clientY: { value: 318 },
+        dataTransfer: {
+          value: { getData: (mime: string) => (mime === BLOCK_DRAG_MIME ? 'TEXT_INPUT' : '') },
+        },
+      });
+      fireEvent(screen.getByTestId('canvas'), drop);
+
+      const saved = await savedScenario(fetchMock);
+      const created = saved.blocks.find((b) => b.type === 'TEXT_INPUT')!;
+      expect([created.x, created.y]).toEqual([200, 320]);
+      expect(saved.transitions).toHaveLength(1);
+    });
+
+    it('в пустом сценарии: оверлей «С чего начнём?», затем карточка первого шага, исчезающая после добавления блока', async () => {
+      const fetchMock = stubFetch();
+      renderEditor();
+      await screen.findByText('Старт');
+      expect(screen.getByText(ru.editor.onboarding.welcomeTitle)).toBeTruthy();
+
+      fireEvent.click(
+        screen.getByRole('button', { name: new RegExp(ru.editor.onboarding.welcomeEmpty) }),
+      );
+      expect(screen.queryByText(ru.editor.onboarding.welcomeTitle)).toBeNull();
+      const card = await screen.findByRole('button', {
+        name: new RegExp(ru.editor.onboarding.firstStep),
+      });
+
+      // Клик открывает панель; связь со «Старт» создаётся сама
+      fireEvent.click(card);
+      fireEvent.click(await screen.findByRole('button', { name: /^Сообщение/ }));
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('button', { name: new RegExp(ru.editor.onboarding.firstStep) }),
+        ).toBeNull(),
+      );
+      const saved = await savedScenario(fetchMock);
+      expect(saved.blocks).toHaveLength(2);
+      expect(saved.transitions[0]!.source).toEqual({ blockId: 'entry', output: 'default' });
+    });
+
+    it('шаблон «Запись к врачу» заменяет пустой сценарий', async () => {
+      const fetchMock = stubFetch();
+      renderEditor();
+      await screen.findByText('Старт');
+
+      fireEvent.click(
+        screen.getByRole('button', { name: new RegExp(ru.editor.onboarding.welcomeTemplate) }),
+      );
+      const saved = await savedScenario(fetchMock);
+      expect(saved.blocks.length).toBeGreaterThan(2);
+      expect(saved.transitions.length).toBeGreaterThan(2);
     });
   });
 });

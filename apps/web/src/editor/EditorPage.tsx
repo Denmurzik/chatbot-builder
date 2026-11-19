@@ -11,7 +11,7 @@ import {
 import { ArrowLeft, Save } from 'lucide-react';
 import { Link, useBlocker, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { scenarioSchema, type BlockType, type Scenario } from '@chatbot/model';
+import { BLOCK_TYPES, scenarioSchema, type BlockType, type Scenario } from '@chatbot/model';
 import { ApiError } from '@/api/client';
 import { useProject, useSaveScenario } from '@/api/projects';
 import { Button } from '@/components/ui/button';
@@ -25,11 +25,9 @@ import {
 } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ru } from '@/i18n/ru';
-import { BlockPalette } from './BlockPalette';
 import { Canvas } from './Canvas';
 import { Inspector } from './Inspector';
 import { EditorActionsContext, type EditorActions } from './actions';
-import { BLOCK_META } from './block-meta';
 import {
   BLOCK_NODE_TYPE,
   flowToScenario,
@@ -39,21 +37,41 @@ import {
   type BlockNodeData,
 } from './convert';
 import { layoutScenario } from './layout';
-import { findFreePosition, snapToGrid } from './placement';
+import { NODE_HEIGHT, NODE_WIDTH, snapToGrid } from './placement';
 import { nodeIssues } from './validate';
+import { FirstStepCard, WelcomeOverlay } from './onboarding/EmptyState';
+import type { ScenarioTemplate } from './onboarding/templates';
+import { NodePicker } from './picker/NodePicker';
+import { addFree, addFromOutput, insertOnEdge, type GraphResult } from './picker/insertion';
+import { nextBlockId } from './ids';
 
 // Выбор и размеры узлов не меняют сценарий — не считаем их несохранёнными изменениями
 function isMeaningfulNodeChange(change: NodeChange<BlockNode>): boolean {
   return change.type !== 'select' && change.type !== 'dimensions';
 }
 
-// Свободный идентификатор блока: тип в нижнем регистре + номер (до 40 символов)
-export function nextBlockId(type: BlockType, nodes: BlockNode[]): string {
-  const base = type.toLowerCase();
-  const used = new Set(nodes.map((node) => node.id));
-  let n = 1;
-  while (used.has(`${base}_${n}`)) n += 1;
-  return `${base}_${n}`;
+// Откуда открыта панель «Что дальше?»: с выхода блока, со связи или с кнопки холста
+type PickerTarget =
+  | { kind: 'free' }
+  | { kind: 'output'; blockId: string; output: string }
+  | { kind: 'edge'; edgeId: string };
+
+// Сценарий из одного «Старта» без связей — повод показать приветствие
+function isBlankFlow(nodes: BlockNode[], edges: Edge[]): boolean {
+  return nodes.length === 1 && nodes[0]!.data.type === 'ENTRY_POINT' && edges.length === 0;
+}
+
+// Фокус не в поле ввода: Tab открывает панель только с холста или «пустого» места
+function isFocusOnCanvasOrBody(): boolean {
+  const active = document.activeElement;
+  return (
+    active === document.body ||
+    (active instanceof Element && active.closest('.react-flow') !== null)
+  );
+}
+
+function snapToGridPoint(point: { x: number; y: number }) {
+  return { x: snapToGrid(point.x), y: snapToGrid(point.y) };
 }
 
 function showIssues(title: string, issues: { path: string; message: string }[]) {
@@ -94,6 +112,11 @@ function ScenarioEditor({
   const [nodes, setNodes] = useState<BlockNode[]>(initialFlow.nodes);
   const [edges, setEdges] = useState<Edge[]>(initialFlow.edges);
   const [dirty, setDirty] = useState(false);
+  const [picker, setPicker] = useState<PickerTarget | null>(null);
+  // Оверлей «С чего начнём?» — только при первом открытии пустого сценария (флаг в памяти страницы)
+  const [welcomePending, setWelcomePending] = useState(() =>
+    isBlankFlow(initialFlow.nodes, initialFlow.edges),
+  );
   // Актуальные значения для расчётов вне updater-функций (в них побочных эффектов быть не должно)
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
@@ -104,6 +127,9 @@ function ScenarioEditor({
   const save = useSaveScenario(projectId);
 
   const selected = nodes.find((node) => node.selected) ?? null;
+  const blank = isBlankFlow(nodes, edges);
+  const showWelcome = welcomePending && blank;
+  const entryNode = blank ? nodes[0] : undefined;
 
   const commitNodes = useCallback((next: BlockNode[]) => {
     nodesRef.current = next;
@@ -149,25 +175,59 @@ function ScenarioEditor({
     [commitEdges, touch],
   );
 
-  function handleAdd(type: BlockType) {
-    const bounds = canvasRef.current?.getBoundingClientRect();
-    const center = bounds
-      ? screenToFlowPosition({
-          x: bounds.left + bounds.width / 2,
-          y: bounds.top + bounds.height / 2,
-        })
-      : { x: 0, y: 0 };
-    const current = nodesRef.current;
-    const position = findFreePosition(current, center);
-    const node: BlockNode = {
-      id: nextBlockId(type, current),
-      type: BLOCK_NODE_TYPE,
-      position,
-      data: BLOCK_META[type].defaults(),
-      selected: true,
-    };
-    commitNodes([...current.map((n) => ({ ...n, selected: false })), node]);
+  function applyGraph(result: GraphResult) {
+    commitNodes(result.nodes);
+    commitEdges(result.edges);
     touch();
+  }
+
+  // Центр видимой области холста в координатах потока (левый верхний угол нового блока)
+  function visibleCenter() {
+    const bounds = canvasRef.current?.getBoundingClientRect();
+    const center = screenToFlowPosition(
+      bounds
+        ? { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 }
+        : { x: 0, y: 0 },
+    );
+    return { x: center.x - NODE_WIDTH / 2, y: center.y - NODE_HEIGHT / 2 };
+  }
+
+  // Выбор блока в панели или сброс на холст: учитываем, откуда открыта панель
+  function placeBlock(type: BlockType, target: PickerTarget, point?: { x: number; y: number }) {
+    const nodes = nodesRef.current;
+    const edges = edgesRef.current;
+    let result: GraphResult | null;
+    if (target.kind === 'output') {
+      result = addFromOutput(nodes, edges, target, type, point);
+    } else if (target.kind === 'edge') {
+      result = insertOnEdge(nodes, edges, target.edgeId, type, point);
+    } else {
+      result = addFree(nodes, edges, type, point ?? visibleCenter());
+    }
+    if (result) applyGraph(result);
+    setPicker(null);
+  }
+
+  function handleBlockDrop(rawType: string, client: { x: number; y: number }) {
+    const type = BLOCK_TYPES.find((t) => t === rawType);
+    if (!type || type === 'ENTRY_POINT') return;
+    const target: PickerTarget = picker ?? { kind: 'free' };
+    // Блок без выходов на связь не вставить — кладём его без связей
+    const effective: PickerTarget =
+      target.kind === 'edge' && type === 'EXIT_POINT' ? { kind: 'free' } : target;
+    placeBlock(type, effective, snapToGridPoint(screenToFlowPosition(client)));
+  }
+
+  function applyTemplate(template: ScenarioTemplate) {
+    setWelcomePending(false);
+    if (template.id === 'empty') return;
+    const flow = scenarioToFlow(template.build());
+    commitNodes(flow.nodes);
+    commitEdges(flow.edges);
+    touch();
+    window.requestAnimationFrame(() => {
+      void fitView({ padding: 0.2, maxZoom: 1 });
+    });
   }
 
   // Правка полей: после смены options/values удаляем рёбра исчезнувших выходов
@@ -202,9 +262,8 @@ function ScenarioEditor({
       // Пока окна блока нет — просто выделяем блок
       openBlock: (id) =>
         commitNodes(nodesRef.current.map((node) => ({ ...node, selected: node.id === id }))),
-      // Панель «Что дальше?» появится в задаче 4
-      addFromOutput: () => void toast.info(ru.editor.comingSoon),
-      insertOnEdge: () => void toast.info(ru.editor.comingSoon),
+      addFromOutput: (blockId, output) => setPicker({ kind: 'output', blockId, output }),
+      insertOnEdge: (edgeId) => setPicker({ kind: 'edge', edgeId }),
       // Копия правее и ниже со сдвигом 40, без связей, с новым id
       duplicate: (id) => {
         const current = nodesRef.current;
@@ -309,6 +368,20 @@ function ScenarioEditor({
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [dirty]);
 
+  // Tab — открыть панель «Что дальше?», если фокус не в поле ввода
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Tab' || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) {
+        return;
+      }
+      if (!isFocusOnCanvasOrBody()) return;
+      event.preventDefault();
+      setPicker({ kind: 'free' });
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       dirty && currentLocation.pathname !== nextLocation.pathname,
@@ -334,8 +407,7 @@ function ScenarioEditor({
         </div>
       </EditorHeader>
       <div className="flex min-h-0 flex-1">
-        <BlockPalette onAdd={handleAdd} />
-        <div ref={canvasRef} className="min-w-0 flex-1" aria-label={ru.editor.canvas}>
+        <div ref={canvasRef} className="relative min-w-0 flex-1" aria-label={ru.editor.canvas}>
           <EditorActionsContext.Provider value={actions}>
             <Canvas
               nodes={nodes}
@@ -344,11 +416,29 @@ function ScenarioEditor({
               onEdgesChange={handleEdgesChange}
               onEdgesReplace={handleEdgesReplace}
               onAutoLayout={handleAutoLayout}
-            />
+              onAddClick={() => setPicker({ kind: 'free' })}
+              onBlockDrop={handleBlockDrop}
+            >
+              {blank && !showWelcome && entryNode && (
+                <FirstStepCard
+                  entry={entryNode}
+                  onClick={() =>
+                    setPicker({ kind: 'output', blockId: entryNode.id, output: 'default' })
+                  }
+                />
+              )}
+            </Canvas>
           </EditorActionsContext.Provider>
+          {showWelcome && <WelcomeOverlay onChoose={applyTemplate} />}
         </div>
         <Inspector node={selected} onChange={handleDataChange} />
       </div>
+      <NodePicker
+        open={picker !== null}
+        onOpenChange={(open) => !open && setPicker(null)}
+        excluded={picker?.kind === 'edge' ? ['EXIT_POINT'] : []}
+        onPick={(type) => picker && placeBlock(type, picker)}
+      />
       <Dialog
         open={blocker.state === 'blocked'}
         onOpenChange={(open) => {

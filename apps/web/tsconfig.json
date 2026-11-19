@@ -14,7 +14,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@chatbot/model": ["../../packages/model/src/index.ts"]
+      "@chatbot/model": ["../../packages/model/src/index.ts"],
+      "@chatbot/engine-core": ["../../packages/engine-core/src/index.ts"]
     }
   },
   "include": ["src", "vite.config.ts"]

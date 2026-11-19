@@ -5,6 +5,7 @@ import type { Scenario } from './scenario';
 export const TEMPLATE_VAR_REGEX = /\{\{\s*([A-Za-z_][A-Za-z0-9_.]*)\s*\}\}/g;
 
 const ENV_REF_IN_EXPR_REGEX = /^\{\{\s*(env\.[A-Za-z_][A-Za-z0-9_]*)\s*\}\}/;
+const NUMERIC_LITERAL_AT_START_REGEX = /^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/;
 const IDENTIFIER_AT_START_REGEX = /^[A-Za-z_][A-Za-z0-9_]*/;
 const EXPR_KEYWORDS = new Set(['true', 'false']);
 
@@ -73,6 +74,18 @@ function extractExpressionVariables(expr: string): string[] {
         pushUnique(result, seen, [match[1]]);
         i += match[0].length;
         continue;
+      }
+    }
+
+    // Числовые литералы (включая научную нотацию 1e3, 2.5e-4) пропускаем целиком
+    if (/[0-9]/.test(ch)) {
+      const prev = i > 0 ? expr[i - 1] : '';
+      if (!/[A-Za-z0-9_]/.test(prev)) {
+        const numMatch = NUMERIC_LITERAL_AT_START_REGEX.exec(expr.slice(i));
+        if (numMatch) {
+          i += numMatch[0].length;
+          continue;
+        }
       }
     }
 

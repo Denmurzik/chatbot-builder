@@ -223,6 +223,20 @@ describe('variables', () => {
       ).toEqual(['tries', 'isReady', 'blocked', 'role', 'token', 'env.ADMIN_TOKEN']);
     });
 
+    it('не принимает научную нотацию чисел и содержимое строковых литералов за переменные', () => {
+      expect(
+        blockReads({
+          id: 'as_num',
+          type: 'ASSIGNMENT',
+          title: 'Числа и строки',
+          ...base,
+          variableName: 'out',
+          expression:
+            'amount + 1e3 + 2.5e-4 + 1E+5 + "foo {{env.HIDDEN}}" + \'bar {{env.ALSO_HIDDEN}}\' + {{env.VISIBLE}}',
+        }),
+      ).toEqual(['amount', 'env.VISIBLE']);
+    });
+
     it('извлекает variableName для SWITCH', () => {
       expect(
         blockReads({

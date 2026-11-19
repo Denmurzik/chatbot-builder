@@ -15,7 +15,11 @@ import { BLOCK_TYPES, type BlockType } from '@chatbot/model';
 import { ru } from '@/i18n/ru';
 import type { BlockNodeData } from './convert';
 
+// Категория блока определяет форму на холсте
+export type BlockCategory = 'start' | 'finish' | 'talk' | 'logic' | 'integration';
+
 export interface BlockMeta {
+  category: BlockCategory;
   label: string;
   icon: LucideIcon;
   // Акцентный цвет типа блока (используется только на блоках и в палитре)
@@ -25,24 +29,28 @@ export interface BlockMeta {
 
 export const BLOCK_META: Record<BlockType, BlockMeta> = {
   ENTRY_POINT: {
+    category: 'start',
     label: ru.blocks.ENTRY_POINT,
     icon: Play,
     color: 'oklch(0.62 0.17 150)',
     defaults: () => ({ type: 'ENTRY_POINT', title: ru.blocks.ENTRY_POINT }),
   },
   EXIT_POINT: {
+    category: 'finish',
     label: ru.blocks.EXIT_POINT,
     icon: CircleStop,
     color: 'oklch(0.58 0.2 25)',
     defaults: () => ({ type: 'EXIT_POINT', title: ru.blocks.EXIT_POINT }),
   },
   TEXT_MESSAGE: {
+    category: 'talk',
     label: ru.blocks.TEXT_MESSAGE,
     icon: MessageSquare,
     color: 'oklch(0.62 0.16 250)',
     defaults: () => ({ type: 'TEXT_MESSAGE', title: ru.blocks.TEXT_MESSAGE, text: '' }),
   },
   TEXT_INPUT: {
+    category: 'talk',
     label: ru.blocks.TEXT_INPUT,
     icon: TextCursorInput,
     color: 'oklch(0.6 0.15 200)',
@@ -54,6 +62,7 @@ export const BLOCK_META: Record<BlockType, BlockMeta> = {
     }),
   },
   OPTION_CHOICE: {
+    category: 'talk',
     label: ru.blocks.OPTION_CHOICE,
     icon: ListChecks,
     color: 'oklch(0.6 0.18 290)',
@@ -66,6 +75,7 @@ export const BLOCK_META: Record<BlockType, BlockMeta> = {
     }),
   },
   LIST_CHOICE: {
+    category: 'talk',
     label: ru.blocks.LIST_CHOICE,
     icon: ListTree,
     color: 'oklch(0.58 0.16 320)',
@@ -80,6 +90,7 @@ export const BLOCK_META: Record<BlockType, BlockMeta> = {
     }),
   },
   ASSIGNMENT: {
+    category: 'logic',
     label: ru.blocks.ASSIGNMENT,
     icon: Braces,
     color: 'oklch(0.55 0.04 260)',
@@ -91,12 +102,14 @@ export const BLOCK_META: Record<BlockType, BlockMeta> = {
     }),
   },
   CONDITION: {
+    category: 'logic',
     label: ru.blocks.CONDITION,
     icon: GitBranch,
     color: 'oklch(0.72 0.15 75)',
     defaults: () => ({ type: 'CONDITION', title: ru.blocks.CONDITION, expression: '' }),
   },
   SWITCH: {
+    category: 'logic',
     label: ru.blocks.SWITCH,
     icon: Split,
     color: 'oklch(0.68 0.16 55)',
@@ -108,6 +121,7 @@ export const BLOCK_META: Record<BlockType, BlockMeta> = {
     }),
   },
   HTTP_REQUEST: {
+    category: 'integration',
     label: ru.blocks.HTTP_REQUEST,
     icon: Globe,
     color: 'oklch(0.6 0.13 180)',

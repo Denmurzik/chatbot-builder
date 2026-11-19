@@ -64,6 +64,7 @@ export default defineWorkspace([
     test: {
       name: 'web',
       environment: 'jsdom',
+      setupFiles: ['./apps/web/src/test/setup.ts'],
       include: ['apps/web/src/**/*.test.{ts,tsx}'],
       exclude: ['**/*.int.test.{ts,tsx}', '**/node_modules/**', '**/dist/**'],
     },

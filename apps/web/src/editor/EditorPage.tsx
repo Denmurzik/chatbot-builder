@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ReactFlowProvider,
   applyEdgeChanges,
@@ -28,6 +28,7 @@ import { ru } from '@/i18n/ru';
 import { BlockPalette } from './BlockPalette';
 import { Canvas } from './Canvas';
 import { Inspector } from './Inspector';
+import { EditorActionsContext, type EditorActions } from './actions';
 import { BLOCK_META } from './block-meta';
 import {
   BLOCK_NODE_TYPE,
@@ -37,7 +38,8 @@ import {
   type BlockNode,
   type BlockNodeData,
 } from './convert';
-import { findFreePosition } from './placement';
+import { layoutScenario } from './layout';
+import { findFreePosition, snapToGrid } from './placement';
 import { nodeIssues } from './validate';
 
 // Выбор и размеры узлов не меняют сценарий — не считаем их несохранёнными изменениями
@@ -46,7 +48,7 @@ function isMeaningfulNodeChange(change: NodeChange<BlockNode>): boolean {
 }
 
 // Свободный идентификатор блока: тип в нижнем регистре + номер (до 40 символов)
-function nextBlockId(type: BlockType, nodes: BlockNode[]): string {
+export function nextBlockId(type: BlockType, nodes: BlockNode[]): string {
   const base = type.toLowerCase();
   const used = new Set(nodes.map((node) => node.id));
   let n = 1;
@@ -98,7 +100,7 @@ function ScenarioEditor({
   // Счётчик правок графа: по нему понимаем, менялся ли граф, пока шёл запрос сохранения
   const revisionRef = useRef(0);
   const canvasRef = useRef<HTMLDivElement>(null);
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, fitView } = useReactFlow();
   const save = useSaveScenario(projectId);
 
   const selected = nodes.find((node) => node.selected) ?? null;
@@ -169,12 +171,67 @@ function ScenarioEditor({
   }
 
   // Правка полей: после смены options/values удаляем рёбра исчезнувших выходов
-  function handleDataChange(id: string, data: BlockNodeData) {
-    const next = nodesRef.current.map((node) => (node.id === id ? { ...node, data } : node));
-    commitNodes(next);
-    commitEdges(pruneEdges(next, edgesRef.current));
+  const handleDataChange = useCallback(
+    (id: string, data: BlockNodeData) => {
+      const next = nodesRef.current.map((node) => (node.id === id ? { ...node, data } : node));
+      commitNodes(next);
+      commitEdges(pruneEdges(next, edgesRef.current));
+      touch();
+    },
+    [commitNodes, commitEdges, touch],
+  );
+
+  // Упорядочить: раскладка слева направо по сетке и подгонка вида
+  const handleAutoLayout = useCallback(() => {
+    commitNodes(layoutScenario(nodesRef.current, edgesRef.current));
     touch();
-  }
+    window.requestAnimationFrame(() => {
+      void fitView({ maxZoom: 1, padding: 0.3, duration: 200 });
+    });
+  }, [commitNodes, touch, fitView]);
+
+  // Действия блоков и связей для BlockNode и ScenarioEdge; задачи 4 и 5 подменяют часть из них
+  const actions = useMemo<EditorActions>(
+    () => ({
+      // Пока окна блока нет — просто выделяем блок
+      openBlock: (id) =>
+        commitNodes(nodesRef.current.map((node) => ({ ...node, selected: node.id === id }))),
+      // Панель «Что дальше?» появится в задаче 4
+      addFromOutput: () => void toast.info(ru.editor.comingSoon),
+      insertOnEdge: () => void toast.info(ru.editor.comingSoon),
+      // Копия правее и ниже со сдвигом 40, без связей, с новым id
+      duplicate: (id) => {
+        const current = nodesRef.current;
+        const source = current.find((node) => node.id === id);
+        if (!source || source.data.type === 'ENTRY_POINT') return;
+        const copy: BlockNode = {
+          id: nextBlockId(source.data.type, current),
+          type: BLOCK_NODE_TYPE,
+          position: {
+            x: snapToGrid(source.position.x + 40),
+            y: snapToGrid(source.position.y + 40),
+          },
+          data: structuredClone(source.data),
+          selected: true,
+        };
+        commitNodes([...current.map((node) => ({ ...node, selected: false })), copy]);
+        touch();
+      },
+      // Удаление блока убирает и его рёбра; точку входа удалить нельзя
+      remove: (id) => {
+        const target = nodesRef.current.find((node) => node.id === id);
+        if (!target || target.data.type === 'ENTRY_POINT') return;
+        handleNodesChange([{ type: 'remove', id }]);
+      },
+      rename: (id) => {
+        const target = nodesRef.current.find((node) => node.id === id);
+        if (!target) return;
+        const title = window.prompt(ru.editor.renamePrompt, target.data.title)?.trim();
+        if (title) handleDataChange(id, { ...target.data, title });
+      },
+    }),
+    [commitNodes, touch, handleNodesChange, handleDataChange],
+  );
 
   const handleSave = useCallback(() => {
     if (save.isPending) return;
@@ -272,13 +329,16 @@ function ScenarioEditor({
       <div className="flex min-h-0 flex-1">
         <BlockPalette onAdd={handleAdd} />
         <div ref={canvasRef} className="min-w-0 flex-1" aria-label={ru.editor.canvas}>
-          <Canvas
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={handleNodesChange}
-            onEdgesChange={handleEdgesChange}
-            onEdgesReplace={handleEdgesReplace}
-          />
+          <EditorActionsContext.Provider value={actions}>
+            <Canvas
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={handleNodesChange}
+              onEdgesChange={handleEdgesChange}
+              onEdgesReplace={handleEdgesReplace}
+              onAutoLayout={handleAutoLayout}
+            />
+          </EditorActionsContext.Provider>
         </div>
         <Inspector node={selected} onChange={handleDataChange} />
       </div>

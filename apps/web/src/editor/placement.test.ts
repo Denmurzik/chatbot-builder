@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { NODE_HEIGHT, NODE_WIDTH, findFreePosition } from './placement';
+import {
+  GRID_SIZE,
+  NODE_HEIGHT,
+  NODE_WIDTH,
+  findFreePosition,
+  placeNear,
+  snapToGrid,
+} from './placement';
 
 type N = { position: { x: number; y: number }; selected?: boolean };
 
@@ -12,16 +19,54 @@ function intersects(a: N, b: { x: number; y: number }): boolean {
   );
 }
 
-describe('findFreePosition', () => {
-  it('без блоков центрирует новый блок', () => {
-    const p = findFreePosition([], { x: 500, y: 300 });
-    expect(p).toEqual({ x: 500 - NODE_WIDTH / 2, y: 300 - NODE_HEIGHT / 2 });
+describe('snapToGrid', () => {
+  it('округляет координату к шагу сетки 20', () => {
+    expect(snapToGrid(0)).toBe(0);
+    expect(snapToGrid(9)).toBe(0);
+    expect(snapToGrid(10)).toBe(20);
+    expect(snapToGrid(37)).toBe(40);
+    expect(snapToGrid(-11)).toBe(-20);
+  });
+});
+
+describe('placeNear', () => {
+  it('ставит новый блок справа от источника по сетке 20 без пересечения', () => {
+    const source: N = { position: { x: 40, y: 80 } };
+    const p = placeNear(source, [source]);
+    expect(p.x).toBeGreaterThanOrEqual(source.position.x + NODE_WIDTH);
+    expect(p.x % GRID_SIZE).toBe(0);
+    expect(p.y % GRID_SIZE).toBe(0);
+    expect(intersects(source, p)).toBe(false);
   });
 
-  it('ставит блок ниже выбранного без пересечения', () => {
+  it('смещает вниз, если место справа занято', () => {
+    const source: N = { position: { x: 0, y: 0 } };
+    const first = placeNear(source, [source]);
+    const second = placeNear(source, [source, { position: first }]);
+    expect(second.y).toBeGreaterThan(first.y);
+    expect(second.x % GRID_SIZE).toBe(0);
+    expect(second.y % GRID_SIZE).toBe(0);
+    expect(intersects({ position: first }, second)).toBe(false);
+  });
+});
+
+describe('findFreePosition', () => {
+  it('без блоков центрирует новый блок с привязкой к сетке 20', () => {
+    const p = findFreePosition([], { x: 500, y: 300 });
+    expect(p).toEqual({
+      x: snapToGrid(500 - NODE_WIDTH / 2),
+      y: snapToGrid(300 - NODE_HEIGHT / 2),
+    });
+    expect(p.x % GRID_SIZE).toBe(0);
+    expect(p.y % GRID_SIZE).toBe(0);
+  });
+
+  it('ставит блок справа от выбранного без пересечения и по сетке', () => {
     const nodes: N[] = [{ position: { x: 0, y: 0 }, selected: true }];
     const p = findFreePosition(nodes, { x: 0, y: 0 });
-    expect(p.y).toBeGreaterThanOrEqual(NODE_HEIGHT);
+    expect(p.x).toBeGreaterThanOrEqual(NODE_WIDTH);
+    expect(p.x % GRID_SIZE).toBe(0);
+    expect(p.y % GRID_SIZE).toBe(0);
     expect(intersects(nodes[0]!, p)).toBe(false);
   });
 
@@ -29,17 +74,10 @@ describe('findFreePosition', () => {
     const nodes: N[] = [{ position: { x: 0, y: 0 } }];
     for (let i = 0; i < 12; i += 1) {
       const p = findFreePosition(nodes, { x: 0, y: 0 });
+      expect(p.x % GRID_SIZE).toBe(0);
+      expect(p.y % GRID_SIZE).toBe(0);
       expect(nodes.some((n) => intersects(n, p))).toBe(false);
       nodes.push({ position: p });
     }
-  });
-
-  it('обходит занятое место под якорем', () => {
-    const nodes: N[] = [
-      { position: { x: 0, y: 200 } },
-      { position: { x: 0, y: 0 }, selected: true },
-    ];
-    const p = findFreePosition(nodes, { x: 0, y: 0 });
-    expect(nodes.some((n) => intersects(n, p))).toBe(false);
   });
 });

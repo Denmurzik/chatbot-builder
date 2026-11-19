@@ -2,6 +2,17 @@
 export const NODE_WIDTH = 256;
 export const NODE_HEIGHT = 140;
 export const NODE_GAP = 40;
+export const GRID_SIZE = 20;
+
+// Привязка координаты к сетке (+ 0 убирает -0)
+export function snapToGrid(value: number): number {
+  return Math.round(value / GRID_SIZE) * GRID_SIZE + 0;
+}
+
+// Округление вверх до узла сетки: отступы от соседей не уменьшаются
+function snapUp(value: number): number {
+  return Math.ceil(value / GRID_SIZE) * GRID_SIZE + 0;
+}
 
 interface Box {
   x: number;
@@ -34,34 +45,49 @@ function overlaps(a: Box, b: Box): boolean {
   );
 }
 
-// Свободное место для нового блока: ниже выбранного (или последнего) блока,
-// при занятости — сдвиг вниз, затем вправо; без блоков — в центре видимой области
-export function findFreePosition(
-  nodes: readonly PlacedNode[],
-  center: { x: number; y: number },
-): { x: number; y: number } {
-  if (nodes.length === 0) {
-    return { x: Math.round(center.x - NODE_WIDTH / 2), y: Math.round(center.y - NODE_HEIGHT / 2) };
-  }
-  const anchor = nodes.find((n) => n.selected) ?? nodes[nodes.length - 1]!;
-  const a = boxOf(anchor);
-  const boxes = nodes.map(boxOf);
+// Ищет свободное место для блока: сначала правее и ниже кандидата, затем следующие колонки.
+// Все координаты — по сетке
+function searchFree(boxes: Box[], start: { x: number; y: number }, columnTop: number) {
   const candidate: Box = {
-    x: a.x,
-    y: a.y + a.height + NODE_GAP,
+    x: snapUp(start.x),
+    y: snapUp(start.y),
     width: NODE_WIDTH,
     height: NODE_HEIGHT,
   };
   for (let column = 0; column < 50; column += 1) {
     for (let row = 0; row < 200; row += 1) {
-      if (!boxes.some((b) => overlaps(candidate, b))) {
-        return { x: Math.round(candidate.x), y: Math.round(candidate.y) };
-      }
-      const hit = boxes.find((b) => overlaps(candidate, b))!;
-      candidate.y = hit.y + hit.height + NODE_GAP;
+      const hit = boxes.find((b) => overlaps(candidate, b));
+      if (!hit) return { x: candidate.x, y: candidate.y };
+      candidate.y = snapUp(hit.y + hit.height + NODE_GAP);
     }
-    candidate.x += NODE_WIDTH + NODE_GAP;
-    candidate.y = a.y;
+    candidate.x += snapUp(NODE_WIDTH + NODE_GAP);
+    candidate.y = columnTop;
   }
-  return { x: Math.round(candidate.x), y: Math.round(candidate.y) };
+  return { x: candidate.x, y: candidate.y };
+}
+
+// Новый блок — справа от источника; если место занято, сдвиг вниз, затем вправо
+export function placeNear(
+  source: PlacedNode,
+  nodes: readonly PlacedNode[],
+): { x: number; y: number } {
+  const a = boxOf(source);
+  const columnTop = snapUp(a.y);
+  return searchFree(nodes.map(boxOf), { x: a.x + a.width + NODE_GAP, y: a.y }, columnTop);
+}
+
+// Свободное место для нового блока: справа от выбранного (или последнего) блока;
+// без блоков — в центре видимой области
+export function findFreePosition(
+  nodes: readonly PlacedNode[],
+  center: { x: number; y: number },
+): { x: number; y: number } {
+  if (nodes.length === 0) {
+    return {
+      x: snapToGrid(center.x - NODE_WIDTH / 2),
+      y: snapToGrid(center.y - NODE_HEIGHT / 2),
+    };
+  }
+  const anchor = nodes.find((n) => n.selected) ?? nodes[nodes.length - 1]!;
+  return placeNear(anchor, nodes);
 }

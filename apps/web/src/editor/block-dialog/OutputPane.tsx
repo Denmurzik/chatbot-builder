@@ -3,7 +3,8 @@ import { blockWrites, type Block } from '@chatbot/model';
 import { ru } from '@/i18n/ru';
 import { cn } from '@/lib/utils';
 import { safeOutputs, type BlockNode } from '../convert';
-import { outputLabel, previewBlock } from './output-preview';
+import { outputLabel } from '../output-label';
+import { previewBlock } from './output-preview';
 
 const t = ru.blockDialog;
 
@@ -66,7 +67,7 @@ export function OutputPane({ node, nodes, edges, testValues }: OutputPaneProps) 
                     preview.branch === output && 'border-primary bg-primary/10',
                   )}
                 >
-                  <span className="font-medium">{outputLabel(output)}</span>
+                  <span className="font-medium">{outputLabel(node.data.type, output)}</span>
                   <span className="text-xs text-muted-foreground">
                     {target ? t.leadsTo(titleOf(target)) : t.notConnected}
                   </span>
@@ -87,7 +88,7 @@ export function OutputPane({ node, nodes, edges, testValues }: OutputPaneProps) 
         )}
         {preview.branch && (
           <p role="status" className="text-sm font-medium">
-            {t.previewBranch(outputLabel(preview.branch))}
+            {t.previewBranch(outputLabel(node.data.type, preview.branch))}
           </p>
         )}
         {preview.rows.map((row) => (

@@ -126,7 +126,11 @@ describe('BlockNode', () => {
     expect(screen.getByText('Запись')).toBeTruthy();
     expect(screen.getByText('Отмена')).toBeTruthy();
     expect(screen.getByText('Помощь')).toBeTruthy();
-    expect(container.querySelector('[data-block-shape="talk"]')).toBeTruthy();
+    const talk = container.querySelector('[data-block-shape="talk"]');
+    expect(talk).toBeTruthy();
+    // Без хвостика: выступающих за контур элементов нет, форма узнаётся по значку-реплике
+    expect(talk!.querySelector('.rotate-45, [class*="-bottom-"]')).toBeNull();
+    expect(talk!.querySelector('[data-testid="talk-icon"]')).toBeTruthy();
 
     const addButtons = screen.getAllByRole('button', { name: ru.editor.addNextBlock });
     expect(addButtons).toHaveLength(3);

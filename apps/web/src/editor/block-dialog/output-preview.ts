@@ -13,12 +13,6 @@ export interface BlockPreview {
   error?: string;
 }
 
-export const OUTPUT_LABELS: Record<string, string> = ru.outputs;
-
-export function outputLabel(output: string): string {
-  return OUTPUT_LABELS[output] ?? output;
-}
-
 function errorText(error: unknown): string {
   return error instanceof ExpressionError ? error.message : ru.fieldInput.expressionErrorGeneric;
 }

@@ -7,7 +7,7 @@ import {
   useUpdateNodeInternals,
   type NodeProps,
 } from '@xyflow/react';
-import { Copy, MoreHorizontal, Pencil, Plus, Settings2, Trash2 } from 'lucide-react';
+import { Copy, MessageCircle, MoreHorizontal, Pencil, Plus, Settings2, Trash2 } from 'lucide-react';
 import type { BlockType } from '@chatbot/model';
 import { cn } from '@/lib/utils';
 import { ru } from '@/i18n/ru';
@@ -20,30 +20,11 @@ import {
 import { IconAction } from '../IconAction';
 import { useEditorActions } from '../actions';
 import { BLOCK_META } from '../block-meta';
+import { outputLabel } from '../output-label';
 import { blockPreview } from '../preview';
 import { useHoverDelay } from '../useHoverDelay';
 import { dataIssues } from '../validate';
 import { safeOutputs, type BlockNode as BlockNodeType } from '../convert';
-
-// Служебные выходы, имена которых переводим, — только для своих типов блоков
-const SERVICE_OUTPUTS: Partial<Record<BlockType, readonly string[]>> = {
-  ENTRY_POINT: ['default'],
-  TEXT_MESSAGE: ['default'],
-  TEXT_INPUT: ['default'],
-  ASSIGNMENT: ['default'],
-  LIST_CHOICE: ['default', 'noOptions'],
-  CONDITION: ['yes', 'no'],
-  SWITCH: ['else'],
-  HTTP_REQUEST: ['success', 'error'],
-};
-
-// Подпись выхода: служебные переводим, варианты и значения показываем как есть
-function outputLabel(type: BlockType, output: string): string {
-  const isService = SERVICE_OUTPUTS[type]?.includes(output) ?? false;
-  return isService && Object.hasOwn(ru.outputs, output)
-    ? ru.outputs[output as keyof typeof ru.outputs]
-    : output;
-}
 
 type Shape = 'start' | 'finish' | 'talk' | 'branch' | 'compact' | 'integration';
 
@@ -153,8 +134,8 @@ const SHAPE_CLASSES: Record<Shape, string> = {
   start: 'min-w-44 max-w-56 rounded-l-full rounded-r-lg border bg-card pl-2',
   // Точка выхода: скруглена справа, как «конец» потока
   finish: 'min-w-44 max-w-56 rounded-r-full rounded-l-lg border bg-card pr-2',
-  // Реплика: крупное скругление и хвостик снизу слева
-  talk: 'min-w-48 max-w-64 rounded-2xl rounded-bl-md border bg-card',
+  // Реплика: крупное скругление 16 px (узнаётся по значку-реплике в углу, выступов за контур нет)
+  talk: 'min-w-48 max-w-64 rounded-2xl border bg-card',
   // Развилка: прямоугольное тело, ромб — значок
   branch: 'min-w-48 max-w-64 rounded-lg border bg-card',
   // Присваивание: компактная карточка
@@ -224,10 +205,17 @@ export function BlockNode({ id, data, selected }: NodeProps<BlockNodeType>) {
         <BlockIcon shape={shape} color={meta.color}>
           <Icon className={shape === 'compact' ? 'size-3' : 'size-4'} />
         </BlockIcon>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium">{data.title || meta.label}</div>
           <div className="truncate text-xs text-muted-foreground">{meta.label}</div>
         </div>
+        {shape === 'talk' && (
+          <MessageCircle
+            aria-hidden
+            data-testid="talk-icon"
+            className="size-4 shrink-0 text-muted-foreground/70"
+          />
+        )}
       </div>
       {preview && (
         <div
@@ -288,13 +276,6 @@ export function BlockNode({ id, data, selected }: NodeProps<BlockNodeType>) {
         <Handle type="target" position={Position.Left} className="!size-3 !bg-muted-foreground" />
       )}
       {content}
-      {shape === 'talk' && (
-        // Хвостик «реплики»
-        <span
-          aria-hidden
-          className="absolute -bottom-1.5 left-4 size-3 rotate-45 border-r border-b bg-card"
-        />
-      )}
     </div>
   );
 }

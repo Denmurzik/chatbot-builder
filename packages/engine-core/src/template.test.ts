@@ -91,5 +91,16 @@ describe('template', () => {
       const scope = new MapScope({}, {});
       expect(render('[{{unknown}}|{{env.MISSING}}]', scope, 'TEXT')).toBe('[|]');
     });
+
+    it('в режиме URL значения env.* подставляются без кодирования, переменные диалога кодируются', () => {
+      const scope = new MapScope({ clinic: 'a&b' }, { API_URL: 'https://x.example/api' });
+      expect(render('{{env.API_URL}}/slots?c={{clinic}}', scope, 'URL')).toBe(
+        'https://x.example/api/slots?c=a%26b',
+      );
+    });
+
+    it('в режиме URL одиночный суррогат не вызывает ошибку', () => {
+      expect(substitute('?q={{q}}', { q: '\ud800x' }, 'URL')).toBe('?q=%EF%BF%BDx');
+    });
   });
 });

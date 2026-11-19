@@ -30,7 +30,10 @@ function escapeValue(value: string, mode: RenderMode): string {
     case 'TEXT':
       return value;
     case 'URL':
-      return encodeURIComponent(value);
+      // Одиночные суррогаты заменяются на U+FFFD, иначе encodeURIComponent бросает URIError
+      return encodeURIComponent(
+        value.replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, '\ufffd'),
+      );
     case 'HEADER':
       // Удаляем переводы строк для защиты от внедрения HTTP-заголовков
       return value.replace(/[\r\n]+/g, '');
@@ -45,10 +48,11 @@ export function substitute(
   template: string,
   values: Record<string, string>,
   mode: RenderMode,
+  rawNames: ReadonlySet<string> = new Set(),
 ): string {
   return template.replace(TEMPLATE_VAR_REGEX, (_match, name: string) => {
     const raw = Object.prototype.hasOwnProperty.call(values, name) ? values[name] : '';
-    return escapeValue(raw, mode);
+    return rawNames.has(name) ? raw : escapeValue(raw, mode);
   });
 }
 
@@ -66,5 +70,7 @@ export function render(template: string, scope: VariableScope, mode: RenderMode)
     }
   }
 
-  return substitute(template, values, mode);
+  // В режиме URL значения env.* подставляются как есть: это база адреса, задаваемая автором (п. 2.4)
+  const rawNames = new Set(mode === 'URL' ? names.filter((n) => n.startsWith(ENV_PREFIX)) : []);
+  return substitute(template, values, mode, rawNames);
 }

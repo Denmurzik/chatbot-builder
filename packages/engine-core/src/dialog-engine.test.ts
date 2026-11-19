@@ -1,5 +1,4 @@
-import { parseScenario, type ChatEvent, type Scenario } from '@chatbot/model';
-import { NotImplementedError } from '@chatbot/model';
+import { NotImplementedError, parseScenario, type ChatEvent, type Scenario } from '@chatbot/model';
 import { describe, expect, it } from 'vitest';
 import { DialogEngine } from './dialog-engine';
 import type { DialogContextState, EngineResult } from './outbox';
@@ -178,65 +177,76 @@ describe('DialogEngine', () => {
     it('неверный текст — вопрос отправляется заново', () => {
       const r1 = run(text('x'), null, s);
       const r2 = run(text('может'), r1.context, s);
-      expect(r2.outbox).toEqual(r1.outbox);
+      expect(r2.outbox).toEqual([
+        { kind: 'text', text: 'Пожалуйста, выберите вариант кнопкой.' },
+        ...r1.outbox,
+      ]);
       expect(r2.context.state).toBe('WAITING_USER');
       expect(r2.context.currentBlockId).toBe('pick');
     });
   });
 
   describe('выбор из списка', () => {
-    // Список приходит заранее в контексте (результат HTTP-блока)
-    const withList = (json: string): DialogContextState => ({
-      state: 'FINISHED',
-      currentBlockId: null,
-      variables: { slots: json },
-      currentRequestId: null,
-    });
-    const startWith = (json: string) => {
-      // Старт сбрасывает переменные только по /start, поэтому используем TEXT_MESSAGE
-      return run(text('go'), withList(json), s2);
-    };
-    const s2 = build(
-      [
-        { id: 'start', type: 'ENTRY_POINT' },
-        {
-          id: 'pick',
-          type: 'LIST_CHOICE',
-          question: 'Время?',
-          listVariable: 'slots',
-          labelField: 't',
-          valueField: 'id',
-          variableName: 'slotId',
-        },
-        { id: 'ok', type: 'TEXT_MESSAGE', text: 'слот {{slotId}}' },
-        { id: 'none', type: 'TEXT_MESSAGE', text: 'нет времени' },
-        { id: 'end', type: 'EXIT_POINT' },
-      ],
-      [
-        ['start:default', 'pick'],
-        ['pick:default', 'ok'],
-        ['pick:noOptions', 'none'],
-        ['ok:default', 'end'],
-        ['none:default', 'end'],
-      ],
-    );
+    // Сценарий, в котором список кладётся в переменную блоком Присваивание (как результат HTTP-блока)
+    const listScenario = (json: string | null) =>
+      build(
+        [
+          { id: 'start', type: 'ENTRY_POINT' },
+          ...(json === null
+            ? []
+            : [{ id: 'set', type: 'ASSIGNMENT', variableName: 'slots', expression: `'${json}'` }]),
+          {
+            id: 'pick',
+            type: 'LIST_CHOICE',
+            question: 'Время?',
+            listVariable: 'slots',
+            labelField: 't',
+            valueField: 'id',
+            variableName: 'slotId',
+          },
+          { id: 'ok', type: 'TEXT_MESSAGE', text: 'слот {{slotId}}' },
+          { id: 'none', type: 'TEXT_MESSAGE', text: 'нет времени' },
+          { id: 'end', type: 'EXIT_POINT' },
+        ],
+        [
+          ['start:default', json === null ? 'pick' : 'set'],
+          ...(json === null ? [] : ([['set:default', 'pick']] as [string, string][])),
+          ['pick:default', 'ok'],
+          ['pick:noOptions', 'none'],
+          ['ok:default', 'end'],
+          ['none:default', 'end'],
+        ],
+      );
 
     it('показывает кнопки из массива и сохраняет valueField', () => {
-      const r1 = startWith('[{"t":"10:00","id":"1"}]');
+      const s = listScenario('[{"t":"10:00","id":"1"}]');
+      const r1 = run(text('go'), null, s);
       expect(r1.outbox).toEqual([
         { kind: 'question', text: 'Время?', buttons: [{ label: '10:00', callbackData: 'pick:0' }] },
       ]);
-      const r2 = run(ev('BUTTON_PRESS', 'pick:0', 'pick'), r1.context, s2);
+      const r2 = run(ev('BUTTON_PRESS', 'pick:0', 'pick'), r1.context, s);
       expect(texts(r2)).toEqual(['слот 1']);
       expect(r2.context.variables.slotId).toBe('1');
     });
 
-    it('пустой список, не массив и отсутствие переменной — выход noOptions', () => {
-      for (const json of ['[]', '{"a":1}', 'не json']) {
-        expect(texts(startWith(json))).toEqual(['нет времени']);
+    it('пустой список, не массив, не JSON и отсутствие переменной — выход noOptions', () => {
+      for (const json of ['[]', '{"a":1}', 'не json', null]) {
+        expect(texts(run(text('go'), null, listScenario(json)))).toEqual(['нет времени']);
       }
-      const r = run(text('go'), null, s2);
-      expect(texts(r)).toEqual(['нет времени']);
+    });
+
+    it('элементы без подписи пропускаются, числа приводятся к тексту', () => {
+      const s = listScenario('[{"id":"1"},{"t":"","id":"2"},{"t":5,"id":7}]');
+      const r1 = run(text('go'), null, s);
+      expect(r1.outbox).toEqual([
+        { kind: 'question', text: 'Время?', buttons: [{ label: '5', callbackData: 'pick:0' }] },
+      ]);
+      const r2 = run(ev('BUTTON_PRESS', 'pick:0', 'pick'), r1.context, s);
+      expect(r2.context.variables.slotId).toBe('7');
+    });
+
+    it('все элементы без подписи — выход noOptions', () => {
+      expect(texts(run(text('go'), null, listScenario('[{"id":"1"}]')))).toEqual(['нет времени']);
     });
   });
 
@@ -359,7 +369,7 @@ describe('DialogEngine', () => {
       expect(r2.httpRequest).toEqual({
         blockId: 'http',
         method: 'POST',
-        url: encodeURIComponent('https://api.test') + '/find?city=' + encodeURIComponent('Санкт "Петербург"'),
+        url: 'https://api.test/find?city=' + encodeURIComponent('Санкт "Петербург"'),
         headers: [
           { name: 'X-City', value: 'Санкт "Петербург"', secret: false },
           { name: 'Authorization', value: '{{env.TOKEN}}', secret: true },
@@ -385,6 +395,176 @@ describe('DialogEngine', () => {
       const r2 = run(text('Омск'), r1.context, s);
       expect(() => run(ev('RESPONSE_RECEIVED'), r2.context, s)).toThrow(NotImplementedError);
       expect(() => run(ev('REQUEST_FAILED'), r2.context, s)).toThrow(NotImplementedError);
+    });
+  });
+
+  describe('жизненный цикл диалога', () => {
+    const ask = build(
+      [
+        { id: 'start', type: 'ENTRY_POINT' },
+        { id: 'ask', type: 'TEXT_INPUT', question: 'Имя?', variableName: 'name' },
+        { id: 'end', type: 'EXIT_POINT' },
+      ],
+      [
+        ['start:default', 'ask'],
+        ['ask:default', 'end'],
+      ],
+    );
+
+    it('после FINISHED переменные пусты', () => {
+      const r1 = run(text('x'), null, ask);
+      const r2 = run(text('Иван'), r1.context, ask);
+      expect(r2.context.variables).toEqual({ name: 'Иван' });
+      expect(r2.context.state).toBe('FINISHED');
+      const r3 = run(text('снова'), r2.context, ask);
+      expect(r3.context.variables).toEqual({});
+      expect(r3.context.state).toBe('WAITING_USER');
+    });
+
+    it('сохранённый контекст RUNNING трактуется как завершённый: начинается новый диалог', () => {
+      const stale: DialogContextState = {
+        state: 'RUNNING',
+        currentBlockId: 'end',
+        variables: { old: '1' },
+        currentRequestId: null,
+      };
+      const r = run(text('x'), stale, ask);
+      expect(r.context.state).toBe('WAITING_USER');
+      expect(r.context.variables).toEqual({});
+      expect(texts(r)).toEqual(['Имя?']);
+    });
+
+    it('отсутствие контекста (null) трактуется как FINISHED', () => {
+      const r = run(text('x'), null, ask);
+      expect(r.context.state).toBe('WAITING_USER');
+      expect(texts(r)).toEqual(['Имя?']);
+    });
+
+    it('/start сбрасывает currentRequestId', () => {
+      const waiting: DialogContextState = {
+        state: 'WAITING_EXTERNAL',
+        currentBlockId: 'ask',
+        variables: {},
+        currentRequestId: 'req-1',
+      };
+      expect(run(ev('START_COMMAND'), waiting, ask).context.currentRequestId).toBeNull();
+    });
+
+    it('нажатие кнопки после FINISHED начинает новый диалог', () => {
+      const finished: DialogContextState = {
+        state: 'FINISHED',
+        currentBlockId: 'end',
+        variables: { name: 'Иван' },
+        currentRequestId: null,
+      };
+      const r = run(ev('BUTTON_PRESS', 'old:0', 'old'), finished, ask);
+      expect(texts(r)).toEqual(['Имя?']);
+      expect(r.context.state).toBe('WAITING_USER');
+      expect(r.context.variables).toEqual({});
+    });
+
+    it('BUTTON_PRESS при ожидании текстового ввода — вопрос заново, переменная не задана', () => {
+      const r1 = run(text('x'), null, ask);
+      const r2 = run(ev('BUTTON_PRESS', 'ask:0', 'ask'), r1.context, ask);
+      expect(r2.outbox).toEqual(r1.outbox);
+      expect(r2.context.variables).toEqual({});
+      expect(r2.context.state).toBe('WAITING_USER');
+    });
+
+    it('блок пропал из сценария: системное сообщение и FINISHED', () => {
+      const r1 = run(text('x'), null, ask);
+      const other = build([{ id: 'start', type: 'ENTRY_POINT' }], []);
+      const r2 = run(text('Иван'), r1.context, other);
+      expect(texts(r2)).toEqual([
+        'Сценарий изменился, диалог начнётся заново — отправьте любое сообщение',
+      ]);
+      expect(r2.context.state).toBe('FINISHED');
+    });
+
+    it('нет точки входа: системное сообщение и FINISHED', () => {
+      const empty = build([{ id: 'end', type: 'EXIT_POINT' }], []);
+      const r = run(text('x'), null, empty);
+      expect(texts(r)).toEqual(['Сценарий не настроен: нет точки входа']);
+      expect(r.context.state).toBe('FINISHED');
+    });
+
+    it('ошибка выражения: сообщение, подсветка блока и FINISHED', () => {
+      const s = build(
+        [
+          { id: 'start', type: 'ENTRY_POINT' },
+          { id: 'bad', type: 'ASSIGNMENT', title: 'Плохой', variableName: 'v', expression: '1 +' },
+        ],
+        [['start:default', 'bad']],
+      );
+      const r = run(text('x'), null, s);
+      expect(texts(r)).toHaveLength(1);
+      expect(texts(r)[0]).toMatch(/^Ошибка в выражении блока «Плохой»: /);
+      expect(r.highlightBlockId).toBe('bad');
+      expect(r.context.state).toBe('FINISHED');
+    });
+  });
+
+  describe('кнопки', () => {
+    const s = build(
+      [
+        { id: 'start', type: 'ENTRY_POINT' },
+        { id: 'my_block-1', type: 'OPTION_CHOICE', question: 'Q', options: ['а', 'б'], variableName: 'v' },
+        { id: 'end', type: 'EXIT_POINT' },
+      ],
+      [
+        ['start:default', 'my_block-1'],
+        ['my_block-1:а', 'end'],
+        ['my_block-1:б', 'end'],
+      ],
+    );
+
+    it('blockId с «-» и «_» разбирается корректно', () => {
+      const r1 = run(text('x'), null, s);
+      expect(r1.outbox[0]).toMatchObject({
+        buttons: [{ callbackData: 'my_block-1:0' }, { callbackData: 'my_block-1:1' }],
+      });
+      const r2 = run(ev('BUTTON_PRESS', 'my_block-1:1', 'my_block-1'), r1.context, s);
+      expect(r2.context.variables).toEqual({ v: 'б' });
+      expect(r2.context.state).toBe('FINISHED');
+    });
+
+    it('индекс кнопки вне диапазона — вопрос заново без подсказки', () => {
+      const r1 = run(text('x'), null, s);
+      const r2 = run(ev('BUTTON_PRESS', 'my_block-1:2', 'my_block-1'), r1.context, s);
+      expect(r2.outbox).toEqual(r1.outbox);
+      expect(r2.context.variables).toEqual({});
+    });
+  });
+
+  describe('лимит автопрохода по умолчанию', () => {
+    // Цепочка из n текстовых блоков: шагов автопрохода = 1 (старт) + n + 1 (выход)
+    const chain = (n: number) =>
+      build(
+        [
+          { id: 'start', type: 'ENTRY_POINT' },
+          ...Array.from({ length: n }, (_, i) => ({ id: `t${i}`, type: 'TEXT_MESSAGE', text: 'x' })),
+          { id: 'end', type: 'EXIT_POINT' },
+        ],
+        [
+          ['start:default', 't0'],
+          ...Array.from({ length: n }, (_, i): [string, string] => [
+            `t${i}:default`,
+            i + 1 < n ? `t${i + 1}` : 'end',
+          ]),
+        ],
+      );
+
+    it('цепочка ровно из 100 шагов проходит', () => {
+      const r = run(text('x'), null, chain(98));
+      expect(r.outbox).toHaveLength(98);
+      expect(texts(r)).not.toContain('Диалог остановлен: сценарий зациклился');
+    });
+
+    it('на 101-м шаге диалог останавливается', () => {
+      const r = run(text('x'), null, chain(99));
+      expect(texts(r).at(-1)).toBe('Диалог остановлен: сценарий зациклился');
+      expect(r.highlightBlockId).toBe('end');
+      expect(r.context.state).toBe('FINISHED');
     });
   });
 

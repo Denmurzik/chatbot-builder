@@ -1,4 +1,4 @@
-import type { DialogState, HttpMethod } from '@chatbot/model';
+import type { DialogState, EncryptedSecret, HttpMethod } from '@chatbot/model';
 
 // Кнопка вопроса: подпись и код `<blockId>:<индекс>` (п. 2.1)
 export interface OutgoingButton {
@@ -16,7 +16,7 @@ export interface PendingHttpHeader {
   name: string;
   value: string;
   secret: boolean;
-  secretValue?: unknown;
+  secretValue?: EncryptedSecret;
 }
 
 // HTTP-запрос, который должен выполнить внешний исполнитель

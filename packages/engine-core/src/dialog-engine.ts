@@ -15,6 +15,7 @@ import type {
   OutgoingMessage,
   PendingHttpRequest,
 } from './outbox';
+import { toText } from './json-path';
 import { render } from './template';
 
 const DEFAULT_MAX_AUTOPASS_STEPS = 100;
@@ -62,7 +63,7 @@ export class DialogEngine {
 
     if (event.type === 'START_COMMAND') {
       this.restartDialog(run);
-    } else if (ctx === null || ctx.state === 'FINISHED') {
+    } else if (ctx === null || ctx.state === 'FINISHED' || ctx.state === 'RUNNING') {
       if (isUserInput) this.startDialog(run);
     } else if (ctx.state === 'WAITING_USER') {
       if (isUserInput) this.handleUserAnswer(run, event);
@@ -93,6 +94,7 @@ export class DialogEngine {
   // Старт с точки входа (UC-U-01, U-04)
   startDialog(run: DialogRun): void {
     const entry = run.scenario.blocks.find((b) => b.type === 'ENTRY_POINT');
+    run.ctx.clearVariables();
     run.ctx.currentRequestId = null;
     if (!entry) {
       this.systemMessage(run, 'Сценарий не настроен: нет точки входа');
@@ -112,7 +114,7 @@ export class DialogEngine {
   private handleUserAnswer(run: DialogRun, event: ChatEvent): void {
     const block = this.currentBlock(run);
     if (!block) {
-      this.finishDialog(run);
+      this.missingBlock(run);
       return;
     }
 
@@ -127,7 +129,7 @@ export class DialogEngine {
     } else if (block.type === 'OPTION_CHOICE') {
       const index = this.resolveChoice(event, block.id, block.options);
       if (index === null) {
-        this.sendQuestion(run, block);
+        this.rejectChoice(run, block, event);
         return;
       }
       run.ctx.setVariable(block.variableName, block.options[index]);
@@ -140,7 +142,7 @@ export class DialogEngine {
         items.map((i) => i.label),
       );
       if (index === null) {
-        this.sendQuestion(run, block);
+        this.rejectChoice(run, block, event);
         return;
       }
       run.ctx.setVariable(block.variableName, items[index].value);
@@ -148,6 +150,14 @@ export class DialogEngine {
     } else {
       this.sendQuestion(run, block);
     }
+  }
+
+  // Неверный ответ на выбор: для текста — подсказка и повтор вопроса, для устаревшей кнопки — только вопрос (UC-U-12, U-13)
+  private rejectChoice(run: DialogRun, block: Block, event: ChatEvent): void {
+    if (event.type === 'TEXT_MESSAGE') {
+      this.systemMessage(run, 'Пожалуйста, выберите вариант кнопкой.');
+    }
+    this.sendQuestion(run, block);
   }
 
   // Индекс выбранного варианта по кнопке или тексту; null — не распознано или устаревшая кнопка (UC-U-13)
@@ -188,7 +198,7 @@ export class DialogEngine {
       }
       const block = this.currentBlock(run);
       if (!block) {
-        this.finishDialog(run);
+        this.missingBlock(run);
         return;
       }
       const scope = run.ctx.scope();
@@ -324,12 +334,21 @@ export class DialogEngine {
     for (const item of parsed) {
       if (typeof item !== 'object' || item === null) continue;
       const rec = item as Record<string, unknown>;
-      const label = rec[block.labelField];
-      const value = rec[block.valueField];
-      if (label === undefined || value === undefined) continue;
-      items.push({ label: String(label), value: String(value) });
+      const label = toText(rec[block.labelField]);
+      const value = toText(rec[block.valueField]);
+      if (label === '') continue;
+      items.push({ label, value });
     }
     return items;
+  }
+
+  // Блок текущего диалога пропал из сценария (например, после переопубликации)
+  private missingBlock(run: DialogRun): void {
+    this.systemMessage(
+      run,
+      'Сценарий изменился, диалог начнётся заново — отправьте любое сообщение',
+    );
+    this.finishDialog(run);
   }
 
   private currentBlock(run: DialogRun): Block | undefined {

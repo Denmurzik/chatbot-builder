@@ -14,7 +14,7 @@ export class DialogContext {
     snapshot: DialogContextState | null,
     private readonly env: Record<string, string>,
   ) {
-    this.state = snapshot?.state ?? 'RUNNING';
+    this.state = snapshot?.state ?? 'FINISHED';
     this.currentBlockId = snapshot?.currentBlockId ?? null;
     this.currentRequestId = snapshot?.currentRequestId ?? null;
     this.variables = new Map(Object.entries(snapshot?.variables ?? {}));

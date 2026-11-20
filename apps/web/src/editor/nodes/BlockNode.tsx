@@ -24,6 +24,7 @@ import { outputLabel } from '../output-label';
 import { blockPreview } from '../preview';
 import { useHoverDelay } from '../useHoverDelay';
 import { dataIssues } from '../validate';
+import { useServerBlockIssues } from '../ValidationPanel';
 import { safeOutputs, type BlockNode as BlockNodeType } from '../convert';
 
 type Shape = 'start' | 'finish' | 'talk' | 'branch' | 'compact' | 'integration';
@@ -192,7 +193,9 @@ export function BlockNode({ id, data, selected }: NodeProps<BlockNodeType>) {
   const outputs = safeOutputs(data);
   const preview = blockPreview(data);
   const outputsKey = JSON.stringify(outputs);
-  const issues = dataIssues(data);
+  const localIssues = dataIssues(data);
+  const serverIssues = useServerBlockIssues(id);
+  const issues = serverIssues.length > 0 ? [...localIssues, ...serverIssues] : localIssues;
 
   // После смены набора ручек React Flow нужно пересчитать их положение
   useEffect(() => {

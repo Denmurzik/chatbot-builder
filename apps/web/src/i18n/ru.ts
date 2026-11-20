@@ -359,6 +359,18 @@ export const ru = {
       notEmpty: 'не пусто',
     },
   },
+  validationPanel: {
+    button: 'Проверить',
+    checking: 'Проверка…',
+    title: 'Проверка сценария',
+    description: 'Ошибки и предупреждения по результатам проверки',
+    empty: 'Ошибок не найдено',
+    errorSeverity: 'Ошибка',
+    warningSeverity: 'Предупреждение',
+    checkError: 'Не удалось проверить сценарий',
+    summary: (errors: number, warnings: number) =>
+      `Ошибок: ${errors}, предупреждений: ${warnings}`,
+  },
   preview: {
     title: 'Превью сценария',
     placeholder: 'Превью появится в спринте 3',

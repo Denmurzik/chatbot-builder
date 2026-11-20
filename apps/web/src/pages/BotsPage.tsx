@@ -222,6 +222,15 @@ function TelegramSection(props: { projectId: string; bot: BotView }) {
   );
 }
 
+// 400 несёт русское сообщение сервера с подробностями; без него — общая подсказка
+function environmentErrorMessage(error: unknown): string {
+  if (error instanceof ApiError && error.status === 400) {
+    const message = (error.body as { message?: unknown } | undefined)?.message;
+    return typeof message === 'string' ? message : ru.bots.environmentInvalid;
+  }
+  return ru.common.unknownError;
+}
+
 function EnvironmentSection(props: { projectId: string; bot: BotView }) {
   const save = useSaveEnvironment(props.projectId, props.bot.id);
   const [error, setError] = useState<string | null>(null);
@@ -243,11 +252,7 @@ function EnvironmentSection(props: { projectId: string; bot: BotView }) {
               toast.success(ru.bots.environmentSaved);
             },
             onError: (e) =>
-              setError(
-                e instanceof ApiError && e.status === 400
-                  ? ru.bots.environmentInvalid
-                  : ru.common.unknownError,
-              ),
+              setError(environmentErrorMessage(e)),
           });
         }}
       />

@@ -71,7 +71,6 @@ export function EnvironmentEditor(props: {
     lastSignature.current = signature;
     setRows(toRows(props.value, nextKey));
     setErrors(new Map());
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- пересборка только по содержимому
   }, [signature]);
 
   const update = (key: number, patch: Partial<Row>) =>

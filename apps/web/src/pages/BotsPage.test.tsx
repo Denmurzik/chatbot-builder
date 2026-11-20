@@ -135,6 +135,28 @@ describe('BotsPage', () => {
     expect(field.value).toBe('');
   });
 
+  it('400 при сохранении окружения показывает сообщение сервера, а без него — общую подсказку', async () => {
+    const withEnv: BotView = {
+      ...bot,
+      environment: [{ name: 'A', secret: false, value: '1' }],
+    };
+    const route = 'PUT /api/projects/p1/bots/b1/environment';
+    const user = userEvent.setup();
+    stubApi(
+      { [route]: json(400, { message: 'Введите значение секретной переменной A' }) },
+      [withEnv],
+    );
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: ru.environment.save }));
+    expect(await screen.findByText('Введите значение секретной переменной A')).toBeTruthy();
+
+    cleanup();
+    stubApi({ [route]: json(400, ['что-то']) }, [withEnv]);
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: ru.environment.save }));
+    expect(await screen.findByText(ru.bots.environmentInvalid)).toBeTruthy();
+  });
+
   it('создание бота отправляет название', async () => {
     const fetchMock = stubApi({ 'POST /api/projects/p1/bots': json(201, bot) });
     const user = userEvent.setup();

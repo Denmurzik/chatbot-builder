@@ -57,7 +57,7 @@ export function checkTemplate(template: string): string | null {
 }
 
 // Экранирует значение в зависимости от места подстановки
-function escapeValue(value: string, mode: RenderMode): string {
+export function escapeValue(value: string, mode: RenderMode): string {
   switch (mode) {
     case 'TEXT':
       return value;

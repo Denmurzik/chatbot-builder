@@ -29,7 +29,11 @@ class HttpAttemptError extends Error {
  * `send` не ждёт ответа: результат приходит в приёмник.
  */
 export class ExternalApiClient {
-  constructor(private readonly sink: HttpResultSink) {}
+  // allowedHosts: null или пустой список — без ограничений (dev); иначе только перечисленные имена хостов
+  constructor(
+    private readonly sink: HttpResultSink,
+    private readonly allowedHosts: readonly string[] | null = null,
+  ) {}
 
   send(request: OutgoingHttpRequest, timeoutSec: number, retryCount: number, retryIntervalSec: number): void {
     this.run(request, timeoutSec, retryCount, retryIntervalSec).catch((error: unknown) => {
@@ -49,6 +53,11 @@ export class ExternalApiClient {
     retryIntervalSec: number,
   ): Promise<void> {
     let result: { status: number; body: string };
+    // Запрещённый адрес — сразу отказ без повторов (защита внутренней сети сервера от SSRF)
+    if (!this.isHostAllowed(request.url)) {
+      await this.safely('onFailure', () => this.sink.onFailure(request.id, 0, 'Адрес не разрешён'));
+      return;
+    }
     try {
       result = await pRetry(() => this.attempt(request, timeoutSec), {
         retries: retryCount,
@@ -68,6 +77,15 @@ export class ExternalApiClient {
       return;
     }
     await this.safely('onResponse', () => this.sink.onResponse(request.id, result.status, result.body));
+  }
+
+  private isHostAllowed(url: string): boolean {
+    if (!this.allowedHosts || this.allowedHosts.length === 0) return true;
+    try {
+      return this.allowedHosts.includes(new URL(url).hostname.toLowerCase());
+    } catch {
+      return false;
+    }
   }
 
   /** Ошибка приёмника только логируется и не попадает в путь ошибок запроса. */

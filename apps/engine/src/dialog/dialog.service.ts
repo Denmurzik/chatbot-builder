@@ -1,6 +1,7 @@
 import type { Bot, Prisma, PrismaClient } from '@chatbot/db';
 import {
   DialogEngine,
+  escapeValue,
   type EngineResult,
   type HttpOutcome,
   type OutgoingMessage,
@@ -239,9 +240,18 @@ export class DialogService {
     return this.repository.lockForUpdate(tx, botId, chatId);
   }
 
-  // Находит бота по идентификатору (операция DialogEngine.findBot, I/O-часть)
-  findBot(botId: string, tx?: Prisma.TransactionClient): Promise<Bot | null> {
-    return (tx ?? this.prisma).bot.findUnique({ where: { id: botId } });
+  // Находит бота по идентификатору (операция DialogEngine.findBot, I/O-часть).
+  // В транзакции читает строку с FOR SHARE: публикация (UPDATE bot -> UPDATE dialog_context)
+  // сериализуется с движком, и событие всегда видит согласованные сценарий и контекст
+  async findBot(botId: string, tx?: Prisma.TransactionClient): Promise<Bot | null> {
+    if (!tx) return this.prisma.bot.findUnique({ where: { id: botId } });
+    const rows = await tx.$queryRaw<Bot[]>`
+      SELECT id, project_id AS "projectId", name, status, published_scenario AS "publishedScenario",
+             environment, published_at AS "publishedAt"
+      FROM bot
+      WHERE id = ${botId}
+      FOR SHARE`;
+    return rows[0] ?? null;
   }
 
   // Возвращает все активные контексты бота (операция DialogEngine.findContexts, SD-6, спринт 3)
@@ -334,7 +344,7 @@ interface SecretMask {
 }
 
 // Собирает пары (расшифрованное значение, маска) для секретных переменных окружения
-function collectSecretMasks(variables: Environment, env: Record<string, string>): SecretMask[] {
+export function collectSecretMasks(variables: Environment, env: Record<string, string>): SecretMask[] {
   const masks: SecretMask[] = [];
   for (const variable of variables) {
     if (!variable.secret || !variable.secretValue) continue;
@@ -347,17 +357,10 @@ function collectSecretMasks(variables: Environment, env: Record<string, string>)
 }
 
 // Заменяет значения секретных переменных окружения их маской перед записью в http_request
-function maskSecrets(text: string, masks: SecretMask[], mode: 'URL' | 'HEADER' | 'JSON'): string {
+export function maskSecrets(text: string, masks: SecretMask[], mode: 'URL' | 'HEADER' | 'JSON'): string {
   let out = text;
   for (const { value, mask } of masks) {
-    const rendered =
-      mode === 'URL'
-        ? encodeURIComponent(value.replace(/[�-�](?![�-�])|(?<![�-�])[�-�]/g, '�'))
-        : mode === 'HEADER'
-          ? value.replace(/[\r\n]+/g, '')
-          : mode === 'JSON'
-            ? JSON.stringify(value).slice(1, -1)
-            : value;
+    const rendered = escapeValue(value, mode);
     if (rendered) out = out.replaceAll(rendered, mask);
     if (rendered !== value) out = out.replaceAll(value, mask);
   }

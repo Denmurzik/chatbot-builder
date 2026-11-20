@@ -157,4 +157,35 @@ describe('обработка событий диалога (PostgreSQL + Redis)'
     });
     expect(row).toBeNull();
   });
+
+  it('переопубликация между событиями: следующее событие идёт по новому сценарию с точки входа', async () => {
+    const bot = await env.createBot();
+    await env.emit(textEvent(bot.id, 'tg:8', 'старт'));
+    await waitFor(() => env.texts(bot.id, 'tg:8').length >= 1);
+
+    // Как BotService.publish: UPDATE bot, затем сброс контекстов в одной транзакции
+    await env.db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT status FROM bot WHERE id = ${bot.id} FOR UPDATE`;
+      await tx.bot.update({
+        where: { id: bot.id },
+        data: {
+          publishedScenario: {
+            formatVersion: 1,
+            blocks: [
+              { id: 'start', type: 'ENTRY_POINT', title: 'Старт', x: 0, y: 0 },
+              { id: 'hi', type: 'TEXT_MESSAGE', title: 'Привет', x: 0, y: 0, text: 'Новая версия' },
+            ],
+            transitions: [{ source: { blockId: 'start', output: 'default' }, target: 'hi' }],
+          },
+        },
+      });
+      await tx.dialogContext.updateMany({
+        where: { botId: bot.id },
+        data: { state: 'FINISHED', currentBlockId: null, variables: {}, currentRequestId: null },
+      });
+    });
+    await env.emit(textEvent(bot.id, 'tg:8', 'ещё'));
+    await waitFor(() => env.texts(bot.id, 'tg:8').length >= 2);
+    expect(env.texts(bot.id, 'tg:8').slice(0, 2)).toEqual(['Что сказать?', 'Новая версия']);
+  });
 });

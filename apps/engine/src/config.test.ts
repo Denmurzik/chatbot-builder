@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadConfig } from './config';
+import { loadAllowedHosts, loadConfig } from './config';
 
 describe('loadConfig (engine)', () => {
   const baseEnv: NodeJS.ProcessEnv = {
@@ -16,5 +16,19 @@ describe('loadConfig (engine)', () => {
       'eng-prefix',
     );
     expect(loadConfig({ ...baseEnv, QUEUE_PREFIX: '   ' }).queuePrefix).toBeUndefined();
+  });
+});
+
+describe('loadAllowedHosts', () => {
+  it('не задано или пусто — null (без ограничений)', () => {
+    expect(loadAllowedHosts({})).toBeNull();
+    expect(loadAllowedHosts({ HTTP_ALLOWED_HOSTS: ' , ' })).toBeNull();
+  });
+
+  it('разбирает список через запятую в нижнем регистре', () => {
+    expect(loadAllowedHosts({ HTTP_ALLOWED_HOSTS: 'Mock-Clinic, api.example.com ' })).toEqual([
+      'mock-clinic',
+      'api.example.com',
+    ]);
   });
 });

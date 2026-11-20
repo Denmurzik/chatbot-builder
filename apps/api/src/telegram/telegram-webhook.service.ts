@@ -1,17 +1,11 @@
 import { BadGatewayException, Inject, Injectable, Logger } from '@nestjs/common';
-import { GrammyError } from 'grammy';
 import { API_CONFIG, type ApiConfig } from '../config';
 import { PollingService } from './polling.service';
 import { TelegramApiFactory } from './telegram-api.factory';
+import { describeError } from './telegram-errors';
 import { webhookSecret } from './webhook-secret';
 
 const ALLOWED_UPDATES: Array<'message' | 'callback_query'> = ['message', 'callback_query'];
-
-// Текст ошибки для автора без URL и токена: только описание Telegram, иначе общая фраза
-function describeError(err: unknown): string {
-  if (err instanceof GrammyError) return err.description;
-  return 'Telegram недоступен';
-}
 
 // Подключение бота к Telegram: webhook в production, long polling локально (п. 2.11)
 @Injectable()

@@ -4,6 +4,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.module';
 import { EVENT_QUEUE } from '../queue/queue.module';
 import { TelegramApiFactory } from './telegram-api.factory';
+import { errorName } from './telegram-errors';
 import { mapUpdate, type TelegramUpdate } from './update-mapper';
 
 // Общий путь приёма обновлений (webhook и long polling): проверка публикации -> mapUpdate -> очередь
@@ -47,8 +48,7 @@ export class UpdateIngestService {
       );
       await this.apiFactory.create(token).answerCallbackQuery(callbackQueryId);
     } catch (err) {
-      const name = err instanceof Error ? err.name : 'UnknownError';
-      this.logger.warn(`Не удалось ответить на нажатие кнопки бота ${botId}: ${name}`);
+      this.logger.warn(`Не удалось ответить на нажатие кнопки бота ${botId}: ${errorName(err)}`);
     }
   }
 }

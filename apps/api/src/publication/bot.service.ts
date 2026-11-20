@@ -58,6 +58,8 @@ export class BotService {
     await this.getOwnedBot(authorId, projectId, botId);
     const oldToken = await this.currentToken(botId);
     await this.prisma.client.$transaction(async (tx) => {
+      // Первой блокируется строка бота — тот же порядок, что у публикации (без взаимной блокировки с движком)
+      await tx.$queryRaw`SELECT id FROM bot WHERE id = ${botId} FOR UPDATE`;
       // Сначала разрываем ссылки контекстов на запросы, затем удаляем зависимые записи
       await tx.dialogContext.updateMany({ where: { botId }, data: { currentRequestId: null } });
       await tx.httpRequest.deleteMany({ where: { dialogContext: { botId } } });
@@ -172,11 +174,11 @@ export class BotService {
 
     const updated = await this.prisma.client.$transaction(async (tx) => {
       // Статус читаем внутри транзакции: параллельные публикации тоже сбрасывают контексты
-      const current = await tx.bot.findUniqueOrThrow({
-        where: { id: botId },
-        select: { status: true },
-      });
-      const wasPublished = current.status === 'PUBLISHED';
+      // FOR UPDATE: параллельная публикация ждёт и видит уже обновлённый статус
+      const current = await tx.$queryRaw<{ status: string }[]>`
+        SELECT status FROM bot WHERE id = ${botId} FOR UPDATE`;
+      if (current.length === 0) throw new NotFoundException('Бот не найден');
+      const wasPublished = current[0]!.status === 'PUBLISHED';
       const result = await tx.bot.update({
         where: { id: botId },
         data: {
@@ -237,7 +239,9 @@ export class BotService {
         return 'retry';
       }
     };
-    if ((await attempt()) === 'retry') await attempt();
+    if ((await attempt()) === 'retry' && (await attempt()) === 'retry') {
+      throw new ConflictException('Не удалось сохранить подключение, повторите попытку');
+    }
   }
 
   private async assertProject(authorId: string, projectId: string): Promise<void> {

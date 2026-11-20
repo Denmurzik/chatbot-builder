@@ -8,6 +8,7 @@ export interface TelegramApi {
     other?: { secret_token?: string; allowed_updates?: Array<'message' | 'callback_query'> },
   ): Promise<unknown>;
   deleteWebhook(): Promise<unknown>;
+  getMe(): Promise<{ username?: string }>;
   answerCallbackQuery(callbackQueryId: string): Promise<unknown>;
 }
 

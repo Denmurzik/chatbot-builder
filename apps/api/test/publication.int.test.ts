@@ -250,6 +250,29 @@ describe('Публикация и переопубликация (интегра
     }
   });
 
+  it('параллельные переопубликации обе сбрасывают контексты и завершаются успешно', async () => {
+    const { agent, botId, publishUrl } = await setup();
+    await agent.post(publishUrl).expect(200);
+    const ctx = await db.prisma.dialogContext.create({
+      data: {
+        botId,
+        chatId: 'c-par',
+        userId: 'u',
+        channel: 'MESSENGER',
+        state: 'WAITING_USER',
+        currentBlockId: 'msg',
+        variables: { a: 1 },
+      },
+    });
+    const results = await Promise.all([agent.post(publishUrl), agent.post(publishUrl)]);
+    expect(results.map((r) => r.status)).toEqual([200, 200]);
+    expect(await db.prisma.dialogContext.findUniqueOrThrow({ where: { id: ctx.id } })).toMatchObject({
+      state: 'FINISHED',
+      currentBlockId: null,
+      variables: {},
+    });
+  });
+
   it('ошибка setWebhook -> 502, статус и сценарий прежние', async () => {
     const { agent, botId, publishUrl } = await setup();
     failSetWebhook = true;

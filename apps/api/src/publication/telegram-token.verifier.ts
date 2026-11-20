@@ -1,15 +1,16 @@
 import { BadGatewayException, Injectable } from '@nestjs/common';
-import { Api, GrammyError } from 'grammy';
+import { GrammyError } from 'grammy';
+import { TelegramApiFactory } from '../telegram/telegram-api.factory';
 
-const REQUEST_TIMEOUT_SECONDS = 10;
-
-// Проверка токена Telegram вызовом getMe; в тестах подменяется
+// Проверка токена Telegram вызовом getMe (тайм-аут 10 с задаёт фабрика); в тестах подменяется
 @Injectable()
 export class TelegramTokenVerifier {
+  constructor(private readonly apiFactory: TelegramApiFactory) {}
+
   // null — токен недействителен; недоступность Telegram -> 502
   async verify(token: string): Promise<{ username: string } | null> {
     try {
-      const me = await new Api(token, { timeoutSeconds: REQUEST_TIMEOUT_SECONDS }).getMe();
+      const me = await this.apiFactory.create(token).getMe();
       return { username: me.username ?? '' };
     } catch (err) {
       if (err instanceof GrammyError && (err.error_code === 401 || err.error_code === 404)) {

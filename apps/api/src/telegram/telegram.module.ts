@@ -9,6 +9,6 @@ import { UpdateIngestService } from './update-ingest.service';
 @Module({
   controllers: [MessengerGatewayController],
   providers: [UpdateIngestService, PollingService, TelegramApiFactory, TelegramWebhookService],
-  exports: [PollingService, TelegramWebhookService],
+  exports: [PollingService, TelegramWebhookService, TelegramApiFactory],
 })
 export class TelegramModule {}

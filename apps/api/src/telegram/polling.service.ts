@@ -9,12 +9,8 @@ import {
 import { Bot } from 'grammy';
 import { API_CONFIG, type ApiConfig } from '../config';
 import { PrismaService } from '../prisma/prisma.module';
+import { errorName } from './telegram-errors';
 import { UpdateIngestService } from './update-ingest.service';
-
-// Возвращает только имя типа ошибки, чтобы не утекли URL/токены из сообщения
-function errorName(err: unknown): string {
-  return err instanceof Error ? err.name : 'UnknownError';
-}
 
 // Dev-режим: long polling вместо webhook для опубликованных ботов (TELEGRAM_POLLING=1)
 @Injectable()

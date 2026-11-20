@@ -56,6 +56,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?задайте JWT_SECRET}
       PUBLIC_URL: ${PUBLIC_URL:?задайте PUBLIC_URL}
       TELEGRAM_POLLING: '0'
+      TELEGRAM_PROXY: ${TELEGRAM_PROXY:-}
       API_PORT: '3000'
     # Уникальный алиас: в общей сети NPM могут быть чужие сервисы api/web
     networks:
@@ -88,6 +89,7 @@ services:
       <<: *app-env
       # Хосты, на которые бот может отправлять HTTP-запросы (защита внутренней сети сервера)
       HTTP_ALLOWED_HOSTS: ${HTTP_ALLOWED_HOSTS:-mock-clinic}
+      TELEGRAM_PROXY: ${TELEGRAM_PROXY:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -103,6 +105,16 @@ services:
     environment:
       MOCK_CLINIC_PORT: '4010'
       MOCK_CLINIC_API_KEY: ${MOCK_CLINIC_API_KEY:?задайте MOCK_CLINIC_API_KEY}
+
+  # Исходящий HTTP-прокси для запросов к api.telegram.org (включается профилем --profile telegram-proxy)
+  telegram-proxy:
+    image: ghcr.io/xtls/xray-core:26.11.9
+    command: ['run', '-config', '/etc/xray/config.json']
+    volumes:
+      - ./xray/config.json:/etc/xray/config.json:ro
+    restart: unless-stopped
+    profiles:
+      - telegram-proxy
 
   # Статика SPA и прокси /api/ и /webhook/ на api; порты хоста не публикуются
   chatbot-web:

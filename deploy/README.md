@@ -40,6 +40,10 @@ DNS-запись домена должна указывать на сервер.
 
 Скрипт `seed` в production не используется: зарегистрируйтесь через интерфейс (`https://chatbot.nsumonkey.top`). В окружении бота для тестового API клиники укажите адрес `http://mock-clinic:4010` и ключ `MOCK_CLINIC_API_KEY`.
 
+## Разрешённые адреса HTTP-запросов
+
+Движок отправляет HTTP-запросы бота только на хосты из `HTTP_ALLOWED_HOSTS` (в `deploy/.env.prod`, через запятую, без схемы и порта). По умолчанию — только `mock-clinic`: остальные адреса получают ошибку «Адрес не разрешён», чтобы сценарий не мог обращаться к внутренней сети сервера. Чтобы разрешить реальный внешний API, добавьте его имя хоста (например, `HTTP_ALLOWED_HOSTS=mock-clinic,api.example.com`) и перезапустите `engine`: `docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod up -d engine`.
+
 ## Проверка без сервера
 
 Нужен заполненный `deploy/.env.prod`. В production cookie помечены `secure`, поэтому войти по http://127.0.0.1:18180 нельзя; ожидаемая проверка — ответ 401 на `/api/auth/me`.

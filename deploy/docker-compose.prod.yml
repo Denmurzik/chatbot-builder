@@ -86,6 +86,8 @@ services:
     restart: unless-stopped
     environment:
       <<: *app-env
+      # Хосты, на которые бот может отправлять HTTP-запросы (защита внутренней сети сервера)
+      HTTP_ALLOWED_HOSTS: ${HTTP_ALLOWED_HOSTS:-mock-clinic}
     depends_on:
       migrate:
         condition: service_completed_successfully

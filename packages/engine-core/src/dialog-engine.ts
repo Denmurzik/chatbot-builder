@@ -93,7 +93,7 @@ export class DialogEngine {
       if (isUserInput) this.handleUserAnswer(run, event);
     } else if (ctx.state === 'WAITING_EXTERNAL') {
       if (event.type === 'TEXT_MESSAGE') {
-        run.outbox.push({ kind: 'text', text: MSG_WAIT });
+        this.systemMessage(run, MSG_WAIT);
       } else if (event.type === 'RESPONSE_RECEIVED' || event.type === 'REQUEST_FAILED') {
         this.handleHttpOutcome(run, event, outcome);
       }
@@ -217,7 +217,7 @@ export class DialogEngine {
     for (;;) {
       steps += 1;
       if (steps > this.maxAutopassSteps) {
-        this.systemMessage(run, MSG_LOOP);
+        this.systemMessage(run, MSG_LOOP, run.ctx.currentBlockId);
         run.highlightBlockId = run.ctx.currentBlockId;
         this.finishDialog(run);
         return;
@@ -277,7 +277,7 @@ export class DialogEngine {
       }
     } catch (e) {
       if (e instanceof ExpressionError) {
-        this.systemMessage(run, `Ошибка в выражении блока «${block.title}»: ${e.message}`);
+        this.systemMessage(run, `Ошибка в выражении блока «${block.title}»: ${e.message}`, block.id);
         run.highlightBlockId = block.id;
         this.finishDialog(run);
         return null;
@@ -294,7 +294,11 @@ export class DialogEngine {
         )
       : undefined;
     if (!transition) {
-      this.systemMessage(run, `Сценарий не настроен: у блока «${block.title}» не подключён выход`);
+      this.systemMessage(
+        run,
+        `Сценарий не настроен: у блока «${block.title}» не подключён выход`,
+        block.id,
+      );
       run.highlightBlockId = block.id;
       this.finishDialog(run);
       return false;
@@ -499,7 +503,7 @@ export class DialogEngine {
     return run.scenario.blocks.find((b) => b.id === id);
   }
 
-  private systemMessage(run: DialogRun, text: string): void {
-    run.outbox.push({ kind: 'text', text });
+  private systemMessage(run: DialogRun, text: string, blockId: string | null = null): void {
+    run.outbox.push({ kind: 'system', text, blockId });
   }
 }

@@ -230,21 +230,80 @@ describe('Канал превью: публикация событий в Redis 
     }
   });
 
-  it('зацикленный сценарий публикует системное сообщение с blockId', async () => {
+  it('зацикленный сценарий публикует системное сообщение с blockId без дубля в message', async () => {
     const project = await createProject(loopScenario);
     const chatId = `preview:${project.id}:sess-loop`;
     const sub = await subscribePreview(chatId);
 
     try {
       await env.emit(previewEvent(chatId, 'старт', 'START_COMMAND'));
-      await waitFor(() => sub.events.some((e) => e.type === 'system'));
+      await waitFor(() => sub.events.some((e) => e.type === 'variables'));
 
-      const systemEvent = sub.events.find((e) => e.type === 'system');
-      expect(systemEvent).toEqual({
+      expect(sub.events.filter((e) => e.type === 'message')).toEqual([]);
+      expect(sub.events.find((e) => e.type === 'system')).toEqual({
         type: 'system',
         text: MSG_LOOP,
         blockId: 'inc',
       });
+      expect(sub.events.find((e) => e.type === 'currentBlock')).toEqual({
+        type: 'currentBlock',
+        blockId: 'inc',
+      });
+    } finally {
+      await sub.close();
+    }
+  });
+
+  it('неверный ввод на OPTION_CHOICE публикует подсказку как system (blockId: null) и повтор вопроса как message', async () => {
+    const choiceScenario: Scenario = {
+      formatVersion: 1,
+      blocks: [
+        { id: 'start', type: 'ENTRY_POINT', title: 'Старт', x: 0, y: 0 },
+        {
+          id: 'pick',
+          type: 'OPTION_CHOICE',
+          title: 'Выбор',
+          x: 0,
+          y: 0,
+          question: 'Выберите вариант',
+          options: ['Да', 'Нет'],
+          variableName: 'ans',
+        },
+        { id: 'end', type: 'EXIT_POINT', title: 'Конец', x: 0, y: 0 },
+      ],
+      transitions: [
+        { source: { blockId: 'start', output: 'default' }, target: 'pick' },
+        { source: { blockId: 'pick', output: 'Да' }, target: 'end' },
+        { source: { blockId: 'pick', output: 'Нет' }, target: 'end' },
+      ],
+    };
+    const project = await createProject(choiceScenario);
+    const chatId = `preview:${project.id}:sess-choice`;
+    const sub = await subscribePreview(chatId);
+
+    try {
+      await env.emit(previewEvent(chatId, 'старт', 'START_COMMAND'));
+      await waitFor(() => sub.events.length >= 3);
+
+      await env.emit(previewEvent(chatId, 'неизвестно'));
+      await waitFor(() => sub.events.length >= 7);
+
+      expect(sub.events.slice(3, 7)).toEqual([
+        { type: 'system', text: 'Пожалуйста, выберите вариант кнопкой.', blockId: null },
+        {
+          type: 'message',
+          message: {
+            kind: 'question',
+            text: 'Выберите вариант',
+            buttons: [
+              { label: 'Да', callbackData: 'pick:0' },
+              { label: 'Нет', callbackData: 'pick:1' },
+            ],
+          },
+        },
+        { type: 'currentBlock', blockId: 'pick' },
+        { type: 'variables', variables: {} },
+      ]);
     } finally {
       await sub.close();
     }

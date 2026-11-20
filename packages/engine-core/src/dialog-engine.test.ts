@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseScenario, type ChatEvent, type Scenario } from '@chatbot/model';
 import { describe, expect, it } from 'vitest';
-import { DialogEngine, MSG_SUSPEND_DEFAULT, isStaleResponse } from './dialog-engine';
+import { DialogEngine, MSG_LOOP, MSG_SUSPEND_DEFAULT, MSG_WAIT, isStaleResponse } from './dialog-engine';
 import type { DialogContextState, EngineResult, HttpOutcome } from './outbox';
 
 type Spec = Record<string, unknown> & { id: string; type: string };
@@ -199,7 +199,7 @@ describe('DialogEngine', () => {
       const r1 = run(text('x'), null, s);
       const r2 = run(text('может'), r1.context, s);
       expect(r2.outbox).toEqual([
-        { kind: 'text', text: 'Пожалуйста, выберите вариант кнопкой.' },
+        { kind: 'system', text: 'Пожалуйста, выберите вариант кнопкой.', blockId: null },
         ...r1.outbox,
       ]);
       expect(r2.context.state).toBe('WAITING_USER');
@@ -869,5 +869,140 @@ describe('DialogEngine', () => {
     }
     const postBlock = httpBlocks.find((b) => b.method === 'POST');
     expect(postBlock?.retryCount).toBe(0);
+  });
+
+  describe('системные сообщения (kind: system)', () => {
+    it('зацикливание, неподключённый выход, ошибка выражения имеют kind: system и blockId', () => {
+      const loop = build(
+        [
+          { id: 'start', type: 'ENTRY_POINT' },
+          { id: 'set', type: 'ASSIGNMENT', variableName: 'i', expression: '1' },
+          { id: 'cond', type: 'CONDITION', expression: 'true' },
+        ],
+        [
+          ['start:default', 'set'],
+          ['set:default', 'cond'],
+          ['cond:yes', 'set'],
+        ],
+      );
+      const rLoop = run(text('x'), null, loop);
+      expect(rLoop.outbox).toEqual([{ kind: 'system', text: MSG_LOOP, blockId: 'cond' }]);
+
+      const disconnected = build(
+        [
+          { id: 'start', type: 'ENTRY_POINT' },
+          { id: 't', type: 'TEXT_MESSAGE', title: 'Привет', text: 'ok' },
+        ],
+        [['start:default', 't']],
+      );
+      const rDisc = run(text('x'), null, disconnected);
+      expect(rDisc.outbox).toEqual([
+        { kind: 'text', text: 'ok' },
+        {
+          kind: 'system',
+          text: 'Сценарий не настроен: у блока «Привет» не подключён выход',
+          blockId: 't',
+        },
+      ]);
+
+      const badExpr = build(
+        [
+          { id: 'start', type: 'ENTRY_POINT' },
+          { id: 'bad', type: 'ASSIGNMENT', title: 'Плохой', variableName: 'v', expression: '1 +' },
+        ],
+        [['start:default', 'bad']],
+      );
+      const rExpr = run(text('x'), null, badExpr);
+      expect(rExpr.outbox).toEqual([
+        {
+          kind: 'system',
+          text: expect.stringMatching(/^Ошибка в выражении блока «Плохой»: /),
+          blockId: 'bad',
+        },
+      ]);
+    });
+
+    it('нет точки входа, missingBlock и MSG_WAIT имеют kind: system и blockId: null', () => {
+      const noEntry = build([{ id: 'end', type: 'EXIT_POINT' }], []);
+      expect(run(text('x'), null, noEntry).outbox).toEqual([
+        { kind: 'system', text: 'Сценарий не настроен: нет точки входа', blockId: null },
+      ]);
+
+      const ask = build(
+        [
+          { id: 'start', type: 'ENTRY_POINT' },
+          { id: 'ask', type: 'TEXT_INPUT', question: 'Имя?', variableName: 'name' },
+          { id: 'end', type: 'EXIT_POINT' },
+        ],
+        [
+          ['start:default', 'ask'],
+          ['ask:default', 'end'],
+        ],
+      );
+      const r1 = run(text('x'), null, ask);
+      const withoutAsk = build([{ id: 'start', type: 'ENTRY_POINT' }], []);
+      expect(run(text('Иван'), r1.context, withoutAsk).outbox).toEqual([
+        {
+          kind: 'system',
+          text: 'Сценарий изменился, диалог начнётся заново — отправьте любое сообщение',
+          blockId: null,
+        },
+      ]);
+
+      const waitingCtx: DialogContextState = {
+        state: 'WAITING_EXTERNAL',
+        currentBlockId: 'http',
+        variables: {},
+        currentRequestId: 'req-1',
+      };
+      expect(run(text('эй'), waitingCtx, ask).outbox).toEqual([
+        { kind: 'system', text: MSG_WAIT, blockId: null },
+      ]);
+    });
+
+    it('обычные реплики (text, question, suspendText) не помечаются как system', () => {
+      const r1 = run(text('привет'), null, greeting);
+      expect(r1.outbox).toEqual([
+        { kind: 'text', text: 'Здравствуйте' },
+        { kind: 'question', text: 'Как вас зовут?', buttons: [] },
+      ]);
+
+      const httpSuspend = build(
+        [
+          { id: 'start', type: 'ENTRY_POINT' },
+          {
+            id: 'http',
+            type: 'HTTP_REQUEST',
+            method: 'GET',
+            url: 'https://api.test/x',
+            headers: [],
+            body: '',
+            variableName: 'resp',
+            errorVariable: 'err',
+            timeoutSec: 5,
+            retryCount: 0,
+            retryIntervalSec: 0,
+            errorStrategy: 'SUSPEND',
+            suspendText: 'Попробуйте позже',
+            responseMappings: [],
+          },
+        ],
+        [['start:default', 'http']],
+      );
+      const waiting: DialogContextState = {
+        state: 'WAITING_EXTERNAL',
+        currentBlockId: 'http',
+        variables: {},
+        currentRequestId: 'req-1',
+      };
+      const rSuspend = run(
+        ev('REQUEST_FAILED', undefined, undefined, 'req-1'),
+        waiting,
+        httpSuspend,
+        {},
+        { kind: 'failure', code: 503, message: 'down' },
+      );
+      expect(rSuspend.outbox).toEqual([{ kind: 'text', text: 'Попробуйте позже' }]);
+    });
   });
 });

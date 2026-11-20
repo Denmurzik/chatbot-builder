@@ -4,6 +4,7 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
 import { ImportExportController } from '../src/import-export/import-export.controller';
+import { ImportExportService } from '../src/import-export/import-export.service';
 import { PreviewGateway } from '../src/preview/preview.gateway';
 import { PreviewSubscriber } from '../src/preview/preview-subscriber';
 import { ProjectController } from '../src/projects/project.controller';
@@ -38,6 +39,7 @@ describe('Каркас модулей API (skeleton)', () => {
     expect(moduleRef.get(ScenarioValidator)).toBeInstanceOf(ScenarioValidator);
     expect(moduleRef.get(PublicationController)).toBeInstanceOf(PublicationController);
     expect(moduleRef.get(ImportExportController)).toBeInstanceOf(ImportExportController);
+    expect(moduleRef.get(ImportExportService)).toBeInstanceOf(ImportExportService);
     expect(moduleRef.get(PreviewGateway)).toBeInstanceOf(PreviewGateway);
     expect(moduleRef.get(PreviewSubscriber)).toBeInstanceOf(PreviewSubscriber);
     expect(moduleRef.get(ProjectController)).toBeInstanceOf(ProjectController);
@@ -49,27 +51,6 @@ describe('Каркас модулей API (skeleton)', () => {
 
     expect(() => controller.isTokenInUse('TELEGRAM', 'hash')).toThrowError(
       'PublicationController.isTokenInUse',
-    );
-  });
-
-  it('методы ImportExportController бросают NotImplementedError', () => {
-    const importExport = moduleRef.get(ImportExportController);
-    const scenario = emptyScenario();
-
-    expect(() => importExport.exportScenario('proj-1', 'json')).toThrowError(
-      'ImportExportController.exportScenario',
-    );
-    expect(() => importExport.importScenario('author-1', '{}')).toThrowError(
-      'ImportExportController.importScenario',
-    );
-    expect(() => importExport.serialize(scenario, 'json')).toThrowError(
-      'ImportExportController.serialize',
-    );
-    expect(() => importExport.checkStructure('{}')).toThrowError(
-      'ImportExportController.checkStructure',
-    );
-    expect(() => importExport.deserialize('{}')).toThrowError(
-      'ImportExportController.deserialize',
     );
   });
 

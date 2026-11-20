@@ -53,6 +53,9 @@ importers:
       '@chatbot/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@chatbot/engine-core':
+        specifier: workspace:*
+        version: link:../../packages/engine-core
       '@chatbot/model':
         specifier: workspace:*
         version: link:../../packages/model

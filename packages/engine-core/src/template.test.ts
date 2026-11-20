@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MapScope } from './scope';
-import { extractVariableNames, render, substitute } from './template';
+import { checkTemplate, extractVariableNames, render, substitute } from './template';
 
 describe('template', () => {
   describe('extractVariableNames', () => {
@@ -101,6 +101,31 @@ describe('template', () => {
 
     it('в режиме URL одиночный суррогат не вызывает ошибку', () => {
       expect(substitute('?q={{q}}', { q: '\ud800x' }, 'URL')).toBe('?q=%EF%BF%BDx');
+    });
+  });
+
+  describe('checkTemplate', () => {
+    it('возвращает null для корректных шаблонов и JSON с переменными', () => {
+      expect(checkTemplate('Обычный текст')).toBeNull();
+      expect(checkTemplate('Привет, {{name}} и {{ env.API_URL }}!')).toBeNull();
+      expect(checkTemplate('{"slotId":"{{slotId}}","patient":"{{fio}}"}')).toBeNull();
+      expect(checkTemplate('{"nested":{"value":"{{x}}"}}')).toBeNull();
+    });
+
+    it('возвращает ошибку при незакрытой или лишней паре фигурных скобок', () => {
+      expect(checkTemplate('Привет, {{name')).not.toBeNull();
+      expect(checkTemplate('Привет, {{a {{b}}}}')).not.toBeNull();
+      expect(checkTemplate('Привет, name}}')).not.toBeNull();
+      expect(checkTemplate('{{a}}}}')).not.toBeNull();
+    });
+
+    it('возвращает ошибку при пустом или некорректном имени переменной', () => {
+      expect(checkTemplate('Привет, {{}}')).not.toBeNull();
+      expect(checkTemplate('Привет, {{   }}')).not.toBeNull();
+      expect(checkTemplate('Привет, {{123}}')).not.toBeNull();
+      expect(checkTemplate('Привет, {{a-b}}')).not.toBeNull();
+      expect(checkTemplate('Привет, {{env.}}')).not.toBeNull();
+      expect(checkTemplate('Привет, {{foo.bar}}')).not.toBeNull();
     });
   });
 });

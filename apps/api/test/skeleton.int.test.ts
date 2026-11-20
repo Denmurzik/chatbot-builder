@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { emptyScenario, NotImplementedError, type Block } from '@chatbot/model';
+import { emptyScenario } from '@chatbot/model';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
@@ -40,31 +40,6 @@ describe('Каркас модулей API (skeleton)', () => {
     expect(moduleRef.get(PreviewController)).toBeInstanceOf(PreviewController);
     expect(moduleRef.get(ProjectController)).toBeInstanceOf(ProjectController);
     expect(moduleRef.get(ScenarioEditor)).toBeInstanceOf(ScenarioEditor);
-  });
-
-  it('методы ScenarioValidator бросают NotImplementedError с именем класса и метода', () => {
-    const validator = moduleRef.get(ScenarioValidator);
-    const scenario = emptyScenario();
-    const block: Block = scenario.blocks[0];
-
-    expect(() => validator.validate(scenario)).toThrowError(NotImplementedError);
-    expect(() => validator.validate(scenario)).toThrowError('ScenarioValidator.validate');
-    expect(() => validator.checkSingleEntryPoint(scenario)).toThrowError(
-      'ScenarioValidator.checkSingleEntryPoint',
-    );
-    expect(() => validator.checkOutputsConnected(scenario)).toThrowError(
-      'ScenarioValidator.checkOutputsConnected',
-    );
-    expect(() => validator.checkRequiredFields(scenario)).toThrowError(
-      'ScenarioValidator.checkRequiredFields',
-    );
-    expect(() => validator.checkConnections('bot-1')).toThrowError(
-      'ScenarioValidator.checkConnections',
-    );
-    expect(() => validator.checkBlockFields(block)).toThrowError(
-      'ScenarioValidator.checkBlockFields',
-    );
-    expect(() => validator.checkLoops(scenario)).toThrowError('ScenarioValidator.checkLoops');
   });
 
   it('методы PublicationController бросают NotImplementedError с именем класса и метода', () => {

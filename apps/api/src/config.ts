@@ -21,6 +21,7 @@ export interface ApiConfig {
   nodeEnv: string;
   isProduction: boolean;
   telegramPolling: boolean;
+  publicUrl?: string;
   queuePrefix?: string;
 }
 
@@ -60,6 +61,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   }
   const telegramPolling = !isProduction && pollingRequested;
 
+  const publicUrl = env.PUBLIC_URL?.trim() || undefined;
+  if (isProduction && !publicUrl) {
+    throw new Error('В production не задана переменная окружения PUBLIC_URL');
+  }
+
   const queuePrefix = env.QUEUE_PREFIX?.trim() || undefined;
 
   return {
@@ -69,6 +75,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     nodeEnv,
     isProduction,
     telegramPolling,
+    ...(publicUrl ? { publicUrl } : {}),
     ...(queuePrefix ? { queuePrefix } : {}),
   };
 }

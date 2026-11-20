@@ -42,15 +42,9 @@ describe('Каркас модулей API (skeleton)', () => {
     expect(moduleRef.get(ScenarioEditor)).toBeInstanceOf(ScenarioEditor);
   });
 
-  it('методы PublicationController бросают NotImplementedError с именем класса и метода', () => {
+  it('нереализованные методы PublicationController бросают NotImplementedError с именем класса и метода', () => {
     const controller = moduleRef.get(PublicationController);
 
-    expect(() => controller.publish('proj-1', 'bot-1')).toThrowError(
-      'PublicationController.publish',
-    );
-    expect(() => controller.republish('proj-1', 'bot-1')).toThrowError(
-      'PublicationController.republish',
-    );
     expect(() => controller.isTokenInUse('TELEGRAM', 'hash')).toThrowError(
       'PublicationController.isTokenInUse',
     );

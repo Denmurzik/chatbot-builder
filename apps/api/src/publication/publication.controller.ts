@@ -1,13 +1,12 @@
-import type { MessengerType } from '@chatbot/db';
 import {
   envVarInputListSchema,
   NotImplementedError,
   type BotView,
   type EnvVarInput,
   type EnvVarView,
+  type ValidationError,
 } from '@chatbot/model';
-import type { EventQueue } from '@chatbot/queue';
-import { SecretVault } from '@chatbot/vault';
+import type { MessengerType } from '@chatbot/db';
 import {
   Body,
   Controller,
@@ -15,7 +14,6 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  Inject,
   Param,
   Post,
   Put,
@@ -24,10 +22,6 @@ import {
 import { type AuthenticatedAuthor, CurrentAuthor } from '../auth/current-author.decorator';
 import { JwtGuard } from '../auth/jwt.guard';
 import { ZodBodyPipe } from '../common/zod-body.pipe';
-import { PrismaService } from '../prisma/prisma.module';
-import { ProjectService } from '../projects/project.service';
-import { EVENT_QUEUE } from '../queue/queue.module';
-import { ScenarioValidator, type ValidationError } from '../validation/scenario-validator';
 import { BotService } from './bot.service';
 import {
   connectTelegramBodySchema,
@@ -43,21 +37,7 @@ import {
 @Controller('projects/:projectId/bots')
 @UseGuards(JwtGuard)
 export class PublicationController {
-  constructor(
-    private readonly prisma: PrismaService,
-    @Inject(EVENT_QUEUE) private readonly eventQueue: EventQueue,
-    private readonly validator: ScenarioValidator,
-    private readonly vault: SecretVault,
-    private readonly projectService: ProjectService,
-    private readonly bots: BotService,
-  ) {
-    // Зависимости спринта 3 (публикация), пока не используются
-    void this.prisma;
-    void this.eventQueue;
-    void this.validator;
-    void this.vault;
-    void this.projectService;
-  }
+  constructor(private readonly bots: BotService) {}
 
   @Get()
   listBots(
@@ -98,7 +78,7 @@ export class PublicationController {
     return this.bots.setEnvironment(author.id, projectId, botId, body);
   }
 
-  // Подключение Telegram к боту (connectMessenger, п. 2.11); setWebhook выполняется при публикации
+  // Подключение Telegram к боту (connectMessenger, п. 2.11); для опубликованного бота webhook переключается сразу
   @Put(':botId/connections/telegram')
   @HttpCode(HttpStatus.OK)
   connectMessenger(
@@ -120,12 +100,15 @@ export class PublicationController {
     return this.bots.disconnectTelegram(author.id, projectId, botId);
   }
 
-  publish(_projectId: string, _botId: string): ValidationError[] {
-    throw new NotImplementedError('PublicationController.publish');
-  }
-
-  republish(_projectId: string, _botId: string): ValidationError[] {
-    throw new NotImplementedError('PublicationController.republish');
+  // Публикация и переопубликация бота (п. 2.11): 200 { bot, warnings } или 422 { errors }
+  @Post(':botId/publish')
+  @HttpCode(HttpStatus.OK)
+  publish(
+    @CurrentAuthor() author: AuthenticatedAuthor,
+    @Param('projectId') projectId: string,
+    @Param('botId') botId: string,
+  ): Promise<{ bot: BotView; warnings: ValidationError[] }> {
+    return this.bots.publish(author.id, projectId, botId);
   }
 
   isTokenInUse(_messenger: MessengerType, _tokenHash: string): boolean {

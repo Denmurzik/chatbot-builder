@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@chatbot/db": "workspace:*",
+    "@chatbot/engine-core": "workspace:*",
     "@chatbot/model": "workspace:*",
     "@chatbot/queue": "workspace:*",
     "@chatbot/vault": "workspace:*",

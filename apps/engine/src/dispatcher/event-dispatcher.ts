@@ -1,3 +1,4 @@
+import { isStaleResponse } from '@chatbot/engine-core';
 import {
   chatEventSchema,
   NotImplementedError,
@@ -16,6 +17,7 @@ import { Worker, type Job } from 'bullmq';
 import type IORedis from 'ioredis';
 import type { DialogContextRow } from '../dialog/context.repository';
 import { DialogService } from '../dialog/dialog.service';
+import { HttpRequestExecutor } from '../http/http-request-executor';
 import { APP_CONFIG, EVENT_QUEUE, type AppConfig } from '../infra/tokens';
 
 // Диспетчер событий: по одному воркеру с concurrency = 1 на каждый из 16 разделов очереди (п. 2.2)
@@ -29,11 +31,14 @@ export class EventDispatcher implements OnApplicationBootstrap, OnModuleDestroy 
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(EVENT_QUEUE) private readonly queue: EventQueue,
     private readonly dialog: DialogService,
+    private readonly executor: HttpRequestExecutor,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
     // Раздел не обрабатывают двое одновременно, даже при нескольких процессах engine
     await this.queue.setGlobalConcurrency(1);
+    // Незавершённые HTTP-запросы от прошлого запуска переводятся в FAILED до старта воркеров (п. 1.5)
+    await this.executor.recoverAfterRestart();
     const connection = createRedisConnection(this.config.redisUrl);
     this.connection = connection;
     for (let partition = 0; partition < PARTITIONS; partition++) {
@@ -70,9 +75,9 @@ export class EventDispatcher implements OnApplicationBootstrap, OnModuleDestroy 
     return this.queue.enqueue(event, jobId);
   }
 
-  // Проверка актуальности события HTTP-ответа по текущему контексту (SD-4, спринт 2)
-  isStale(_event: ChatEvent, _ctx: DialogContextRow | null): boolean {
-    throw new NotImplementedError('EventDispatcher.isStale');
+  // Проверка актуальности события HTTP-ответа по текущему контексту (SD-4, п. 2.8)
+  isStale(event: ChatEvent, ctx: DialogContextRow | null): boolean {
+    return isStaleResponse(event, ctx);
   }
 
   // Рассылка служебного события по всем диалогам бота, например при переопубликации (UC-U-07, SD-6, спринт 3)

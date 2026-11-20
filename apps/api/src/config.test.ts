@@ -8,6 +8,7 @@ describe('loadConfig', () => {
     JWT_SECRET: 'change-me-dev-jwt-secret',
     NODE_ENV: 'development',
   };
+  const prod: NodeJS.ProcessEnv = { PUBLIC_URL: 'https://bots.example.com' };
 
   it('разрешает dev-секрет вне production и отключает telegramPolling по умолчанию', () => {
     const cfg = loadConfig(baseEnv);
@@ -27,6 +28,7 @@ describe('loadConfig', () => {
     try {
       const cfg = loadConfig({
         ...baseEnv,
+        ...prod,
         NODE_ENV: 'production',
         JWT_SECRET: 'a-very-strong-production-jwt-secret-key-32-plus-chars',
         TELEGRAM_POLLING: '1',
@@ -41,10 +43,22 @@ describe('loadConfig', () => {
     }
   });
 
+  it('требует PUBLIC_URL в production и читает его вне production', () => {
+    const strong = 'a-very-strong-production-jwt-secret-key-32-plus-chars';
+    expect(() =>
+      loadConfig({ ...baseEnv, NODE_ENV: 'production', JWT_SECRET: strong }),
+    ).toThrow(/PUBLIC_URL/);
+    expect(loadConfig({ ...baseEnv, PUBLIC_URL: 'http://localhost:3000' }).publicUrl).toBe(
+      'http://localhost:3000',
+    );
+    expect(loadConfig(baseEnv).publicUrl).toBeUndefined();
+  });
+
   it('отклоняет короткий или дефолтный JWT_SECRET в production', () => {
     expect(() =>
       loadConfig({
         ...baseEnv,
+        ...prod,
         NODE_ENV: 'production',
         JWT_SECRET: 'change-me-dev-jwt-secret',
       }),
@@ -53,6 +67,7 @@ describe('loadConfig', () => {
     expect(() =>
       loadConfig({
         ...baseEnv,
+        ...prod,
         NODE_ENV: 'production',
         JWT_SECRET: 'short-secret-under-32-chars',
       }),
@@ -60,6 +75,7 @@ describe('loadConfig', () => {
 
     const validProd = loadConfig({
       ...baseEnv,
+      ...prod,
       NODE_ENV: 'production',
       JWT_SECRET: 'a-very-strong-production-jwt-secret-key-32-plus-chars',
     });

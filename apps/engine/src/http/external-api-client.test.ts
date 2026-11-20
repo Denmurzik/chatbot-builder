@@ -182,4 +182,44 @@ describe('ExternalApiClient', () => {
       errorSpy.mockRestore();
     }
   });
+
+  describe('HTTP_ALLOWED_HOSTS', () => {
+    it('хост не из списка -> onFailure(0, «Адрес не разрешён») без запроса и повторов', async () => {
+      let hits = 0;
+      const url = await startServer((_req, res) => {
+        hits += 1;
+        res.end('x');
+      });
+      const { sink, done } = makeSink();
+      new ExternalApiClient(sink, ['mock-clinic']).send(request(url), 1, 2, 0.01);
+      await done;
+      expect(sink.onFailure).toHaveBeenCalledWith('r1', 0, 'Адрес не разрешён');
+      expect(hits).toBe(0);
+    });
+
+    it('хост из списка (без учёта регистра) проходит', async () => {
+      const url = await startServer((_req, res) => res.end('ok'));
+      const { sink, done } = makeSink();
+      new ExternalApiClient(sink, ['LOCALHOST', '127.0.0.1']).send(request(url), 1, 0, 0.01);
+      await done;
+      expect(sink.onResponse).toHaveBeenCalledWith('r1', 200, 'ok');
+    });
+
+    it('пустой список или null — без ограничений', async () => {
+      const url = await startServer((_req, res) => res.end('ok'));
+      for (const hosts of [null, []]) {
+        const { sink, done } = makeSink();
+        new ExternalApiClient(sink, hosts).send(request(url), 1, 0, 0.01);
+        await done;
+        expect(sink.onResponse).toHaveBeenCalled();
+      }
+    });
+
+    it('некорректный URL при заданном списке — отказ', async () => {
+      const { sink, done } = makeSink();
+      new ExternalApiClient(sink, ['mock-clinic']).send(request('не url'), 1, 0, 0.01);
+      await done;
+      expect(sink.onFailure).toHaveBeenCalledWith('r1', 0, 'Адрес не разрешён');
+    });
+  });
 });

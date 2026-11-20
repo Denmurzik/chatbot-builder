@@ -1,7 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyScenario, scenarioSchema, type Scenario } from '@chatbot/model';
 import { ru } from '@/i18n/ru';
 import { createQueryClient } from '@/app/queryClient';
@@ -10,7 +10,7 @@ import { setupCodeMirrorJsdom } from './fields/cm-test-setup';
 import { BLOCK_DRAG_MIME } from './picker/NodePicker';
 
 // jsdom не содержит ResizeObserver и DOMMatrixReadOnly, нужных React Flow
-beforeAll(() => {
+beforeEach(() => {
   setupCodeMirrorJsdom();
   vi.stubGlobal(
     'DOMMatrixReadOnly',
@@ -94,6 +94,7 @@ describe('EditorPage', () => {
     cleanup();
     measureNodes = false;
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('отрисовывает холст и загруженный блок', async () => {

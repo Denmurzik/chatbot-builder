@@ -8,12 +8,19 @@ import {
   type EdgeChange,
   type NodeChange,
 } from '@xyflow/react';
-import { ArrowLeft, CircleHelp, Redo2, Save, Undo2 } from 'lucide-react';
+import { ArrowLeft, CheckCheck, CircleHelp, Redo2, Save, Undo2 } from 'lucide-react';
 import { Link, useBlocker, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { BLOCK_TYPES, scenarioSchema, type BlockType, type Scenario } from '@chatbot/model';
+import {
+  BLOCK_TYPES,
+  scenarioSchema,
+  type BlockType,
+  type Scenario,
+  type ValidationError,
+} from '@chatbot/model';
 import { ApiError } from '@/api/client';
 import { useProject, useSaveScenario } from '@/api/projects';
+import { useValidateScenario } from '@/api/validation';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -46,6 +53,11 @@ import { addFree, addFromOutput, insertOnEdge, type GraphResult } from './picker
 import { nextBlockId } from './ids';
 import { sameSnapshot, snapshotOf, useHistory, type Snapshot } from './history';
 import { ShortcutsHelp } from './ShortcutsHelp';
+import {
+  ServerIssuesContext,
+  ValidationPanel,
+  groupServerErrorsByBlock,
+} from './ValidationPanel';
 
 // Окно, в пределах которого серия сдвигов стрелками считается одним действием
 const KEY_MOVE_SERIES_MS = 500;
@@ -104,6 +116,7 @@ function showIssues(title: string, issues: { path: string; message: string }[]) 
 }
 
 function EditorHeader({ name, children }: { name?: string; children?: ReactNode }) {
+  const { id } = useParams();
   return (
     <header className="flex items-center gap-4 border-b px-4 py-2">
       <Link to="/projects" className="flex items-center gap-1 text-sm text-muted-foreground">
@@ -111,6 +124,11 @@ function EditorHeader({ name, children }: { name?: string; children?: ReactNode 
         {ru.editor.back}
       </Link>
       <h1 className="min-w-0 flex-1 truncate text-base font-semibold">{name}</h1>
+      {id ? (
+        <Link to={`/projects/${id}/bots`} className="text-sm text-muted-foreground">
+          {ru.editor.bots}
+        </Link>
+      ) : null}
       {children}
     </header>
   );
@@ -130,6 +148,10 @@ function ScenarioEditor({
   const [edges, setEdges] = useState<Edge[]>(initialFlow.edges);
   const [dirty, setDirty] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [validationOpen, setValidationOpen] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
+  // Ошибки сервера для значков на блоках сбрасываются при первом изменении сценария
+  const [serverBlockErrors, setServerBlockErrors] = useState<ValidationError[]>([]);
   const [picker, setPicker] = useState<PickerTarget | null>(null);
   // Окно блока: какой блок открыт и нужно ли сразу выделить его название (действие «Переименовать»)
   const [dialog, setDialog] = useState<{ id: string; focusTitle: boolean } | null>(null);
@@ -143,8 +165,13 @@ function ScenarioEditor({
   // Счётчик правок графа: по нему понимаем, менялся ли граф, пока шёл запрос сохранения
   const revisionRef = useRef(0);
   const canvasRef = useRef<HTMLDivElement>(null);
-  const { screenToFlowPosition, fitView, getNodes } = useReactFlow();
+  const { screenToFlowPosition, fitView, getNodes, setCenter } = useReactFlow();
   const save = useSaveScenario(projectId);
+  const validate = useValidateScenario(projectId);
+  const serverIssuesByBlock = useMemo(
+    () => groupServerErrorsByBlock(serverBlockErrors),
+    [serverBlockErrors],
+  );
   // Базовые снимки: начало перетаскивания и открытие окна блока (шаг — по итогу)
   const dragBaseRef = useRef<Snapshot | null>(null);
   const dialogBaseRef = useRef<Snapshot | null>(null);
@@ -168,6 +195,7 @@ function ScenarioEditor({
   const touch = useCallback(() => {
     revisionRef.current += 1;
     setDirty(true);
+    setServerBlockErrors((prev) => (prev.length === 0 ? prev : []));
   }, []);
 
   const getGraph = useCallback(() => ({ nodes: nodesRef.current, edges: edgesRef.current }), []);
@@ -392,52 +420,94 @@ function ScenarioEditor({
     [commitNodes, touch, handleNodesChange, handleEdgesChange, record, openDialog],
   );
 
-  const handleSave = useCallback(() => {
-    if (save.isPending) return;
-    const currentNodes = nodesRef.current;
+  const saveScenario = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}): Promise<boolean> => {
+      if (save.isPending) return false;
+      const currentNodes = nodesRef.current;
 
-    // Ошибки полей блоков (повторы, «else», числа) блокируют сохранение
-    const blockIssues = currentNodes.flatMap((node) =>
-      nodeIssues(node).map((message) => ({
-        path: node.id,
-        message: ru.validation.blockError(node.data.title, node.id, message),
-      })),
-    );
-    if (blockIssues.length > 0) {
-      const firstId = blockIssues[0]!.path;
-      commitNodes(currentNodes.map((node) => ({ ...node, selected: node.id === firstId })));
-      showIssues(ru.editor.fixErrors, blockIssues);
-      return;
-    }
-
-    const scenario = flowToScenario(currentNodes, edgesRef.current);
-    const parsed = scenarioSchema.safeParse(scenario);
-    if (!parsed.success) {
-      showIssues(
-        ru.editor.invalidScenario,
-        parsed.error.issues.map((issue) => ({
-          path: issue.path.join('.'),
-          message: issue.message,
+      // Ошибки полей блоков (повторы, «else», числа) блокируют сохранение
+      const blockIssues = currentNodes.flatMap((node) =>
+        nodeIssues(node).map((message) => ({
+          path: node.id,
+          message: ru.validation.blockError(node.data.title, node.id, message),
         })),
       );
-      return;
-    }
-    const sentRevision = revisionRef.current;
-    save.mutate(parsed.data, {
-      onSuccess: () => {
+      if (blockIssues.length > 0) {
+        const firstId = blockIssues[0]!.path;
+        commitNodes(currentNodes.map((node) => ({ ...node, selected: node.id === firstId })));
+        showIssues(ru.editor.fixErrors, blockIssues);
+        return false;
+      }
+
+      const scenario = flowToScenario(currentNodes, edgesRef.current);
+      const parsed = scenarioSchema.safeParse(scenario);
+      if (!parsed.success) {
+        showIssues(
+          ru.editor.invalidScenario,
+          parsed.error.issues.map((issue) => ({
+            path: issue.path.join('.'),
+            message: issue.message,
+          })),
+        );
+        return false;
+      }
+      const sentRevision = revisionRef.current;
+      try {
+        await save.mutateAsync(parsed.data);
         // Если граф менялся, пока шёл запрос, изменения остаются несохранёнными
         if (revisionRef.current === sentRevision) setDirty(false);
-        toast.success(ru.editor.saved);
-      },
-      onError: (error) => {
+        if (!silent) toast.success(ru.editor.saved);
+        return true;
+      } catch (error) {
         if (error instanceof ApiError && error.status === 400 && error.issues?.length) {
           showIssues(ru.editor.invalidScenario, error.issues);
         } else {
           toast.error(ru.editor.saveError);
         }
-      },
-    });
-  }, [save, commitNodes]);
+        return false;
+      }
+    },
+    [save, commitNodes],
+  );
+
+  const handleSave = useCallback(() => {
+    void saveScenario();
+  }, [saveScenario]);
+
+  const handleValidate = useCallback(async () => {
+    if (save.isPending || validate.isPending) return;
+    if (dirty) {
+      const saved = await saveScenario({ silent: true });
+      if (!saved) return;
+    }
+    // Если сценарий изменился, пока шла проверка, ошибки сервера устарели и на блоки не переносятся
+    const validatedRevision = revisionRef.current;
+    try {
+      const result = await validate.mutateAsync();
+      setValidationErrors(result.errors);
+      if (revisionRef.current === validatedRevision) setServerBlockErrors(result.errors);
+      setValidationOpen(true);
+    } catch {
+      toast.error(ru.validationPanel.checkError);
+    }
+  }, [save.isPending, validate, dirty, saveScenario]);
+
+  const handleSelectValidationBlock = useCallback(
+    (blockId: string) => {
+      const current = nodesRef.current;
+      const target = current.find((node) => node.id === blockId);
+      if (!target) return;
+      commitNodes(current.map((node) => ({ ...node, selected: node.id === blockId })));
+      const measured = getNodes().find((node) => node.id === blockId)?.measured ?? target.measured;
+      const width = measured?.width ?? NODE_WIDTH;
+      const height = measured?.height ?? NODE_HEIGHT;
+      void setCenter(target.position.x + width / 2, target.position.y + height / 2, {
+        zoom: 1,
+        duration: 200,
+      });
+    },
+    [commitNodes, getNodes, setCenter],
+  );
 
   // Ctrl+S — сохранить; code не зависит от раскладки (в русской key = «ы»)
   useEffect(() => {
@@ -536,6 +606,16 @@ function ScenarioEditor({
           >
             <CircleHelp className="size-4" />
           </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={save.isPending || validate.isPending}
+            onClick={() => void handleValidate()}
+          >
+            <CheckCheck className="size-4" />
+            {validate.isPending ? ru.validationPanel.checking : ru.validationPanel.button}
+          </Button>
           <Tooltip>
             {/* Button в React 18 не пробрасывает ref — триггер оборачиваем в span */}
             <TooltipTrigger asChild>
@@ -553,27 +633,29 @@ function ScenarioEditor({
       <div className="flex min-h-0 flex-1">
         <div ref={canvasRef} className="relative min-w-0 flex-1" aria-label={ru.editor.canvas}>
           <EditorActionsContext.Provider value={actions}>
-            <Canvas
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={handleNodesChange}
-              onEdgesChange={handleEdgesChange}
-              onEdgesReplace={handleEdgesReplace}
-              onAutoLayout={handleAutoLayout}
-              onAddClick={() => setPicker({ kind: 'free' })}
-              onBlockDrop={handleBlockDrop}
-              onNodeDragStart={handleDragStart}
-              onNodeDragStop={handleDragStop}
-            >
-              {blank && !showWelcome && entryNode && (
-                <FirstStepCard
-                  entry={entryNode}
-                  onClick={() =>
-                    setPicker({ kind: 'output', blockId: entryNode.id, output: 'default' })
-                  }
-                />
-              )}
-            </Canvas>
+            <ServerIssuesContext.Provider value={serverIssuesByBlock}>
+              <Canvas
+                nodes={nodes}
+                edges={edges}
+                onNodesChange={handleNodesChange}
+                onEdgesChange={handleEdgesChange}
+                onEdgesReplace={handleEdgesReplace}
+                onAutoLayout={handleAutoLayout}
+                onAddClick={() => setPicker({ kind: 'free' })}
+                onBlockDrop={handleBlockDrop}
+                onNodeDragStart={handleDragStart}
+                onNodeDragStop={handleDragStop}
+              >
+                {blank && !showWelcome && entryNode && (
+                  <FirstStepCard
+                    entry={entryNode}
+                    onClick={() =>
+                      setPicker({ kind: 'output', blockId: entryNode.id, output: 'default' })
+                    }
+                  />
+                )}
+              </Canvas>
+            </ServerIssuesContext.Provider>
           </EditorActionsContext.Provider>
           {showWelcome && <WelcomeOverlay onChoose={applyTemplate} />}
         </div>
@@ -587,6 +669,12 @@ function ScenarioEditor({
         onClose={closeDialog}
       />
       <ShortcutsHelp open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      <ValidationPanel
+        open={validationOpen}
+        onOpenChange={setValidationOpen}
+        errors={validationErrors}
+        onSelectBlock={handleSelectValidationBlock}
+      />
       <NodePicker
         open={picker !== null}
         onOpenChange={(open) => !open && setPicker(null)}

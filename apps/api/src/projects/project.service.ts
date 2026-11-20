@@ -1,7 +1,14 @@
 import { type Prisma } from '@chatbot/db';
-import { emptyScenario, type Scenario } from '@chatbot/model';
+import {
+  emptyScenario,
+  type EnvVarInput,
+  type EnvVarView,
+  type EnvironmentVariable,
+  type Scenario,
+} from '@chatbot/model';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.module';
+import { EnvironmentService } from '../publication/environment.service';
 
 export interface ProjectSummary {
   id: string;
@@ -19,13 +26,17 @@ export interface ProjectDetails {
   id: string;
   name: string;
   scenario: Scenario;
+  environment: EnvVarView[];
   updatedAt: Date;
 }
 
 // Сервис управления проектами с изоляцией данных по authorId (п. 2.12 спецификации)
 @Injectable()
 export class ProjectService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly environments: EnvironmentService,
+  ) {}
 
   async listByAuthor(authorId: string): Promise<ProjectSummary[]> {
     return this.prisma.client.project.findMany({
@@ -57,7 +68,7 @@ export class ProjectService {
   async getById(authorId: string, projectId: string): Promise<ProjectDetails> {
     const project = await this.prisma.client.project.findFirst({
       where: { id: projectId, authorId },
-      select: { id: true, name: true, scenario: true, updatedAt: true },
+      select: { id: true, name: true, scenario: true, environment: true, updatedAt: true },
     });
 
     if (!project) {
@@ -68,7 +79,33 @@ export class ProjectService {
       id: project.id,
       name: project.name,
       scenario: project.scenario as unknown as Scenario,
+      environment: this.environments.toView(project.environment as unknown as EnvironmentVariable[]),
       updatedAt: project.updatedAt,
     };
+  }
+
+  // Сохраняет тестовое окружение проекта (для превью); секреты шифруются, наружу уходят маски
+  async setEnvironment(
+    authorId: string,
+    projectId: string,
+    input: EnvVarInput[],
+  ): Promise<EnvVarView[]> {
+    const project = await this.prisma.client.project.findFirst({
+      where: { id: projectId, authorId },
+      select: { environment: true },
+    });
+    if (!project) {
+      throw new NotFoundException('Проект не найден');
+    }
+    const merged = this.environments.merge(
+      projectId,
+      project.environment as unknown as EnvironmentVariable[],
+      input,
+    );
+    await this.prisma.client.project.update({
+      where: { id: projectId },
+      data: { environment: merged as unknown as Prisma.InputJsonValue },
+    });
+    return this.environments.toView(merged);
   }
 }

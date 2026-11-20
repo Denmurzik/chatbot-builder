@@ -55,7 +55,7 @@ describe('QueueHttpResultSink', () => {
       prefix: env.config.queuePrefix,
     });
     try {
-      const job = await probe.getJob(`http-${request.id}-RESPONSE_RECEIVED`);
+      const job = await probe.getJob(`http-${request.id}-RESPONSE_RECEIVED-0`);
       expect(job?.data).toMatchObject({
         type: 'RESPONSE_RECEIVED',
         botId: ctx.botId,

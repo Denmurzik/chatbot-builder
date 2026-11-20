@@ -1,11 +1,12 @@
 import type { PrismaClient } from '@chatbot/db';
 import type { EventQueue } from '@chatbot/queue';
 import { Module } from '@nestjs/common';
+import { loadAllowedHosts } from '../config';
 import { HttpRequestLauncher } from '../dialog/ports';
 import { EVENT_QUEUE, PRISMA } from '../infra/tokens';
 import { ExternalApiClient } from './external-api-client';
 import { HttpRequestExecutor } from './http-request-executor';
-import { NoopHttpRequestLauncher } from './http-request-launcher';
+import { ExternalApiHttpRequestLauncher } from './http-request-launcher';
 import { QueueHttpResultSink } from './queue-http-result-sink';
 import { ResponseParser } from './response-parser';
 
@@ -20,11 +21,11 @@ import { ResponseParser } from './response-parser';
     {
       provide: ExternalApiClient,
       inject: [QueueHttpResultSink],
-      useFactory: (sink: QueueHttpResultSink) => new ExternalApiClient(sink),
+      useFactory: (sink: QueueHttpResultSink) => new ExternalApiClient(sink, loadAllowedHosts()),
     },
     ResponseParser,
     HttpRequestExecutor,
-    { provide: HttpRequestLauncher, useClass: NoopHttpRequestLauncher },
+    { provide: HttpRequestLauncher, useClass: ExternalApiHttpRequestLauncher },
   ],
   exports: [
     ExternalApiClient,

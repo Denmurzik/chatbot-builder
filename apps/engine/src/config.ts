@@ -14,3 +14,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const queuePrefix = env.QUEUE_PREFIX?.trim() || undefined;
   return { databaseUrl, redisUrl, ...(queuePrefix ? { queuePrefix } : {}) };
 }
+
+// Список разрешённых хостов для исходящих HTTP-запросов (HTTP_ALLOWED_HOSTS через запятую).
+// Пусто или не задано — без ограничений (dev)
+export function loadAllowedHosts(env: NodeJS.ProcessEnv = process.env): string[] | null {
+  const hosts = (env.HTTP_ALLOWED_HOSTS ?? '')
+    .split(',')
+    .map((h) => h.trim().toLowerCase())
+    .filter((h) => h !== '');
+  return hosts.length > 0 ? hosts : null;
+}

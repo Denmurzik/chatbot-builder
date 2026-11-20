@@ -5,11 +5,59 @@ import type { VariableScope } from './scope';
 export type RenderMode = 'TEXT' | 'URL' | 'HEADER' | 'JSON';
 
 const ENV_PREFIX = 'env.';
+const TEMPLATE_VAR_NAME_REGEX = /^(?:env\.)?[A-Za-z_][A-Za-z0-9_]*$/;
 
 export { extractVariableNames };
 
+// Проверяет синтаксис шаблона с подстановками {{имя}} и {{env.ИМЯ}}; возвращает текст ошибки или null
+export function checkTemplate(template: string): string | null {
+  let singleBraceDepth = 0;
+  let i = 0;
+
+  while (i < template.length) {
+    if (template[i] === '{' && template[i + 1] === '{') {
+      const closeIdx = template.indexOf('}}', i + 2);
+      if (closeIdx === -1) {
+        return 'незакрытая подстановка "{{"';
+      }
+      const nextOpenIdx = template.indexOf('{{', i + 2);
+      if (nextOpenIdx !== -1 && nextOpenIdx < closeIdx) {
+        return 'незакрытая подстановка "{{"';
+      }
+      const inner = template.slice(i + 2, closeIdx).trim();
+      if (inner.length === 0) {
+        return 'пустое имя переменной в подстановке "{{}}"';
+      }
+      if (!TEMPLATE_VAR_NAME_REGEX.test(inner)) {
+        return `некорректное имя переменной "{{${inner}}}"`;
+      }
+      i = closeIdx + 2;
+      continue;
+    }
+
+    if (template[i] === '}' && template[i + 1] === '}') {
+      if (singleBraceDepth >= 2) {
+        singleBraceDepth -= 2;
+        i += 2;
+        continue;
+      }
+      return 'лишняя закрывающая скобка "}}"';
+    }
+
+    if (template[i] === '{') {
+      singleBraceDepth += 1;
+    } else if (template[i] === '}' && singleBraceDepth > 0) {
+      singleBraceDepth -= 1;
+    }
+
+    i += 1;
+  }
+
+  return null;
+}
+
 // Экранирует значение в зависимости от места подстановки
-function escapeValue(value: string, mode: RenderMode): string {
+export function escapeValue(value: string, mode: RenderMode): string {
   switch (mode) {
     case 'TEXT':
       return value;

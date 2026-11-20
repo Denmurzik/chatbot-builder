@@ -102,6 +102,7 @@ describe('Projects API (интеграционные тесты)', () => {
       id: created.body.id,
       name: 'Запись к врачу',
       scenario: emptyScenario(),
+      environment: [],
       updatedAt: expect.any(String),
     });
 

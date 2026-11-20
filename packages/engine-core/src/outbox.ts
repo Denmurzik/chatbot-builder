@@ -31,6 +31,11 @@ export interface PendingHttpRequest {
   retryIntervalSec: number;
 }
 
+// Результат выполнения внешнего HTTP-запроса (события RESPONSE_RECEIVED / REQUEST_FAILED)
+export type HttpOutcome =
+  | { kind: 'response'; status: number; body: string }
+  | { kind: 'failure'; code: number; message: string };
+
 // Состояние контекста диалога, которое движок получает и возвращает
 export interface DialogContextState {
   state: DialogState;
@@ -45,4 +50,6 @@ export interface EngineResult {
   outbox: OutgoingMessage[];
   httpRequest: PendingHttpRequest | null;
   highlightBlockId: string | null;
+  stale: boolean;
+  resumeRequestId: string | null;
 }

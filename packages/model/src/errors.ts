@@ -6,3 +6,11 @@ export class NotImplementedError extends Error {
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+
+// Ошибка или предупреждение проверки сценария (класс модели ValidationError, п. 2.10)
+export interface ValidationError {
+  rule: string;
+  message: string;
+  severity: 'ERROR' | 'WARNING';
+  blockId?: string;
+}

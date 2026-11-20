@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { emptyScenario, NotImplementedError, type Block } from '@chatbot/model';
+import { emptyScenario } from '@chatbot/model';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
@@ -42,49 +42,9 @@ describe('Каркас модулей API (skeleton)', () => {
     expect(moduleRef.get(ScenarioEditor)).toBeInstanceOf(ScenarioEditor);
   });
 
-  it('методы ScenarioValidator бросают NotImplementedError с именем класса и метода', () => {
-    const validator = moduleRef.get(ScenarioValidator);
-    const scenario = emptyScenario();
-    const block: Block = scenario.blocks[0];
-
-    expect(() => validator.validate(scenario)).toThrowError(NotImplementedError);
-    expect(() => validator.validate(scenario)).toThrowError('ScenarioValidator.validate');
-    expect(() => validator.checkSingleEntryPoint(scenario)).toThrowError(
-      'ScenarioValidator.checkSingleEntryPoint',
-    );
-    expect(() => validator.checkOutputsConnected(scenario)).toThrowError(
-      'ScenarioValidator.checkOutputsConnected',
-    );
-    expect(() => validator.checkRequiredFields(scenario)).toThrowError(
-      'ScenarioValidator.checkRequiredFields',
-    );
-    expect(() => validator.checkConnections('bot-1')).toThrowError(
-      'ScenarioValidator.checkConnections',
-    );
-    expect(() => validator.checkBlockFields(block)).toThrowError(
-      'ScenarioValidator.checkBlockFields',
-    );
-    expect(() => validator.checkLoops(scenario)).toThrowError('ScenarioValidator.checkLoops');
-  });
-
-  it('методы PublicationController бросают NotImplementedError с именем класса и метода', () => {
+  it('нереализованные методы PublicationController бросают NotImplementedError с именем класса и метода', () => {
     const controller = moduleRef.get(PublicationController);
 
-    expect(() => controller.createBot('proj-1', 'Бот')).toThrowError(
-      'PublicationController.createBot',
-    );
-    expect(() => controller.setEnvironment('bot-1', [])).toThrowError(
-      'PublicationController.setEnvironment',
-    );
-    expect(() => controller.connectMessenger('bot-1', 'TELEGRAM', 'tok')).toThrowError(
-      'PublicationController.connectMessenger',
-    );
-    expect(() => controller.publish('proj-1', 'bot-1')).toThrowError(
-      'PublicationController.publish',
-    );
-    expect(() => controller.republish('proj-1', 'bot-1')).toThrowError(
-      'PublicationController.republish',
-    );
     expect(() => controller.isTokenInUse('TELEGRAM', 'hash')).toThrowError(
       'PublicationController.isTokenInUse',
     );

@@ -9,7 +9,7 @@ import { SecretVault } from '@chatbot/vault';
 import { Test, type TestingModule } from '@nestjs/testing';
 import type IORedis from 'ioredis';
 import { AppModule } from '../app.module';
-import { MessengerGateway } from '../dialog/ports';
+import { HttpRequestLauncher, MessengerGateway } from '../dialog/ports';
 import { APP_CONFIG, PRISMA, type AppConfig } from '../infra/tokens';
 
 export const ADMIN_URL =
@@ -87,8 +87,12 @@ export async function waitFor(
   throw new Error('waitFor: условие не выполнилось за отведённое время');
 }
 
+export interface TestEnvOptions {
+  launcher?: HttpRequestLauncher;
+}
+
 // Поднимает приложение engine на собственной базе и собственном префиксе BullMQ
-export async function createTestEnv(): Promise<TestEnv> {
+export async function createTestEnv(options: TestEnvOptions = {}): Promise<TestEnv> {
   process.env.TELEGRAM_POLLING = '0';
   const dbName = `chatbot_engine_test_${randomBytes(4).toString('hex')}`;
   const testUrl = new URL(ADMIN_URL);
@@ -109,14 +113,17 @@ export async function createTestEnv(): Promise<TestEnv> {
     redisUrl: REDIS_URL,
     queuePrefix: prefix,
   };
-  const module = await Test.createTestingModule({ imports: [AppModule] })
+  const builder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(APP_CONFIG)
     .useValue(config)
     .overrideProvider(MessengerGateway)
     .useValue(gateway)
     .overrideProvider(SecretVault)
-    .useValue(vault)
-    .compile();
+    .useValue(vault);
+  if (options.launcher) {
+    builder.overrideProvider(HttpRequestLauncher).useValue(options.launcher);
+  }
+  const module = await builder.compile();
   await module.init();
 
   const db = module.get<PrismaClient>(PRISMA);

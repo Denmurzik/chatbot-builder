@@ -20,6 +20,8 @@ export class HttpRequestExecutor {
     @Inject(EVENT_QUEUE) private readonly queue: EventQueue,
   ) {}
 
+  // Предполагает один процесс engine: при нескольких процессах SENT-запросы соседа были бы
+  // ошибочно сочтены прерванными (несколько процессов engine вне объёма спринта 2)
   // Переводит все http_request в статусе SENT в FAILED и ставит REQUEST_FAILED в очередь (п. 1.5)
   async recoverAfterRestart(): Promise<number> {
     const pending = await this.prisma.httpRequest.findMany({

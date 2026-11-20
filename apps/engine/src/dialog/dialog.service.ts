@@ -71,20 +71,39 @@ export class DialogService {
         const httpReq = event.requestId
           ? await tx.httpRequest.findUnique({ where: { id: event.requestId } })
           : null;
-        if (httpReq) {
-          outcome =
-            event.type === 'RESPONSE_RECEIVED'
-              ? {
-                  kind: 'response',
-                  status: httpReq.responseCode ?? 200,
-                  body: httpReq.responseBody ?? '',
-                }
-              : {
-                  kind: 'failure',
-                  code: httpReq.responseCode ?? 0,
-                  message: httpReq.error ?? 'Не удалось выполнить запрос',
-                };
+        // Итог строится по статусу строки, а не по типу события: расхождение означает устаревшее событие
+        if (httpReq?.status === 'SUCCEEDED') {
+          outcome = {
+            kind: 'response',
+            status: httpReq.responseCode ?? 200,
+            body: httpReq.responseBody ?? '',
+          };
+        } else if (httpReq?.status === 'FAILED' || httpReq?.status === 'TIMED_OUT') {
+          outcome = {
+            kind: 'failure',
+            code: httpReq.responseCode ?? 0,
+            message: httpReq.error ?? 'Не удалось выполнить запрос',
+          };
+        } else if (httpReq?.status === 'SENT') {
+          this.logger.log(
+            `ответ отброшен: запрос ещё в статусе SENT, botId=${botId}, chatId=${event.chatId}, requestId=${event.requestId ?? 'null'}`,
+          );
+          return null;
         }
+      }
+
+      // Событие не соответствует статусу строки (ответ на неуспешный запрос и наоборот): отбрасывается
+      const expectedKind =
+        event.type === 'RESPONSE_RECEIVED'
+          ? 'response'
+          : event.type === 'REQUEST_FAILED'
+            ? 'failure'
+            : null;
+      if (expectedKind && outcome && outcome.kind !== expectedKind) {
+        this.logger.log(
+          `ответ отброшен: событие ${event.type} не соответствует статусу запроса, requestId=${event.requestId ?? 'null'}`,
+        );
+        return null;
       }
 
       const result = this.engine.handleEvent(event, toState(row), scenario, env, outcome);
@@ -237,11 +256,13 @@ function maskSecrets(text: string, masks: SecretMask[], mode: 'URL' | 'HEADER' |
   let out = text;
   for (const { value, mask } of masks) {
     const rendered =
-      mode === 'HEADER'
-        ? value.replace(/[\r\n]+/g, '')
-        : mode === 'JSON'
-          ? JSON.stringify(value).slice(1, -1)
-          : value;
+      mode === 'URL'
+        ? encodeURIComponent(value.replace(/[�-�](?![�-�])|(?<![�-�])[�-�]/g, '�'))
+        : mode === 'HEADER'
+          ? value.replace(/[\r\n]+/g, '')
+          : mode === 'JSON'
+            ? JSON.stringify(value).slice(1, -1)
+            : value;
     if (rendered) out = out.replaceAll(rendered, mask);
     if (rendered !== value) out = out.replaceAll(value, mask);
   }

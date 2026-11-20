@@ -45,7 +45,12 @@ export class QueueHttpResultSink implements HttpResultSink {
     if (!request) throw new Error(`HTTP-запрос ${requestId} не найден`);
     const context = request.dialogContext;
     // Сначала фиксируется результат (SENT -> итоговый статус), затем событие в очередь
-    await this.prisma.httpRequest.updateMany({ where: { id: requestId, status: 'SENT' }, data });
+    const updated = await this.prisma.httpRequest.updateMany({
+      where: { id: requestId, status: 'SENT' },
+      data,
+    });
+    // Запрос уже завершён другим путём (например, восстановлением): событие не дублируется
+    if (updated.count === 0) return;
     const event: ChatEvent = {
       type,
       channel: context.channel,

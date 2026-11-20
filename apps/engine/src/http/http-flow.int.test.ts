@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import type { Scenario } from '@chatbot/model';
 import { envAad } from '@chatbot/vault';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { MSG_WAIT } from '@chatbot/engine-core';
 import { createTestEnv, textEvent, waitFor, type TestEnv } from '../testing/test-env';
 import { HttpRequestExecutor } from './http-request-executor';
 
@@ -192,30 +193,107 @@ describe('HTTP-поток: отправка, приём результата, в
       },
       `manual-${oldId}`,
     );
-    await new Promise((r) => setTimeout(r, 1000));
+    // Разделы очереди обрабатываются по порядку: ответ на маркер приходит после устаревшего события
+    await env.emit(textEvent(bot.id, 'tg:h4', 'маркер'));
+    await waitFor(() => env.texts(bot.id, 'tg:h4').includes(MSG_WAIT));
     const after = await contextOf(bot.id, 'tg:h4');
     expect(after.state).toBe('WAITING_EXTERNAL');
     expect(after.currentRequestId).toBe(newId);
-    expect(env.texts(bot.id, 'tg:h4')).toEqual([]);
+    expect(env.texts(bot.id, 'tg:h4')).toEqual([MSG_WAIT]);
   });
 
-  it('recoverAfterRestart переводит SENT в FAILED и ведёт диалог по ветке «ошибка»', async () => {
-    handler = () => undefined; // сервер не отвечает: запрос остаётся SENT
-    const bot = await createHttpBot(httpScenario({ timeoutSec: 30 }));
-    await env.emit(textEvent(bot.id, 'tg:h5', 'старт'));
-    await waitFor(async () => {
-      const row = await env.db.dialogContext.findFirst({
-        where: { botId: bot.id, chatId: 'tg:h5' },
-      });
-      return row?.state === 'WAITING_EXTERNAL';
+  // Диалог в ожидании ответа без живого запроса в процессе: так выглядит состояние после перезапуска
+  async function seedInterrupted(botId: string, chatId: string) {
+    const ctx = await env.db.dialogContext.create({
+      data: {
+        botId,
+        chatId,
+        userId: 'u1',
+        channel: 'MESSENGER',
+        state: 'WAITING_EXTERNAL',
+        currentBlockId: 'req',
+        variables: {},
+      },
     });
-    const ctx = await contextOf(bot.id, 'tg:h5');
+    const row = await env.db.httpRequest.create({
+      data: {
+        dialogContextId: ctx.id,
+        blockId: 'req',
+        method: 'GET',
+        url: 'http://127.0.0.1:9/slots',
+        headers: [],
+        body: '',
+        status: 'SENT',
+      },
+    });
+    await env.db.dialogContext.update({
+      where: { id: ctx.id },
+      data: { currentRequestId: row.id },
+    });
+    return { ctx, row };
+  }
+
+  it('recoverAfterRestart переводит SENT в FAILED и ведёт диалог по ветке «ошибка»', async () => {
+    const bot = await createHttpBot(httpScenario());
+    const { row } = await seedInterrupted(bot.id, 'tg:h5');
 
     const recovered = await env.module.get(HttpRequestExecutor).recoverAfterRestart();
     expect(recovered).toBeGreaterThanOrEqual(1);
     await waitFor(() => env.texts(bot.id, 'tg:h5').includes('Ошибка запроса'));
 
+    const after = await env.db.httpRequest.findUniqueOrThrow({ where: { id: row.id } });
+    expect(after).toMatchObject({ status: 'FAILED', error: 'запрос прерван перезапуском' });
+  });
+
+  it('RESPONSE_RECEIVED для строки в статусе FAILED отбрасывается и успехом не считается', async () => {
+    const bot = await createHttpBot(httpScenario());
+    const { ctx, row } = await seedInterrupted(bot.id, 'tg:h6');
+    await env.db.httpRequest.update({
+      where: { id: row.id },
+      data: { status: 'FAILED', error: 'сбой' },
+    });
+    await env.queue.enqueue(
+      {
+        type: 'RESPONSE_RECEIVED',
+        channel: 'MESSENGER',
+        botId: bot.id,
+        chatId: 'tg:h6',
+        userId: 'u1',
+        requestId: row.id,
+      },
+      `manual-${row.id}`,
+    );
+    // Маркер идёт следом в том же разделе очереди: ответ на него означает, что событие уже разобрано
+    await env.emit(textEvent(bot.id, 'tg:h6', 'маркер'));
+    await waitFor(() => env.texts(bot.id, 'tg:h6').includes(MSG_WAIT));
+    expect(env.texts(bot.id, 'tg:h6')).toEqual([MSG_WAIT]);
+    const after = await env.db.dialogContext.findUniqueOrThrow({ where: { id: ctx.id } });
+    expect(after.state).toBe('WAITING_EXTERNAL');
+  });
+
+  it('секрет в URL маскируется и в закодированном виде', async () => {
+    handler = (_req, res) => res.end(JSON.stringify({ slots: 'ok' }));
+    const bot = await createHttpBot(
+      httpScenario({ url: '{{env.API_URL}}/slots?k={{env.API_KEY}}' }),
+    );
+    const special = 'a+b/c=';
+    const secret = env.vault.encrypt(special, envAad(bot.id, 'API_KEY'));
+    await env.db.bot.update({
+      where: { id: bot.id },
+      data: {
+        environment: [
+          { name: 'API_URL', value: apiUrl, secret: false },
+          { name: 'API_KEY', secret: true, secretValue: secret },
+        ],
+      },
+    });
+    await env.emit(textEvent(bot.id, 'tg:h7', 'старт'));
+    await waitFor(() => env.texts(bot.id, 'tg:h7').includes('Слоты: ok'));
+
+    const ctx = await contextOf(bot.id, 'tg:h7');
     const row = await env.db.httpRequest.findFirstOrThrow({ where: { dialogContextId: ctx.id } });
-    expect(row).toMatchObject({ status: 'FAILED', error: 'запрос прерван перезапуском' });
+    expect(row.url).toBe(`${apiUrl}/slots?k=${secret.mask}`);
+    expect(row.url).not.toContain(encodeURIComponent(special));
+    expect(row.url).not.toContain(special);
   });
 });

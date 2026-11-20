@@ -108,6 +108,34 @@ describe('ImportExportService (unit)', () => {
       expect(service.checkStructure(emptyScenario())).toEqual([]);
     });
 
+    it('сохраняет русское сообщение из схемы Zod (empty options → «Список вариантов не может быть пустым»)', () => {
+      const { service } = createService();
+      const issues = service.checkStructure({
+        formatVersion: 1,
+        blocks: [
+          { id: 'entry', type: 'ENTRY_POINT', title: 'Старт', x: 0, y: 0 },
+          {
+            id: 'choice',
+            type: 'OPTION_CHOICE',
+            title: 'Выбор',
+            x: 200,
+            y: 0,
+            question: 'Выберите',
+            options: [],
+            variableName: 'ans',
+          },
+        ],
+        transitions: [],
+      });
+      expect(issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            message: 'Список вариантов не может быть пустым',
+          }),
+        ]),
+      );
+    });
+
     it('возвращает ошибки на русском для неподдерживаемой formatVersion и битых переходов', () => {
       const { service } = createService();
       const badVersionIssues = service.checkStructure({

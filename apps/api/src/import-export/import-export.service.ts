@@ -68,9 +68,14 @@ function translateZodIssue(issue: ZodIssue): string {
     case ZodIssueCode.invalid_enum_value:
       return `Недопустимое значение (допустимо: ${issue.options.join(', ')})`;
     case ZodIssueCode.too_small:
-      return `Значение меньше допустимого (${String(issue.minimum)})`;
+      // Если у поля задано собственное сообщение на русском — используем его
+      return /^(Array|String|Number|Date) must/.test(issue.message)
+        ? `Значение меньше допустимого (${String(issue.minimum)})`
+        : issue.message;
     case ZodIssueCode.too_big:
-      return `Значение больше допустимого (${String(issue.maximum)})`;
+      return /^(Array|String|Number|Date) must/.test(issue.message)
+        ? `Значение больше допустимого (${String(issue.maximum)})`
+        : issue.message;
     default:
       return issue.message;
   }

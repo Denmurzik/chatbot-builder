@@ -286,6 +286,63 @@ describe('Import/Export API (интеграционные тесты)', () => {
     expect(afterDangling.body.scenario).toEqual(initialScenario);
   });
 
+  it('импорт заголовка {secret:true, value:"k"}: в БД value==="", secretValue зашифрован, secretsToFill===0', async () => {
+    const agent = await createAuthenticatedAgent('secret-with-value@example.com');
+    const created = await agent
+      .post('/api/projects')
+      .send({ name: 'Секретный заголовок с непустым значением' })
+      .expect(201);
+    const projectId: string = created.body.id;
+
+    // Импортируем сценарий с секретным заголовком, у которого задано открытое значение
+    const scenarioWithValue: Scenario = {
+      formatVersion: 1,
+      blocks: [
+        { id: 'entry', type: 'ENTRY_POINT', title: 'Старт', x: 0, y: 0 },
+        {
+          id: 'req',
+          type: 'HTTP_REQUEST',
+          title: 'Запрос',
+          x: 240,
+          y: 0,
+          method: 'GET',
+          url: 'https://example.com/api',
+          headers: [{ name: 'Authorization', value: 'k', secret: true }],
+          body: '',
+          variableName: 'resp',
+          errorVariable: 'err',
+          timeoutSec: 10,
+          retryCount: 0,
+          retryIntervalSec: 0,
+          errorStrategy: 'EXIT_ERROR',
+          suspendText: null,
+          responseMappings: [],
+        },
+      ],
+      transitions: [],
+    };
+
+    const importRes = await agent
+      .post(`/api/projects/${projectId}/import`)
+      .send(scenarioWithValue)
+      .expect(200);
+
+    // Значение было задано → секрет зашифрован → заполнять не нужно
+    expect(importRes.body).toEqual({
+      updatedAt: expect.any(String),
+      secretsToFill: 0,
+    });
+
+    // Проверяем сохранённый сценарий: value === '', secretValue.cipherText начинается с v1:
+    const details = await agent.get(`/api/projects/${projectId}`).expect(200);
+    const reqBlock = details.body.scenario.blocks.find((b: { id: string }) => b.id === 'req');
+    expect(reqBlock).toBeDefined();
+    const authHeader = reqBlock.headers.find((h: { name: string }) => h.name === 'Authorization');
+    expect(authHeader.value).toBe('');
+    expect(authHeader.secret).toBe(true);
+    expect(authHeader.secretValue?.cipherText).toMatch(/^v1:/);
+  });
+
   it('чужой и несуществующий проект → 404 на экспорт и импорт, чужой сценарий не меняется', async () => {
     const agentA = await createAuthenticatedAgent('owner-a@example.com');
     const agentB = await createAuthenticatedAgent('other-b@example.com');

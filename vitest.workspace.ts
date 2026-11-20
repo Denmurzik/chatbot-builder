@@ -25,7 +25,7 @@ export default defineWorkspace([
     test: {
       name: 'packages',
       environment: 'node',
-      include: ['packages/*/src/**/*.test.ts'],
+      include: ['packages/*/src/**/*.test.ts', 'apps/mock-clinic/src/**/*.test.ts'],
       exclude: ['**/*.int.test.ts', '**/node_modules/**', '**/dist/**'],
     },
     resolve: {

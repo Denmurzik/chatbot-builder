@@ -18,6 +18,7 @@
 - `apps/api` (`@chatbot/api`) — REST API и webhook мессенджеров (NestJS, порт `3000`)
 - `apps/engine` (`@chatbot/engine`) — воркеры очереди событий и HTTP-клиент внешних систем (NestJS)
 - `apps/web` (`@chatbot/web`) — веб-редактор сценариев и интерфейс превью (React 18 + Vite, порт `5173`)
+- `apps/mock-clinic` (`@chatbot/mock-clinic`) — тестовый HTTP API записи к врачу (`node:http`, порт `4010`)
 
 ## Быстрый старт
 
@@ -71,6 +72,7 @@ pnpm --filter @chatbot/db db:generate
 | `pnpm dev:api` | Запуск `apps/api` в режиме разработки |
 | `pnpm dev:engine` | Запуск `apps/engine` в режиме разработки |
 | `pnpm dev:web` | Запуск `apps/web` (Vite dev server) |
+| `pnpm dev:mock-clinic` | Запуск тестового HTTP API клиники (`apps/mock-clinic`, порт `4010`) |
 
 ## Запуск сценариев спринта 1
 
@@ -114,3 +116,25 @@ pnpm --filter @chatbot/db db:generate
    # с проверкой исходящего HTTP-запроса:
    pnpm --filter @chatbot/engine p1 -- --http
    ```
+
+## Тестовый API записи к врачу (`apps/mock-clinic`)
+
+Зависимостей нет (чистый `node:http`), данные о бронях хранятся в памяти процесса.
+
+```bash
+pnpm dev:mock-clinic
+# или после сборки:
+pnpm --filter @chatbot/mock-clinic start
+```
+
+Переменные окружения:
+- `MOCK_CLINIC_PORT` — порт сервера (по умолчанию `4010`)
+- `MOCK_CLINIC_API_KEY` — ключ для заголовка `X-Api-Key` (по умолчанию `test-key`)
+
+Эндпоинты (все требуют `X-Api-Key`):
+- `GET /doctors` — список врачей
+- `GET /slots?doctorId=d1` — свободные слоты врача
+- `POST /bookings` — бронь слота (`{"slotId","patient"}`), повторная бронь возвращает `409`
+- Заголовок `X-Mock-Fail: 500` имитирует ошибку 500, `X-Mock-Fail: timeout` — задержку ответа 30 с
+
+Пример сценария для работы с этим API: `packages/engine-core/examples/doctor-with-http.json` (требует переменные окружения сценария `API_URL=http://127.0.0.1:4010` и `API_KEY=test-key`).

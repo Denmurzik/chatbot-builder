@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { parseScenario, type ChatEvent, type Scenario } from '@chatbot/model';
 import { describe, expect, it } from 'vitest';
 import { DialogEngine, MSG_SUSPEND_DEFAULT, isStaleResponse } from './dialog-engine';
@@ -847,5 +849,25 @@ describe('DialogEngine', () => {
     const frozen = JSON.stringify(r1.context);
     run(text('Аня'), r1.context, greeting);
     expect(JSON.stringify(r1.context)).toBe(frozen);
+  });
+
+  it('пример сценария doctor-with-http.json проходит проверку parseScenario', () => {
+    const filePath = path.resolve(__dirname, '../examples/doctor-with-http.json');
+    const raw: unknown = JSON.parse(readFileSync(filePath, 'utf-8'));
+    const scenario = parseScenario(raw);
+
+    const httpBlocks = scenario.blocks.filter((b) => b.type === 'HTTP_REQUEST');
+    expect(httpBlocks).toHaveLength(3);
+    for (const block of httpBlocks) {
+      expect(block.url).toContain('{{env.API_URL}}');
+      expect(block.errorStrategy).toBe('EXIT_ERROR');
+      expect(block.headers).toContainEqual({
+        name: 'X-Api-Key',
+        value: '{{env.API_KEY}}',
+        secret: false,
+      });
+    }
+    const postBlock = httpBlocks.find((b) => b.method === 'POST');
+    expect(postBlock?.retryCount).toBe(0);
   });
 });

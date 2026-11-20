@@ -55,7 +55,7 @@ services:
       <<: *app-env
       JWT_SECRET: ${JWT_SECRET:?задайте JWT_SECRET}
       PUBLIC_URL: ${PUBLIC_URL:?задайте PUBLIC_URL}
-      TELEGRAM_POLLING: '0'
+      TELEGRAM_POLLING: ${TELEGRAM_POLLING:-0}
       TELEGRAM_PROXY: ${TELEGRAM_PROXY:-}
       API_PORT: '3000'
     # Уникальный алиас: в общей сети NPM могут быть чужие сервисы api/web

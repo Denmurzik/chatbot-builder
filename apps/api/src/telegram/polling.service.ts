@@ -13,7 +13,8 @@ import { telegramClientOptions } from './telegram-client-options';
 import { errorName } from './telegram-errors';
 import { UpdateIngestService } from './update-ingest.service';
 
-// Dev-режим: long polling вместо webhook для опубликованных ботов (TELEGRAM_POLLING=1)
+// Long polling вместо webhook для опубликованных ботов (TELEGRAM_POLLING=1):
+// для сетей, куда Telegram не может достучаться (одна копия api)
 @Injectable()
 export class PollingService implements OnApplicationBootstrap, BeforeApplicationShutdown {
   private readonly logger = new Logger(PollingService.name);
@@ -72,7 +73,7 @@ export class PollingService implements OnApplicationBootstrap, BeforeApplication
     });
     this.running.set(botId, { bot, token });
     // Запускаем polling в фоне без блокировки; bot.start() сам снимает webhook.
-    // Это dev-режим: сбой bot.start() только пишется в лог, опрос не перезапускается автоматически
+    // Сбой bot.start() пишется в лог без токена; автоматического перезапуска нет
     void bot.start().catch((err: unknown) => {
       this.logger.error(`Polling бота ${botId} остановлен: ${errorName(err)}`);
     });

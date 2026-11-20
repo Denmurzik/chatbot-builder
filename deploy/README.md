@@ -68,6 +68,24 @@ DNS-запись домена должна указывать на сервер.
 
 Если `TELEGRAM_PROXY` пуст или не задан, `api` и `engine` обращаются к `api.telegram.org` напрямую, а профиль `telegram-proxy` указывать не нужно.
 
+## Если Telegram не может достучаться до сервера
+
+Если входящие запросы от Telegram к нашему HTTPS-webhook не доходят (например, `getWebhookInfo` возвращает `Connection timed out`), а исходящие к `api.telegram.org` работают через `TELEGRAM_PROXY`, переключите `api` на long polling (`getUpdates` по исходящему соединению через тот же прокси):
+
+1. В `deploy/.env.prod` задайте:
+   ```dotenv
+   TELEGRAM_POLLING=1
+   TELEGRAM_PROXY=http://telegram-proxy:10809
+   ```
+2. Перезапустите стек с профилем `telegram-proxy`:
+   ```bash
+   docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod --profile telegram-proxy up -d
+   ```
+
+Переопубликовывать ботов не нужно: `api` при старте автоматически поднимает опрос для всех уже опубликованных ботов с подключением Telegram, а webhook снимается при запуске опроса и при следующей публикации.
+
+Важно: при `TELEGRAM_POLLING=1` сервис `api` должен работать строго в одном экземпляре — несколько копий будут конфликтовать за `getUpdates`.
+
 ## Проверка без сервера
 
 Нужен заполненный `deploy/.env.prod`. В production cookie помечены `secure`, поэтому войти по http://127.0.0.1:18180 нельзя; ожидаемая проверка — ответ 401 на `/api/auth/me`.

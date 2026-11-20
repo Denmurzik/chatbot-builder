@@ -69,7 +69,10 @@ export interface ParsedPreviewChatId {
   sessionId: string;
 }
 
-// Разбирает chatId превью формата `preview:<projectId>:<sessionId>`
+// Разбирает chatId превью формата `preview:<projectId>:<sessionId>`.
+// Разделение идёт по первому `:` после префикса: projectId не содержит двоеточий,
+// а sessionId может содержать `:` (например, `preview:p:s:x` -> sessionId = `s:x`).
+// При отсутствии префикса или пустых projectId/sessionId возвращает null.
 export function parsePreviewChatId(chatId: string): ParsedPreviewChatId | null {
   if (!chatId.startsWith('preview:')) return null;
   const rest = chatId.slice('preview:'.length);

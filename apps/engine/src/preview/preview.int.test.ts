@@ -292,4 +292,24 @@ describe('Канал превью: публикация событий в Redis 
       await sub.close();
     }
   });
+
+  it('невалидный черновик project.scenario публикует системное сообщение с описанием ошибки', async () => {
+    const project = await createProject({ formatVersion: 1, blocks: 'invalid' } as unknown as Scenario);
+    const chatId = `preview:${project.id}:sess-invalid`;
+    const sub = await subscribePreview(chatId);
+
+    try {
+      await env.emit(previewEvent(chatId, 'старт', 'START_COMMAND'));
+      await waitFor(() => sub.events.some((e) => e.type === 'system'));
+
+      const systemEvent = sub.events.find((e) => e.type === 'system');
+      expect(systemEvent).toEqual({
+        type: 'system',
+        text: expect.stringContaining('Ошибка сценария:'),
+        blockId: null,
+      });
+    } finally {
+      await sub.close();
+    }
+  });
 });

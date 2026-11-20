@@ -1,7 +1,6 @@
 import type { OutgoingMessageLike, PreviewEvent } from '@chatbot/model';
-import { createRedisConnection } from '@chatbot/queue';
-import { Inject, Injectable, type OnApplicationShutdown } from '@nestjs/common';
-import type IORedis from 'ioredis';
+import { Inject, Injectable, Logger, type OnApplicationShutdown } from '@nestjs/common';
+import IORedis from 'ioredis';
 import { APP_CONFIG, type AppConfig } from '../infra/tokens';
 
 /**
@@ -10,9 +9,19 @@ import { APP_CONFIG, type AppConfig } from '../infra/tokens';
  */
 @Injectable()
 export class PreviewPublisher implements OnApplicationShutdown {
-  private redis: IORedis | null = null;
+  private readonly logger = new Logger(PreviewPublisher.name);
+  private readonly redis: IORedis;
 
-  constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
+  constructor(@Inject(APP_CONFIG) config: AppConfig) {
+    // Отдельный клиент без бесконечной очереди команд, чтобы сбой Redis не подвешивал воркер раздела
+    this.redis = new IORedis(config.redisUrl, {
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
+    });
+    this.redis.on('error', (error: unknown) => {
+      this.logger.warn(`Ошибка соединения Redis в PreviewPublisher: ${String(error)}`);
+    });
+  }
 
   async publishMessage(chatId: string, message: OutgoingMessageLike): Promise<void> {
     await this.publish(chatId, { type: 'message', message });
@@ -35,22 +44,14 @@ export class PreviewPublisher implements OnApplicationShutdown {
   }
 
   async onApplicationShutdown(): Promise<void> {
-    if (this.redis) {
-      const client = this.redis;
-      this.redis = null;
-      await client.quit();
+    try {
+      await this.redis.quit();
+    } catch {
+      this.redis.disconnect();
     }
   }
 
   private async publish(chatId: string, event: PreviewEvent): Promise<void> {
-    const client = this.getClient();
-    await client.publish(`preview:${chatId}`, JSON.stringify(event));
-  }
-
-  private getClient(): IORedis {
-    if (!this.redis) {
-      this.redis = createRedisConnection(this.config.redisUrl);
-    }
-    return this.redis;
+    await this.redis.publish(`preview:${chatId}`, JSON.stringify(event));
   }
 }

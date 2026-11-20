@@ -1,7 +1,7 @@
-import { NotImplementedError, parseScenario, type ChatEvent, type Scenario } from '@chatbot/model';
+import { parseScenario, type ChatEvent, type Scenario } from '@chatbot/model';
 import { describe, expect, it } from 'vitest';
-import { DialogEngine } from './dialog-engine';
-import type { DialogContextState, EngineResult } from './outbox';
+import { DialogEngine, MSG_SUSPEND_DEFAULT, isStaleResponse } from './dialog-engine';
+import type { DialogContextState, EngineResult, HttpOutcome } from './outbox';
 
 type Spec = Record<string, unknown> & { id: string; type: string };
 
@@ -17,16 +17,35 @@ function build(blocks: Spec[], transitions: [string, string][]): Scenario {
   });
 }
 
-function ev(type: ChatEvent['type'], payload?: string, sourceBlockId?: string): ChatEvent {
-  return { type, channel: 'PREVIEW', botId: null, chatId: 'c1', userId: 'u1', payload, sourceBlockId };
+function ev(
+  type: ChatEvent['type'],
+  payload?: string,
+  sourceBlockId?: string,
+  requestId?: string,
+): ChatEvent {
+  return {
+    type,
+    channel: 'PREVIEW',
+    botId: null,
+    chatId: 'c1',
+    userId: 'u1',
+    payload,
+    sourceBlockId,
+    requestId,
+  };
 }
 
 const text = (t: string) => ev('TEXT_MESSAGE', t);
 const texts = (r: EngineResult) => r.outbox.map((m) => m.text);
 
 const engine = new DialogEngine();
-const run = (e: ChatEvent, ctx: DialogContextState | null, s: Scenario, env = {}) =>
-  engine.handleEvent(e, ctx, s, env);
+const run = (
+  e: ChatEvent,
+  ctx: DialogContextState | null,
+  s: Scenario,
+  env: Record<string, string> = {},
+  outcome?: HttpOutcome,
+) => engine.handleEvent(e, ctx, s, env, outcome);
 
 // Старт → Текст → Ввод имени → Условие → Текст → Выход
 const greeting = build(
@@ -389,12 +408,267 @@ describe('DialogEngine', () => {
       expect(r3.context.state).toBe('WAITING_EXTERNAL');
       expect(r3.httpRequest).toBeNull();
     });
+  });
 
-    it('ответ внешней системы — заглушка спринта 2', () => {
-      const r1 = run(text('x'), null, s);
-      const r2 = run(text('Омск'), r1.context, s);
-      expect(() => run(ev('RESPONSE_RECEIVED'), r2.context, s)).toThrow(NotImplementedError);
-      expect(() => run(ev('REQUEST_FAILED'), r2.context, s)).toThrow(NotImplementedError);
+  describe('HTTP response', () => {
+    // Строит сценарий с HTTP-блоком, выходами success и error
+    const httpScenario = (overrides: Partial<Record<string, unknown>> = {}) =>
+      build(
+        [
+          { id: 'start', type: 'ENTRY_POINT' },
+          { id: 'ask', type: 'TEXT_INPUT', question: 'Город?', variableName: 'city' },
+          {
+            id: 'http',
+            type: 'HTTP_REQUEST',
+            method: 'POST',
+            url: '{{env.API_URL}}/slots?city={{city}}',
+            headers: [{ name: 'X-City', value: '{{city}}', secret: false }],
+            body: '{"city":"{{city}}"}',
+            variableName: 'resp',
+            errorVariable: 'err',
+            timeoutSec: 10,
+            retryCount: 2,
+            retryIntervalSec: 5,
+            errorStrategy: 'EXIT_ERROR',
+            suspendText: null,
+            responseMappings: [{ jsonPath: '$.items', variableName: 'slots' }],
+            ...overrides,
+          },
+          { id: 'ok', type: 'TEXT_MESSAGE', text: 'Слоты: {{slots}}' },
+          { id: 'fail', type: 'TEXT_MESSAGE', text: 'Ошибка: {{err}}' },
+          { id: 'end', type: 'EXIT_POINT' },
+        ],
+        [
+          ['start:default', 'ask'],
+          ['ask:default', 'http'],
+          ['http:success', 'ok'],
+          ['http:error', 'fail'],
+          ['ok:default', 'end'],
+          ['fail:default', 'end'],
+        ],
+      );
+
+    const waitingCtx = (overrides: Partial<DialogContextState> = {}): DialogContextState => ({
+      state: 'WAITING_EXTERNAL',
+      currentBlockId: 'http',
+      variables: { city: 'Омск' },
+      currentRequestId: 'req-1',
+      ...overrides,
+    });
+
+    it('RESPONSE_RECEIVED с совпадающим requestId: сохраняет тело, маппинги и продолжает автопроход', () => {
+      const s = httpScenario();
+      const body = '{"items":[1,2]}';
+      const r = run(ev('RESPONSE_RECEIVED', undefined, undefined, 'req-1'), waitingCtx(), s, {}, {
+        kind: 'response',
+        status: 200,
+        body,
+      });
+      expect(r.stale).toBe(false);
+      expect(r.resumeRequestId).toBeNull();
+      expect(r.context.variables.resp).toBe(body);
+      expect(r.context.variables.slots).toBe('[1,2]');
+      expect(r.context.state).toBe('FINISHED');
+      expect(r.context.currentRequestId).toBeNull();
+      expect(texts(r)).toEqual(['Слоты: [1,2]']);
+    });
+
+    it('пустой responseMappings и тело не JSON — не ошибка, переход по success', () => {
+      const s = httpScenario({ responseMappings: [] });
+      const r = run(ev('RESPONSE_RECEIVED', undefined, undefined, 'req-1'), waitingCtx(), s, {}, {
+        kind: 'response',
+        status: 200,
+        body: 'not json',
+      });
+      expect(r.stale).toBe(false);
+      expect(r.context.variables.resp).toBe('not json');
+      expect(r.context.variables.err).toBeUndefined();
+      expect(r.context.state).toBe('FINISHED');
+      expect(texts(r)).toEqual(['Слоты: ']);
+    });
+
+    it('маппинг не нашёл путь при непустом responseMappings — errorVariable и переход по error', () => {
+      const s = httpScenario();
+      const r = run(ev('RESPONSE_RECEIVED', undefined, undefined, 'req-1'), waitingCtx(), s, {}, {
+        kind: 'response',
+        status: 200,
+        body: '{"other":1}',
+      });
+      expect(r.stale).toBe(false);
+      expect(r.context.variables.err).toBe('{"code":200,"message":"Ошибка разбора ответа"}');
+      expect(r.context.state).toBe('FINISHED');
+      expect(r.context.currentRequestId).toBeNull();
+      expect(texts(r)).toEqual(['Ошибка: {"code":200,"message":"Ошибка разбора ответа"}']);
+    });
+
+    it('тело не JSON при непустом responseMappings — errorVariable и переход по error', () => {
+      const s = httpScenario();
+      const r = run(ev('RESPONSE_RECEIVED', undefined, undefined, 'req-1'), waitingCtx(), s, {}, {
+        kind: 'response',
+        status: 200,
+        body: 'not json',
+      });
+      expect(r.stale).toBe(false);
+      expect(r.context.variables.err).toBe('{"code":200,"message":"Ошибка разбора ответа"}');
+      expect(r.context.state).toBe('FINISHED');
+      expect(texts(r)).toEqual(['Ошибка: {"code":200,"message":"Ошибка разбора ответа"}']);
+    });
+
+    it('REQUEST_FAILED при EXIT_ERROR: errorVariable и переход по error', () => {
+      const s = httpScenario();
+      const r = run(ev('REQUEST_FAILED', undefined, undefined, 'req-1'), waitingCtx(), s, {}, {
+        kind: 'failure',
+        code: 0,
+        message: 'timeout',
+      });
+      expect(r.stale).toBe(false);
+      expect(r.context.variables.err).toBe('{"code":0,"message":"timeout"}');
+      expect(r.context.state).toBe('FINISHED');
+      expect(r.context.currentRequestId).toBeNull();
+      expect(texts(r)).toEqual(['Ошибка: {"code":0,"message":"timeout"}']);
+    });
+
+    it('SUSPEND: отправляет suspendText или MSG_SUSPEND_DEFAULT, сохраняет currentBlockId и currentRequestId', () => {
+      const sCustom = httpScenario({
+        errorStrategy: 'SUSPEND',
+        suspendText: 'Сервис недоступен, напишите снова',
+      });
+      const r1 = run(ev('REQUEST_FAILED', undefined, undefined, 'req-1'), waitingCtx(), sCustom, {}, {
+        kind: 'failure',
+        code: 503,
+        message: 'Service Unavailable',
+      });
+      expect(r1.stale).toBe(false);
+      expect(r1.context.state).toBe('SUSPENDED');
+      expect(r1.context.currentBlockId).toBe('http');
+      expect(r1.context.currentRequestId).toBe('req-1');
+      expect(r1.context.variables.err).toBe('{"code":503,"message":"Service Unavailable"}');
+      expect(texts(r1)).toEqual(['Сервис недоступен, напишите снова']);
+
+      const sDefault = httpScenario({ errorStrategy: 'SUSPEND', suspendText: null });
+      const r2 = run(ev('REQUEST_FAILED', undefined, undefined, 'req-1'), waitingCtx(), sDefault, {}, {
+        kind: 'failure',
+        code: 0,
+        message: 'timeout',
+      });
+      expect(r2.context.state).toBe('SUSPENDED');
+      expect(r2.context.currentBlockId).toBe('http');
+      expect(r2.context.currentRequestId).toBe('req-1');
+      expect(texts(r2)).toEqual([MSG_SUSPEND_DEFAULT]);
+    });
+
+    it('SUSPENDED + TEXT_MESSAGE: resume с переотрендеренным запросом и без записи сообщения в переменные', () => {
+      const s = httpScenario({ errorStrategy: 'SUSPEND' });
+      const suspended = waitingCtx({ state: 'SUSPENDED' });
+      const r = run(text('повторить'), suspended, s, { API_URL: 'https://api.test' });
+      expect(r.stale).toBe(false);
+      expect(r.context.state).toBe('WAITING_EXTERNAL');
+      expect(r.context.currentBlockId).toBe('http');
+      expect(r.context.currentRequestId).toBe('req-1');
+      expect(r.resumeRequestId).toBe('req-1');
+      expect(r.context.variables).toEqual({ city: 'Омск' });
+      expect(r.outbox).toEqual([]);
+      expect(r.httpRequest).toEqual({
+        blockId: 'http',
+        method: 'POST',
+        url: 'https://api.test/slots?city=' + encodeURIComponent('Омск'),
+        headers: [{ name: 'X-City', value: 'Омск', secret: false }],
+        body: '{"city":"Омск"}',
+        timeoutSec: 10,
+        retryCount: 2,
+        retryIntervalSec: 5,
+      });
+    });
+
+    it('SUSPENDED + BUTTON_PRESS: тоже resume', () => {
+      const s = httpScenario({ errorStrategy: 'SUSPEND' });
+      const suspended = waitingCtx({ state: 'SUSPENDED' });
+      const r = run(ev('BUTTON_PRESS', 'old:0', 'old'), suspended, s, {
+        API_URL: 'https://api.test',
+      });
+      expect(r.stale).toBe(false);
+      expect(r.context.state).toBe('WAITING_EXTERNAL');
+      expect(r.resumeRequestId).toBe('req-1');
+      expect(r.httpRequest).not.toBeNull();
+      expect(r.outbox).toEqual([]);
+    });
+
+    it('SUSPENDED + START_COMMAND: перезапуск диалога', () => {
+      const s = httpScenario({ errorStrategy: 'SUSPEND' });
+      const suspended = waitingCtx({ state: 'SUSPENDED' });
+      const r = run(ev('START_COMMAND'), suspended, s);
+      expect(r.stale).toBe(false);
+      expect(r.resumeRequestId).toBeNull();
+      expect(r.httpRequest).toBeNull();
+      expect(r.context.state).toBe('WAITING_USER');
+      expect(r.context.currentBlockId).toBe('ask');
+      expect(r.context.currentRequestId).toBeNull();
+      expect(r.context.variables).toEqual({});
+      expect(texts(r)).toEqual(['Город?']);
+    });
+
+    it('устаревший ответ (чужой requestId, state ≠ WAITING_EXTERNAL, currentRequestId === null, SUSPENDED) — stale', () => {
+      const s = httpScenario();
+      const cases: Array<{ name: string; event: ChatEvent; ctx: DialogContextState | null }> = [
+        {
+          name: 'чужой requestId',
+          event: ev('RESPONSE_RECEIVED', undefined, undefined, 'req-other'),
+          ctx: waitingCtx(),
+        },
+        {
+          name: 'currentRequestId === null',
+          event: ev('RESPONSE_RECEIVED', undefined, undefined, 'req-1'),
+          ctx: waitingCtx({ currentRequestId: null }),
+        },
+        {
+          name: 'state === WAITING_USER',
+          event: ev('RESPONSE_RECEIVED', undefined, undefined, 'req-1'),
+          ctx: waitingCtx({ state: 'WAITING_USER' }),
+        },
+        {
+          name: 'state === SUSPENDED + RESPONSE_RECEIVED',
+          event: ev('RESPONSE_RECEIVED', undefined, undefined, 'req-1'),
+          ctx: waitingCtx({ state: 'SUSPENDED' }),
+        },
+        {
+          name: 'state === SUSPENDED + REQUEST_FAILED',
+          event: ev('REQUEST_FAILED', undefined, undefined, 'req-1'),
+          ctx: waitingCtx({ state: 'SUSPENDED' }),
+        },
+        {
+          name: 'ctx === null',
+          event: ev('REQUEST_FAILED', undefined, undefined, 'req-1'),
+          ctx: null,
+        },
+      ];
+
+      for (const c of cases) {
+        expect(isStaleResponse(c.event, c.ctx), c.name).toBe(true);
+        const r = run(c.event, c.ctx, s, {}, { kind: 'response', status: 200, body: '{}' });
+        expect(r.stale, c.name).toBe(true);
+        expect(r.outbox, c.name).toEqual([]);
+        expect(r.httpRequest, c.name).toBeNull();
+        expect(r.resumeRequestId, c.name).toBeNull();
+        if (c.ctx !== null) {
+          expect(r.context, c.name).toEqual(c.ctx);
+        }
+      }
+
+      // Не-HTTP события и актуальный ответ не считаются устаревшими
+      expect(isStaleResponse(text('hi'), waitingCtx())).toBe(false);
+      expect(
+        isStaleResponse(ev('RESPONSE_RECEIVED', undefined, undefined, 'req-1'), waitingCtx()),
+      ).toBe(false);
+    });
+
+    it('RESPONSE_RECEIVED и REQUEST_FAILED без outcome при совпадающем requestId бросают ошибку', () => {
+      const s = httpScenario();
+      expect(() =>
+        run(ev('RESPONSE_RECEIVED', undefined, undefined, 'req-1'), waitingCtx(), s),
+      ).toThrow('outcome обязателен');
+      expect(() =>
+        run(ev('REQUEST_FAILED', undefined, undefined, 'req-1'), waitingCtx(), s),
+      ).toThrow('outcome обязателен');
     });
   });
 

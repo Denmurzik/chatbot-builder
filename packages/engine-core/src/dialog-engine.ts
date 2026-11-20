@@ -1,8 +1,8 @@
 import {
-  NotImplementedError,
   getOutputs,
   type Block,
   type ChatEvent,
+  type HttpRequestBlock,
   type ListChoiceBlock,
   type Scenario,
 } from '@chatbot/model';
@@ -11,17 +11,34 @@ import { ExpressionError, evaluate, toBoolean } from './expression';
 import type {
   DialogContextState,
   EngineResult,
+  HttpOutcome,
   OutgoingButton,
   OutgoingMessage,
   PendingHttpRequest,
 } from './outbox';
-import { toText } from './json-path';
+import { extract, toText } from './json-path';
+import type { VariableScope } from './scope';
 import { render } from './template';
 
 const DEFAULT_MAX_AUTOPASS_STEPS = 100;
 
 export const MSG_LOOP = 'Диалог остановлен: сценарий зациклился';
 export const MSG_WAIT = 'Подождите, обрабатываю запрос';
+export const MSG_SUSPEND_DEFAULT =
+  'Сервис временно недоступен. Напишите любое сообщение, чтобы повторить запрос.';
+
+// Проверяет, устарело ли событие ответа/ошибки HTTP относительно текущего контекста (п. 2.8)
+export function isStaleResponse(event: ChatEvent, ctx: DialogContextState | null): boolean {
+  if (event.type !== 'RESPONSE_RECEIVED' && event.type !== 'REQUEST_FAILED') {
+    return false;
+  }
+  return (
+    ctx === null ||
+    ctx.state !== 'WAITING_EXTERNAL' ||
+    ctx.currentRequestId === null ||
+    event.requestId !== ctx.currentRequestId
+  );
+}
 
 interface ListItem {
   label: string;
@@ -35,6 +52,8 @@ export interface DialogRun {
   outbox: OutgoingMessage[];
   httpRequest: PendingHttpRequest | null;
   highlightBlockId: string | null;
+  stale: boolean;
+  resumeRequestId: string | null;
 }
 
 // Движок диалогов: чистая функция «событие + контекст → результат», без ввода-вывода
@@ -51,6 +70,7 @@ export class DialogEngine {
     ctx: DialogContextState | null,
     scenario: Scenario,
     env: Record<string, string>,
+    outcome?: HttpOutcome,
   ): EngineResult {
     const run: DialogRun = {
       ctx: new DialogContext(ctx, env),
@@ -58,10 +78,14 @@ export class DialogEngine {
       outbox: [],
       httpRequest: null,
       highlightBlockId: null,
+      stale: false,
+      resumeRequestId: null,
     };
     const isUserInput = event.type === 'TEXT_MESSAGE' || event.type === 'BUTTON_PRESS';
 
-    if (event.type === 'START_COMMAND') {
+    if (isStaleResponse(event, ctx)) {
+      run.stale = true;
+    } else if (event.type === 'START_COMMAND') {
       this.restartDialog(run);
     } else if (ctx === null || ctx.state === 'FINISHED' || ctx.state === 'RUNNING') {
       if (isUserInput) this.startDialog(run);
@@ -71,10 +95,10 @@ export class DialogEngine {
       if (event.type === 'TEXT_MESSAGE') {
         run.outbox.push({ kind: 'text', text: MSG_WAIT });
       } else if (event.type === 'RESPONSE_RECEIVED' || event.type === 'REQUEST_FAILED') {
-        throw new NotImplementedError('HttpRequestExecutor.handleResponse');
+        this.handleHttpOutcome(run, event, outcome);
       }
     } else if (ctx.state === 'SUSPENDED') {
-      throw new NotImplementedError('HttpRequestExecutor.handleResponse');
+      if (isUserInput) this.resumeHttpRequest(run);
     }
 
     return {
@@ -82,6 +106,8 @@ export class DialogEngine {
       outbox: run.outbox,
       httpRequest: run.httpRequest,
       highlightBlockId: run.highlightBlockId,
+      stale: run.stale,
+      resumeRequestId: run.resumeRequestId,
     };
   }
 
@@ -241,22 +267,7 @@ export class DialogEngine {
           run.ctx.state = 'WAITING_USER';
           return null;
         case 'HTTP_REQUEST':
-          run.httpRequest = {
-            blockId: block.id,
-            method: block.method,
-            url: render(block.url, scope, 'URL'),
-            headers: block.headers.map((h) => ({
-              name: h.name,
-              // Секретное значение никогда не передаётся открытым текстом; расшифровка — только из secretValue
-              value: h.secret ? '' : render(h.value, scope, 'HEADER'),
-              secret: h.secret,
-              ...(h.secretValue !== undefined ? { secretValue: h.secretValue } : {}),
-            })),
-            body: block.body.trim() === '' ? null : render(block.body, scope, 'JSON'),
-            timeoutSec: block.timeoutSec,
-            retryCount: block.retryCount,
-            retryIntervalSec: block.retryIntervalSec,
-          };
+          run.httpRequest = this.buildPendingHttpRequest(block, scope);
           run.ctx.state = 'WAITING_EXTERNAL';
           run.ctx.currentRequestId = null;
           return null;
@@ -340,6 +351,138 @@ export class DialogEngine {
       items.push({ label, value });
     }
     return items;
+  }
+
+  // Обработка ответа или ошибки внешнего HTTP-запроса (п. 2.7, 2.9)
+  private handleHttpOutcome(
+    run: DialogRun,
+    event: ChatEvent,
+    outcome: HttpOutcome | undefined,
+  ): void {
+    if (!outcome) {
+      throw new Error('outcome обязателен');
+    }
+    const block = this.currentBlock(run);
+    if (!block || block.type !== 'HTTP_REQUEST') {
+      this.missingBlock(run);
+      return;
+    }
+    if (event.type === 'RESPONSE_RECEIVED') {
+      if (outcome.kind !== 'response') {
+        throw new Error('Ожидался outcome вида response для RESPONSE_RECEIVED');
+      }
+      this.handleHttpResponse(run, block, outcome.status, outcome.body);
+    } else {
+      if (outcome.kind !== 'failure') {
+        throw new Error('Ожидался outcome вида failure для REQUEST_FAILED');
+      }
+      this.handleHttpFailure(run, block, outcome.code, outcome.message);
+    }
+  }
+
+  // Разбор JSON-ответа по правилам ResponseMapping и переход по выходу success (п. 2.7)
+  private handleHttpResponse(
+    run: DialogRun,
+    block: HttpRequestBlock,
+    status: number,
+    body: string,
+  ): void {
+    if (block.variableName) {
+      run.ctx.setVariable(block.variableName, body);
+    }
+    if (block.responseMappings.length === 0) {
+      run.ctx.currentRequestId = null;
+      this.advance(run, block, 'success');
+      return;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      this.handleHttpFailure(run, block, status, 'Ошибка разбора ответа');
+      return;
+    }
+
+    const extracted: Array<[string, string]> = [];
+    for (const mapping of block.responseMappings) {
+      let res: { found: true; value: unknown } | { found: false };
+      try {
+        res = extract(parsed, mapping.jsonPath);
+      } catch {
+        this.handleHttpFailure(run, block, status, 'Ошибка разбора ответа');
+        return;
+      }
+      if (!res.found) {
+        this.handleHttpFailure(run, block, status, 'Ошибка разбора ответа');
+        return;
+      }
+      extracted.push([mapping.variableName, toText(res.value)]);
+    }
+
+    for (const [name, value] of extracted) {
+      run.ctx.setVariable(name, value);
+    }
+    run.ctx.currentRequestId = null;
+    this.advance(run, block, 'success');
+  }
+
+  // Стратегия обработки ошибки HTTP-блока: EXIT_ERROR или SUSPEND (п. 2.9)
+  private handleHttpFailure(
+    run: DialogRun,
+    block: HttpRequestBlock,
+    code: number,
+    message: string,
+  ): void {
+    if (block.errorVariable) {
+      run.ctx.setVariable(block.errorVariable, JSON.stringify({ code, message }));
+    }
+    if (block.errorStrategy === 'SUSPEND') {
+      const suspendText =
+        block.suspendText !== null && block.suspendText.trim() !== ''
+          ? render(block.suspendText, run.ctx.scope(), 'TEXT')
+          : MSG_SUSPEND_DEFAULT;
+      run.outbox.push({ kind: 'text', text: suspendText });
+      run.ctx.state = 'SUSPENDED';
+      return;
+    }
+    run.ctx.currentRequestId = null;
+    this.advance(run, block, 'error');
+  }
+
+  // Возобновление приостановленного HTTP-запроса по сообщению/кнопке пользователя (UC-U-19)
+  private resumeHttpRequest(run: DialogRun): void {
+    const block = this.currentBlock(run);
+    if (!block || block.type !== 'HTTP_REQUEST') {
+      this.missingBlock(run);
+      return;
+    }
+    run.httpRequest = this.buildPendingHttpRequest(block, run.ctx.scope());
+    run.ctx.state = 'WAITING_EXTERNAL';
+    run.resumeRequestId = run.ctx.currentRequestId;
+  }
+
+  // Формирует параметры HTTP-запроса с подстановкой переменных шаблона
+  private buildPendingHttpRequest(
+    block: HttpRequestBlock,
+    scope: VariableScope,
+  ): PendingHttpRequest {
+    return {
+      blockId: block.id,
+      method: block.method,
+      url: render(block.url, scope, 'URL'),
+      headers: block.headers.map((h) => ({
+        name: h.name,
+        // Секретное значение никогда не передаётся открытым текстом; расшифровка — только из secretValue
+        value: h.secret ? '' : render(h.value, scope, 'HEADER'),
+        secret: h.secret,
+        ...(h.secretValue !== undefined ? { secretValue: h.secretValue } : {}),
+      })),
+      body: block.body.trim() === '' ? null : render(block.body, scope, 'JSON'),
+      timeoutSec: block.timeoutSec,
+      retryCount: block.retryCount,
+      retryIntervalSec: block.retryIntervalSec,
+    };
   }
 
   // Блок текущего диалога пропал из сценария (например, после переопубликации)

@@ -69,6 +69,7 @@ import {
   groupServerErrorsByBlock,
 } from './ValidationPanel';
 import { TestEnvironmentDialog } from './TestEnvironmentDialog';
+import { ImportExportMenu } from './ImportExportMenu';
 import { PreviewPanel } from '@/preview/PreviewPanel';
 
 // Окно, в пределах которого серия сдвигов стрелками считается одним действием
@@ -151,11 +152,13 @@ function ScenarioEditor({
   name,
   initial,
   environment,
+  onImported,
 }: {
   projectId: string;
   name: string;
   initial: Scenario;
   environment: EnvVarView[];
+  onImported: () => Promise<void>;
 }) {
   const [initialFlow] = useState(() => scenarioToFlow(initial));
   const [nodes, setNodes] = useState<BlockNode[]>(initialFlow.nodes);
@@ -493,6 +496,11 @@ function ScenarioEditor({
     void saveScenario();
   }, [saveScenario]);
 
+  const handleSaveBeforeExport = useCallback(
+    () => saveScenario({ silent: true }),
+    [saveScenario],
+  );
+
   const handleValidate = useCallback(async () => {
     if (save.isPending || validate.isPending) return;
     if (dirty) {
@@ -682,6 +690,14 @@ function ScenarioEditor({
           >
             <CircleHelp className="size-4" />
           </Button>
+          <ImportExportMenu
+            projectId={projectId}
+            projectName={name}
+            dirty={dirty}
+            disabled={save.isPending}
+            onSaveBeforeExport={handleSaveBeforeExport}
+            onImported={onImported}
+          />
           <Button
             type="button"
             size="sm"
@@ -824,7 +840,16 @@ function ScenarioEditor({
 
 export function EditorPage() {
   const { id = '' } = useParams();
-  const { data: project, isError } = useProject(id);
+  const { data: project, isError, refetch } = useProject(id);
+  // Счётчик импортов: перемонтирует редактор после успешного импорта, сбрасывая историю и dirty
+  const [importRevision, setImportRevision] = useState(0);
+
+  const handleImported = useCallback(async () => {
+    const result = await refetch();
+    if (!result.isError) {
+      setImportRevision((prev) => prev + 1);
+    }
+  }, [refetch]);
 
   return (
     <TooltipProvider>
@@ -843,11 +868,12 @@ export function EditorPage() {
           <ReactFlowProvider>
             {/* Состояние редактора инициализируется один раз из загруженного проекта */}
             <ScenarioEditor
-              key={project.id}
+              key={`${project.id}:${importRevision}`}
               projectId={project.id}
               name={project.name}
               initial={project.scenario}
               environment={project.environment ?? []}
+              onImported={handleImported}
             />
           </ReactFlowProvider>
         )}

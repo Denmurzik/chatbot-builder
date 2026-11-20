@@ -140,7 +140,7 @@ export class BotService {
     projectId: string,
     botId: string,
   ): Promise<{ bot: BotView; warnings: ValidationError[] }> {
-    const bot = await this.getOwnedBot(authorId, projectId, botId);
+    await this.getOwnedBot(authorId, projectId, botId);
     const project = await this.prisma.client.project.findUniqueOrThrow({
       where: { id: projectId },
       select: { scenario: true },
@@ -170,8 +170,13 @@ export class BotService {
     // Вне транзакции: ошибка Telegram даёт 502, и бот не меняется
     await this.telegram.connect(botId, token);
 
-    const wasPublished = bot.status === 'PUBLISHED';
     const updated = await this.prisma.client.$transaction(async (tx) => {
+      // Статус читаем внутри транзакции: параллельные публикации тоже сбрасывают контексты
+      const current = await tx.bot.findUniqueOrThrow({
+        where: { id: botId },
+        select: { status: true },
+      });
+      const wasPublished = current.status === 'PUBLISHED';
       const result = await tx.bot.update({
         where: { id: botId },
         data: {
@@ -214,21 +219,25 @@ export class BotService {
     botId: string,
     data: { tokenCipher: string; tokenMask: string; tokenHash: string },
   ): Promise<void> {
-    const attempt = () =>
-      this.prisma.client.messengerConnection.upsert({
-        where: { botId_messenger: { botId, messenger: 'TELEGRAM' } },
-        create: { botId, messenger: 'TELEGRAM', ...data },
-        update: data,
-      });
-    try {
-      await attempt();
-    } catch (err) {
-      if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') throw err;
-      if (String(err.meta?.target ?? '').includes('token_hash')) {
-        throw new ConflictException('Токен уже используется другим ботом');
+    const attempt = async (): Promise<'ok' | 'retry'> => {
+      try {
+        await this.prisma.client.messengerConnection.upsert({
+          where: { botId_messenger: { botId, messenger: 'TELEGRAM' } },
+          create: { botId, messenger: 'TELEGRAM', ...data },
+          update: data,
+        });
+        return 'ok';
+      } catch (err) {
+        if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') {
+          throw err;
+        }
+        if (String(err.meta?.target ?? '').includes('token_hash')) {
+          throw new ConflictException('Токен уже используется другим ботом');
+        }
+        return 'retry';
       }
-      await attempt();
-    }
+    };
+    if ((await attempt()) === 'retry') await attempt();
   }
 
   private async assertProject(authorId: string, projectId: string): Promise<void> {

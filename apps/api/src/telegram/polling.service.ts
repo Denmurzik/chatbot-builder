@@ -73,16 +73,20 @@ export class PollingService implements OnApplicationBootstrap, BeforeApplication
       }
     });
     this.running.set(botId, { bot, token });
-    // Запускаем polling в фоне без блокировки; bot.start() сам снимает webhook
+    // Запускаем polling в фоне без блокировки; bot.start() сам снимает webhook.
+    // Это dev-режим: сбой bot.start() только пишется в лог, опрос не перезапускается автоматически
     void bot.start().catch((err: unknown) => {
       this.logger.error(`Polling бота ${botId} остановлен: ${errorName(err)}`);
     });
     this.logger.log(`Long polling запущен для бота ${botId}`);
   }
 
-  async stopBot(botId: string): Promise<void> {
+  // Если указан token, останавливает опрос только когда он работает именно с этим токеном
+  // (смена токена: отключение старого не должно гасить уже запущенный опрос с новым)
+  async stopBot(botId: string, token?: string): Promise<void> {
     const running = this.running.get(botId);
     if (!running) return;
+    if (token !== undefined && running.token !== token) return;
     this.running.delete(botId);
     await running.bot.stop().catch(() => undefined);
   }

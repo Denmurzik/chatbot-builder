@@ -51,7 +51,7 @@ export class TelegramWebhookService {
   async disconnect(botId: string, token: string): Promise<void> {
     try {
       if (this.config.telegramPolling) {
-        await this.polling.stopBot(botId);
+        await this.polling.stopBot(botId, token);
         return;
       }
       await this.apiFactory.create(token).deleteWebhook();

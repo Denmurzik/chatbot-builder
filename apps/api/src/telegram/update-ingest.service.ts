@@ -26,12 +26,12 @@ export class UpdateIngestService {
     });
     if (bot?.status !== 'PUBLISHED') return false;
     const mapped = mapUpdate(botId, update);
-    if (!mapped) return false;
-    await this.queue.enqueue(mapped.event, mapped.jobId);
+    if (mapped) await this.queue.enqueue(mapped.event, mapped.jobId);
     if (update.callback_query) {
-      await this.answerCallback(botId, update.callback_query.id);
+      // Не ждём ответа Telegram, чтобы не задерживать 200 на webhook; ошибки логируются внутри
+      void this.answerCallback(botId, update.callback_query.id);
     }
-    return true;
+    return mapped !== null;
   }
 
   // Снимает индикатор загрузки на кнопке; сбой не должен ломать приём события

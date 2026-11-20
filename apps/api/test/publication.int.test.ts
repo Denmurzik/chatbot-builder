@@ -6,7 +6,8 @@ import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { GrammyError } from 'grammy';
 import request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { SecretVault, tokenAad } from '@chatbot/vault';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/configure-app';
 import { TelegramTokenVerifier } from '../src/publication/telegram-token.verifier';
@@ -47,10 +48,13 @@ describe('Публикация и переопубликация (интегра
   // Telegram подменён: вызовы записываются, setWebhook можно заставить упасть
   const calls: Call[] = [];
   let failSetWebhook = false;
+  // Хук на вызов setWebhook: имитирует гонку между подключением и сохранением токена
+  let onSetWebhook: ((token: string) => Promise<void>) | null = null;
   const apiFactory = {
     create: (token: string) => ({
       setWebhook: async (...args: unknown[]) => {
         calls.push({ token, method: 'setWebhook', args });
+        await onSetWebhook?.(token);
         if (failSetWebhook) {
           throw new GrammyError(
             'Call to setWebhook failed',
@@ -106,6 +110,7 @@ describe('Публикация и переопубликация (интегра
     await db.truncateAll();
     calls.length = 0;
     failSetWebhook = false;
+    onSetWebhook = null;
   });
 
   async function setup(opts: { valid?: boolean; connect?: boolean } = {}) {
@@ -282,6 +287,43 @@ describe('Публикация и переопубликация (интегра
     expect(rows).toHaveLength(1);
   });
 
+  it('сбой сохранения токена после connect(new): откат — deleteWebhook(new) и setWebhook(old), 409', async () => {
+    const { agent, projectId, botId, publishUrl } = await setup();
+    await agent.post(publishUrl).expect(200);
+    calls.length = 0;
+    // Пока подключается новый токен, другой бот успевает занять тот же токен (P2002 по token_hash)
+    onSetWebhook = async (token) => {
+      if (token !== TOKEN_2) return;
+      onSetWebhook = null;
+      const other = await db.prisma.bot.create({
+        data: { projectId, name: 'Другой', environment: [] },
+      });
+      const vault = SecretVault.fromEnv();
+      const { cipherText, mask } = vault.encrypt(TOKEN_2, tokenAad(other.id));
+      await db.prisma.messengerConnection.create({
+        data: {
+          botId: other.id,
+          messenger: 'TELEGRAM',
+          tokenCipher: cipherText,
+          tokenMask: mask,
+          tokenHash: vault.hash(TOKEN_2),
+        },
+      });
+    };
+    const res = await agent
+      .put(`/api/projects/${projectId}/bots/${botId}/connections/telegram`)
+      .send({ token: TOKEN_2 })
+      .expect(409);
+    expect(res.body.message).toBe('Токен уже используется другим ботом');
+    expect(calls.map((c) => `${c.method}:${c.token}`)).toEqual([
+      `setWebhook:${TOKEN_2}`,
+      `deleteWebhook:${TOKEN_2}`,
+      `setWebhook:${TOKEN_1}`,
+    ]);
+    const stored = await db.prisma.messengerConnection.findFirstOrThrow({ where: { botId } });
+    expect(stored.tokenHash).toBe(SecretVault.fromEnv().hash(TOKEN_1));
+  });
+
   it('удаление бота и отключение мессенджера снимают webhook', async () => {
     const { agent, projectId, botId } = await setup();
     await agent.delete(`/api/projects/${projectId}/bots/${botId}/connections/telegram`).expect(204);
@@ -314,7 +356,9 @@ describe('Публикация и переопубликация (интегра
         },
       })
       .expect(200);
-    expect(calls).toEqual([{ token: TOKEN_1, method: 'answerCallbackQuery', args: ['cbq-1'] }]);
+    await vi.waitFor(() =>
+      expect(calls).toEqual([{ token: TOKEN_1, method: 'answerCallbackQuery', args: ['cbq-1'] }]),
+    );
     expect(await redis.keys(`${queuePrefix}:events-*:tg-*`)).toHaveLength(1);
   });
 });

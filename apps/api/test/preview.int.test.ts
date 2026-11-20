@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { randomBytes } from 'node:crypto';
 import { parsePreviewChatId, type ChatEvent, type PreviewEvent } from '@chatbot/model';
-import type { EventQueue } from '@chatbot/queue';
+import { dialogKey, partitionOf, queueName, type EventQueue } from '@chatbot/queue';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import IORedis from 'ioredis';
@@ -23,14 +23,22 @@ interface ActionAck {
   error?: string;
 }
 
-// Подключает Socket.IO-клиент к namespace /preview с переданной строкой Cookie
-function connectPreview(port: number, cookie?: string): Promise<Socket> {
+// Подключает Socket.IO-клиент к namespace /preview с переданной строкой Cookie и доп. заголовками
+function connectPreview(
+  port: number,
+  cookie?: string,
+  extraHeaders?: Record<string, string>,
+): Promise<Socket> {
   return new Promise((resolve, reject) => {
+    const headers: Record<string, string> = {
+      ...(cookie ? { cookie } : {}),
+      ...extraHeaders,
+    };
     const socket = io(`http://127.0.0.1:${port}/preview`, {
       path: '/api/socket.io',
       transports: ['websocket'],
       reconnection: false,
-      ...(cookie ? { extraHeaders: { cookie } } : {}),
+      ...(Object.keys(headers).length > 0 ? { extraHeaders: headers } : {}),
     });
     const onConnect = () => {
       cleanup();
@@ -254,6 +262,7 @@ describe('Socket.IO-шлюз превью (интеграционные тест
     expect(enqueueSpy).toHaveBeenCalledTimes(4);
 
     const calls = enqueueSpy.mock.calls as Array<[ChatEvent, string]>;
+    const jobIdPattern = new RegExp(`^preview-${sessionId}-[0-9a-f-]{36}$`);
     expect(calls[0]).toEqual([
       {
         type: 'START_COMMAND',
@@ -262,7 +271,7 @@ describe('Socket.IO-шлюз превью (интеграционные тест
         chatId: startAck.chatId,
         userId: `author:${authorId}`,
       },
-      `preview-${sessionId}-1`,
+      expect.stringMatching(jobIdPattern),
     ]);
     expect(calls[1]).toEqual([
       {
@@ -273,7 +282,7 @@ describe('Socket.IO-шлюз превью (интеграционные тест
         userId: `author:${authorId}`,
         payload: 'Привет',
       },
-      `preview-${sessionId}-2`,
+      expect.stringMatching(jobIdPattern),
     ]);
     expect(calls[2]).toEqual([
       {
@@ -285,7 +294,7 @@ describe('Socket.IO-шлюз превью (интеграционные тест
         payload: 'block-question-1:2',
         sourceBlockId: 'block-question-1',
       },
-      `preview-${sessionId}-3`,
+      expect.stringMatching(jobIdPattern),
     ]);
     expect(calls[3]).toEqual([
       {
@@ -295,8 +304,123 @@ describe('Socket.IO-шлюз превью (интеграционные тест
         chatId: startAck.chatId,
         userId: `author:${authorId}`,
       },
-      `preview-${sessionId}-4`,
+      expect.stringMatching(jobIdPattern),
     ]);
+    expect(new Set(calls.map(([, jobId]) => jobId)).size).toBe(4);
+  });
+
+  it('два сокета подряд с тем же sessionId ставят в очередь Redis оба задания START_COMMAND', async () => {
+    const owner = await registerAuthorWithProject('dedup@example.com');
+    const existingSessionId = '33333333-3333-4333-8333-333333333333';
+    const expectedChatId = `preview:${owner.projectId}:${existingSessionId}`;
+
+    await db.prisma.dialogContext.create({
+      data: {
+        botId: null,
+        chatId: expectedChatId,
+        userId: `author:${owner.authorId}`,
+        channel: 'PREVIEW',
+        state: 'WAITING_USER',
+        variables: {},
+      },
+    });
+
+    const socket1 = await openClient(owner.cookieHeader);
+    const ack1 = await emitAck<StartAck>(socket1, 'start', {
+      projectId: owner.projectId,
+      sessionId: existingSessionId,
+    });
+    expect(ack1).toEqual({ chatId: expectedChatId });
+    socket1.disconnect();
+
+    const socket2 = await openClient(owner.cookieHeader);
+    const ack2 = await emitAck<StartAck>(socket2, 'start', {
+      projectId: owner.projectId,
+      sessionId: existingSessionId,
+    });
+    expect(ack2).toEqual({ chatId: expectedChatId });
+
+    // Проверяем реальную очередь BullMQ в Redis, а не spy на enqueue
+    const prefix = process.env.QUEUE_PREFIX!;
+    const partition = partitionOf(dialogKey(null, expectedChatId));
+    const qKey = `${prefix}:${queueName(partition)}`;
+    const queuedJobIds = await redisPub.lrange(`${qKey}:wait`, 0, -1);
+
+    const matchingEvents: ChatEvent[] = [];
+    for (const id of queuedJobIds) {
+      const rawData = await redisPub.hget(`${qKey}:${id}`, 'data');
+      if (!rawData) continue;
+      const event = JSON.parse(rawData) as ChatEvent;
+      if (event.chatId === expectedChatId && event.type === 'START_COMMAND') {
+        matchingEvents.push(event);
+      }
+    }
+    expect(matchingEvents).toHaveLength(2);
+  });
+
+  it('возвращает ack с ошибкой, если постановка события в очередь падает', async () => {
+    const owner = await registerAuthorWithProject('queue-fail@example.com');
+    const socket = await openClient(owner.cookieHeader);
+
+    enqueueSpy.mockRejectedValueOnce(new Error('Redis недоступен'));
+    const startAck = await emitAck<StartAck>(socket, 'start', { projectId: owner.projectId });
+    expect(startAck).toEqual({ error: 'Не удалось отправить событие' });
+
+    const okStart = await emitAck<StartAck>(socket, 'start', { projectId: owner.projectId });
+    expect(okStart.chatId).toBeDefined();
+
+    enqueueSpy.mockRejectedValueOnce(new Error('Redis недоступен'));
+    const inputAck = await emitAck<ActionAck>(socket, 'input', { text: 'привет' });
+    expect(inputAck).toEqual({ error: 'Не удалось отправить событие' });
+
+    enqueueSpy.mockRejectedValueOnce(new Error('Redis недоступен'));
+    const buttonAck = await emitAck<ActionAck>(socket, 'button', { callbackData: 'blk:0' });
+    expect(buttonAck).toEqual({ error: 'Не удалось отправить событие' });
+
+    enqueueSpy.mockRejectedValueOnce(new Error('Redis недоступен'));
+    const restartAck = await emitAck<ActionAck>(socket, 'restart');
+    expect(restartAck).toEqual({ error: 'Не удалось отправить событие' });
+  });
+
+  it('отклоняет input длиннее 4096 символов и button длиннее 64 символов', async () => {
+    const owner = await registerAuthorWithProject('limits@example.com');
+    const socket = await openClient(owner.cookieHeader);
+    const startAck = await emitAck<StartAck>(socket, 'start', { projectId: owner.projectId });
+    expect(startAck.chatId).toBeDefined();
+    enqueueSpy.mockClear();
+
+    const tooLongText = await emitAck<ActionAck>(socket, 'input', { text: 'а'.repeat(4097) });
+    expect(tooLongText.error).toBeTruthy();
+
+    const tooLongButton = await emitAck<ActionAck>(socket, 'button', {
+      callbackData: `${'b'.repeat(63)}:1`,
+    });
+    expect(tooLongButton.error).toBeTruthy();
+    expect(enqueueSpy).not.toHaveBeenCalled();
+
+    const maxText = await emitAck<ActionAck>(socket, 'input', { text: 'а'.repeat(4096) });
+    expect(maxText).toEqual({ ok: true });
+
+    const maxButton = await emitAck<ActionAck>(socket, 'button', {
+      callbackData: `${'b'.repeat(62)}:1`,
+    });
+    expect(maxButton).toEqual({ ok: true });
+    expect(enqueueSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('отклоняет рукопожатие с чужим заголовком Origin и пропускает same-origin', async () => {
+    const owner = await registerAuthorWithProject('origin@example.com');
+
+    await expect(
+      connectPreview(port, owner.cookieHeader, { origin: 'http://evil.example' }),
+    ).rejects.toThrow();
+
+    const allowed = await connectPreview(port, owner.cookieHeader, {
+      origin: `http://127.0.0.1:${port}`,
+    });
+    openSockets.push(allowed);
+    const ack = await emitAck<StartAck>(allowed, 'start', { projectId: owner.projectId });
+    expect(ack.chatId).toBeDefined();
   });
 
   it('start с существующим sessionId проекта переиспользует chatId, а чужой sessionId заменяет новым', async () => {
@@ -328,6 +452,51 @@ describe('Socket.IO-шлюз превью (интеграционные тест
     });
     expect(unknown.chatId).toBeDefined();
     expect(unknown.chatId).not.toBe(`preview:${owner.projectId}:22222222-2222-4222-8222-222222222222`);
+
+    // Существующий sessionId другого проекта того же автора не переиспользуется
+    const agent = request.agent(app.getHttpServer());
+    const secondProject = await agent
+      .post('/api/projects')
+      .set('Cookie', owner.cookieHeader)
+      .send({ name: 'Второй проект' })
+      .expect(201);
+    const otherProjectSessionId = '44444444-4444-4444-8444-444444444444';
+    await db.prisma.dialogContext.create({
+      data: {
+        botId: null,
+        chatId: `preview:${secondProject.body.id}:${otherProjectSessionId}`,
+        userId: `author:${owner.authorId}`,
+        channel: 'PREVIEW',
+        state: 'WAITING_USER',
+        variables: {},
+      },
+    });
+    const fromOtherProject = await emitAck<StartAck>(socket, 'start', {
+      projectId: owner.projectId,
+      sessionId: otherProjectSessionId,
+    });
+    expect(fromOtherProject.chatId).toBeDefined();
+    expect(fromOtherProject.chatId).not.toBe(`preview:${owner.projectId}:${otherProjectSessionId}`);
+
+    // Существующий sessionId другого автора не переиспользуется
+    const otherAuthor = await registerAuthorWithProject('other-reuse@example.com');
+    const otherAuthorSessionId = '55555555-5555-4555-8555-555555555555';
+    await db.prisma.dialogContext.create({
+      data: {
+        botId: null,
+        chatId: `preview:${owner.projectId}:${otherAuthorSessionId}`,
+        userId: `author:${otherAuthor.authorId}`,
+        channel: 'PREVIEW',
+        state: 'WAITING_USER',
+        variables: {},
+      },
+    });
+    const fromOtherAuthor = await emitAck<StartAck>(socket, 'start', {
+      projectId: owner.projectId,
+      sessionId: otherAuthorSessionId,
+    });
+    expect(fromOtherAuthor.chatId).toBeDefined();
+    expect(fromOtherAuthor.chatId).not.toBe(`preview:${owner.projectId}:${otherAuthorSessionId}`);
   });
 
   it('события PreviewEvent из Redis доставляются только в комнату своего сеанса', async () => {

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { IncomingMessage } from 'node:http';
 import { parsePreviewChatId, type ChatEvent } from '@chatbot/model';
 import type { EventQueue } from '@chatbot/queue';
 import { Inject, Logger } from '@nestjs/common';
@@ -23,7 +24,6 @@ interface PreviewSocketData {
   author?: AuthenticatedAuthor;
   chatId?: string;
   sessionId?: string;
-  seq: number;
 }
 
 type PreviewSocket = Socket<
@@ -47,6 +47,22 @@ interface ButtonPayload {
 }
 
 const MAX_SESSION_ID_LENGTH = 128;
+const MAX_TEXT_LENGTH = 4096;
+const MAX_CALLBACK_DATA_LENGTH = 64;
+const ENQUEUE_ERROR_MESSAGE = 'Не удалось отправить событие';
+
+// Защита в глубину от CSWSH: при наличии заголовка Origin разрешаем только same-origin
+function isSameOriginRequest(req: IncomingMessage): boolean {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  const host = req.headers.host;
+  if (!host) return false;
+  try {
+    return new URL(origin).host.toLowerCase() === host.toLowerCase();
+  } catch {
+    return false;
+  }
+}
 
 // Извлекает значение cookie по имени из заголовка Cookie без дополнительных зависимостей
 function parseCookie(cookieHeader: string | undefined, name: string): string | null {
@@ -67,7 +83,17 @@ function parseCookie(cookieHeader: string | undefined, name: string): string | n
 }
 
 // Socket.IO-шлюз превью сценария: аутентификация по cookie session, комнаты по chatId и проксирование событий в очередь
-@WebSocketGateway({ namespace: '/preview', path: '/api/socket.io' })
+@WebSocketGateway({
+  namespace: '/preview',
+  path: '/api/socket.io',
+  allowRequest: (req: IncomingMessage, callback: (err: string | null | undefined, success: boolean) => void) => {
+    if (isSameOriginRequest(req)) {
+      callback(null, true);
+    } else {
+      callback('forbidden_origin', false);
+    }
+  },
+})
 export class PreviewGateway implements OnGatewayInit, OnGatewayDisconnect {
   private readonly logger = new Logger(PreviewGateway.name);
 
@@ -96,7 +122,6 @@ export class PreviewGateway implements OnGatewayInit, OnGatewayDisconnect {
         .authenticate(token)
         .then((author) => {
           socket.data.author = author;
-          socket.data.seq = 0;
           next();
         })
         .catch(() => {
@@ -106,12 +131,8 @@ export class PreviewGateway implements OnGatewayInit, OnGatewayDisconnect {
   }
 
   handleDisconnect(client: PreviewSocket): void {
-    const chatId = client.data.chatId;
-    if (chatId) {
-      void client.leave(chatId);
-      client.data.chatId = undefined;
-      client.data.sessionId = undefined;
-    }
+    client.data.chatId = undefined;
+    client.data.sessionId = undefined;
   }
 
   @SubscribeMessage('start')
@@ -150,13 +171,14 @@ export class PreviewGateway implements OnGatewayInit, OnGatewayDisconnect {
     client.data.chatId = chatId;
     client.data.sessionId = sessionId;
 
-    await this.enqueueEvent(client, {
+    const enqueued = await this.enqueueEvent(client, {
       type: 'START_COMMAND',
       channel: 'PREVIEW',
       botId: null,
       chatId,
       userId: `author:${author.id}`,
     });
+    if (!enqueued) return { error: ENQUEUE_ERROR_MESSAGE };
 
     return { chatId };
   }
@@ -172,8 +194,11 @@ export class PreviewGateway implements OnGatewayInit, OnGatewayDisconnect {
     if (typeof payload?.text !== 'string') {
       return { error: 'Текст сообщения должен быть строкой' };
     }
+    if (payload.text.length > MAX_TEXT_LENGTH) {
+      return { error: `Текст сообщения не должен превышать ${MAX_TEXT_LENGTH} символов` };
+    }
 
-    await this.enqueueEvent(client, {
+    const enqueued = await this.enqueueEvent(client, {
       type: 'TEXT_MESSAGE',
       channel: 'PREVIEW',
       botId: null,
@@ -181,6 +206,7 @@ export class PreviewGateway implements OnGatewayInit, OnGatewayDisconnect {
       userId: `author:${session.author.id}`,
       payload: payload.text,
     });
+    if (!enqueued) return { error: ENQUEUE_ERROR_MESSAGE };
 
     return { ok: true };
   }
@@ -194,13 +220,16 @@ export class PreviewGateway implements OnGatewayInit, OnGatewayDisconnect {
     if (!session) return { error: 'Сеанс превью не запущен' };
 
     const callbackData = typeof payload?.callbackData === 'string' ? payload.callbackData : '';
+    if (callbackData.length > MAX_CALLBACK_DATA_LENGTH) {
+      return { error: `Данные кнопки не должны превышать ${MAX_CALLBACK_DATA_LENGTH} символов` };
+    }
     const sep = callbackData.lastIndexOf(':');
     if (!callbackData || sep <= 0) {
       return { error: 'Некорректные данные кнопки' };
     }
 
     const sourceBlockId = callbackData.slice(0, sep);
-    await this.enqueueEvent(client, {
+    const enqueued = await this.enqueueEvent(client, {
       type: 'BUTTON_PRESS',
       channel: 'PREVIEW',
       botId: null,
@@ -209,6 +238,7 @@ export class PreviewGateway implements OnGatewayInit, OnGatewayDisconnect {
       payload: callbackData,
       sourceBlockId,
     });
+    if (!enqueued) return { error: ENQUEUE_ERROR_MESSAGE };
 
     return { ok: true };
   }
@@ -220,13 +250,14 @@ export class PreviewGateway implements OnGatewayInit, OnGatewayDisconnect {
     const session = this.getActiveSession(client);
     if (!session) return { error: 'Сеанс превью не запущен' };
 
-    await this.enqueueEvent(client, {
+    const enqueued = await this.enqueueEvent(client, {
       type: 'START_COMMAND',
       channel: 'PREVIEW',
       botId: null,
       chatId: session.chatId,
       userId: `author:${session.author.id}`,
     });
+    if (!enqueued) return { error: ENQUEUE_ERROR_MESSAGE };
 
     return { ok: true };
   }
@@ -267,16 +298,16 @@ export class PreviewGateway implements OnGatewayInit, OnGatewayDisconnect {
     return randomUUID();
   }
 
-  private async enqueueEvent(client: PreviewSocket, event: ChatEvent): Promise<void> {
-    client.data.seq = (client.data.seq ?? 0) + 1;
-    const jobId = `preview-${client.data.sessionId}-${client.data.seq}`;
+  private async enqueueEvent(client: PreviewSocket, event: ChatEvent): Promise<boolean> {
+    const jobId = `preview-${client.data.sessionId}-${randomUUID()}`;
     try {
       await this.eventQueue.enqueue(event, jobId);
+      return true;
     } catch (error) {
       this.logger.error(
         `Ошибка постановки события превью ${jobId}: ${error instanceof Error ? error.message : String(error)}`,
       );
-      throw error;
+      return false;
     }
   }
 

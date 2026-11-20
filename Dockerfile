@@ -20,17 +20,20 @@ CMD ["pnpm", "--filter", "@chatbot/db", "db:migrate"]
 
 FROM build AS api
 ENV NODE_ENV=production
+USER node
 EXPOSE 3000
 WORKDIR /app/apps/api
 CMD ["node", "dist/main.js"]
 
 FROM build AS engine
 ENV NODE_ENV=production
+USER node
 WORKDIR /app/apps/engine
 CMD ["node", "dist/main.js"]
 
 FROM build AS mock-clinic
 ENV NODE_ENV=production
+USER node
 EXPOSE 4010
 WORKDIR /app/apps/mock-clinic
 CMD ["node", "dist/main.js"]

@@ -1,6 +1,6 @@
 # Развёртывание на сервере
 
-Стек: PostgreSQL, Redis, миграции, `api`, `engine`, `mock-clinic` и `web` (nginx со статикой SPA и прокси `/api/`, `/webhook/` на `api`). Порты хоста не публикуются; HTTPS и домен обслуживает Nginx Proxy Manager (NPM), `web` подключается к его сети `proxy_manager_default` с алиасом `chatbot-web`.
+Стек: PostgreSQL, Redis, миграции, `api`, `engine`, `mock-clinic` и `chatbot-web` (nginx со статикой SPA и прокси `/api/`, `/webhook/` на `api` (алиас `chatbot-api`)). Порты хоста не публикуются; HTTPS и домен обслуживает Nginx Proxy Manager (NPM), `chatbot-web` подключается к его сети `proxy_manager_default` с алиасом `chatbot-web`.
 
 ## Первичная установка
 
@@ -8,7 +8,9 @@
 git clone https://github.com/Denmurzik/chatbot-builder.git ~/chatbot-builder
 cd ~/chatbot-builder
 cp deploy/.env.prod.example deploy/.env.prod
-# значения: openssl rand -base64 32 (JWT_SECRET, VAULT_KEY, VAULT_HASH_KEY, POSTGRES_PASSWORD, MOCK_CLINIC_API_KEY)
+# JWT_SECRET, VAULT_KEY, VAULT_HASH_KEY: openssl rand -base64 32
+# POSTGRES_PASSWORD: openssl rand -hex 32 (без / и +, иначе ломается DATABASE_URL)
+# MOCK_CLINIC_API_KEY: openssl rand -hex 16
 nano deploy/.env.prod
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod up -d --build
 ```
@@ -39,6 +41,8 @@ DNS-запись домена должна указывать на сервер.
 Скрипт `seed` в production не используется: зарегистрируйтесь через интерфейс (`https://chatbot.nsumonkey.top`). В окружении бота для тестового API клиники укажите адрес `http://mock-clinic:4010` и ключ `MOCK_CLINIC_API_KEY`.
 
 ## Проверка без сервера
+
+Нужен заполненный `deploy/.env.prod`. В production cookie помечены `secure`, поэтому войти по http://127.0.0.1:18180 нельзя; ожидаемая проверка — ответ 401 на `/api/auth/me`.
 
 ```bash
 docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.local.yml \

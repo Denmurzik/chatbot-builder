@@ -56,23 +56,6 @@ describe('Каркас модулей Engine (skeleton)', () => {
     expect(parser.extract(json, '$.data.missing')).toEqual({ found: false });
   });
 
-  it('методы PreviewPublisher бросают NotImplementedError', () => {
-    const preview = moduleRef.get(PreviewPublisher);
-
-    expect(() => preview.publishMessage('preview:1', 'Привет')).toThrowError(
-      'PreviewPublisher.publishMessage',
-    );
-    expect(() => preview.publishCurrentBlock('preview:1', 'b1')).toThrowError(
-      'PreviewPublisher.publishCurrentBlock',
-    );
-    expect(() => preview.publishVariables('preview:1', {})).toThrowError(
-      'PreviewPublisher.publishVariables',
-    );
-    expect(() => preview.publishSystemMessage('preview:1', 'Стоп')).toThrowError(
-      'PreviewPublisher.publishSystemMessage',
-    );
-  });
-
   it('EventDispatcher.isStale делегирует isStaleResponse, а заглушки остальных операций бросают NotImplementedError', () => {
     const dispatcher = moduleRef.get(EventDispatcher);
     const dialogService = moduleRef.get(DialogService);

@@ -44,3 +44,39 @@ export const chatEventSchema = z.object({
 });
 
 export type ChatEvent = z.infer<typeof chatEventSchema>;
+
+// Кнопка вопроса в исходящем сообщении (совместима с OutgoingButton из engine-core)
+export interface OutgoingButtonLike {
+  label: string;
+  callbackData: string;
+}
+
+// Исходящее сообщение бота (совместимо с OutgoingMessage из engine-core)
+export type OutgoingMessageLike =
+  | { kind: 'text'; text: string }
+  | { kind: 'question'; text: string; buttons: OutgoingButtonLike[] };
+
+// Событие канала превью, публикуемое в Redis pub/sub (`preview:<chatId>`)
+export type PreviewEvent =
+  | { type: 'message'; message: OutgoingMessageLike }
+  | { type: 'currentBlock'; blockId: string | null }
+  | { type: 'variables'; variables: Record<string, string> }
+  | { type: 'system'; text: string; blockId: string | null };
+
+// Результат разбора chatId канала превью (`preview:<projectId>:<sessionId>`)
+export interface ParsedPreviewChatId {
+  projectId: string;
+  sessionId: string;
+}
+
+// Разбирает chatId превью формата `preview:<projectId>:<sessionId>`
+export function parsePreviewChatId(chatId: string): ParsedPreviewChatId | null {
+  if (!chatId.startsWith('preview:')) return null;
+  const rest = chatId.slice('preview:'.length);
+  const sep = rest.indexOf(':');
+  if (sep <= 0 || sep === rest.length - 1) return null;
+  return {
+    projectId: rest.slice(0, sep),
+    sessionId: rest.slice(sep + 1),
+  };
+}

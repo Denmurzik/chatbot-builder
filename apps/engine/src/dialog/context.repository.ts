@@ -17,16 +17,24 @@ export interface DialogContextRow {
 
 @Injectable()
 export class ContextRepository {
-  // Создаёт строку контекста, если её нет: INSERT ... ON CONFLICT DO NOTHING убирает гонку
-  // двух первых событий диалога. Для превью (bot_id NULL) уникальность не действует (NULL различны),
-  // но превью в спринте 1 не обрабатывается.
+  // Создаёт строку контекста, если её нет: для бота — INSERT ... ON CONFLICT DO NOTHING,
+  // для превью (bot_id IS NULL) — INSERT ... SELECT ... WHERE NOT EXISTS (NULL в уникальном индексе различны)
   async ensureExists(
     tx: Prisma.TransactionClient,
-    botId: string,
+    botId: string | null,
     chatId: string,
     userId: string,
     channel: Channel,
   ): Promise<void> {
+    if (botId === null) {
+      await tx.$executeRaw`
+        INSERT INTO dialog_context (id, bot_id, chat_id, user_id, channel, state, variables, updated_at)
+        SELECT ${randomUUID()}, NULL, ${chatId}, ${userId}, ${channel}::"Channel", 'FINISHED'::"DialogState", '{}'::jsonb, now()
+        WHERE NOT EXISTS (
+          SELECT 1 FROM dialog_context WHERE bot_id IS NULL AND chat_id = ${chatId}
+        )`;
+      return;
+    }
     await tx.$executeRaw`
       INSERT INTO dialog_context (id, bot_id, chat_id, user_id, channel, state, variables, updated_at)
       VALUES (${randomUUID()}, ${botId}, ${chatId}, ${userId}, ${channel}::"Channel", 'FINISHED'::"DialogState", '{}'::jsonb, now())

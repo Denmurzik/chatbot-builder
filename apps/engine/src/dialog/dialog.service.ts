@@ -8,6 +8,7 @@ import {
 import {
   environmentSchema,
   NotImplementedError,
+  parsePreviewChatId,
   scenarioSchema,
   type ChatEvent,
   type Environment,
@@ -16,6 +17,7 @@ import {
 import { SecretVault } from '@chatbot/vault';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PRISMA } from '../infra/tokens';
+import { PreviewPublisher } from '../preview/preview-publisher';
 import { ContextRepository, type DialogContextRow } from './context.repository';
 import { buildEnvironment } from './environment';
 import { decryptHeaders, toStoredHeaders } from './http-headers';
@@ -29,7 +31,7 @@ interface Processed {
 }
 
 // Обработка одного события диалога по п. 2.2: транзакция с блокировкой контекста,
-// отправка сообщений только после фиксации
+// отправка сообщений и публикация в превью только после фиксации
 @Injectable()
 export class DialogService {
   private readonly logger = new Logger(DialogService.name);
@@ -41,29 +43,54 @@ export class DialogService {
     private readonly repository: ContextRepository,
     private readonly gateway: MessengerGateway,
     private readonly launcher: HttpRequestLauncher,
+    private readonly preview: PreviewPublisher,
   ) {}
 
   async process(event: ChatEvent): Promise<void> {
-    if (event.botId === null) {
-      // Канал превью обслуживается в спринте 2
-      this.logger.warn(`Событие превью пропущено: chatId=${event.chatId}`);
-      return;
+    const isPreview = event.channel === 'PREVIEW' || event.botId === null;
+    let previewProjectId: string | null = null;
+    if (isPreview) {
+      const parsed = parsePreviewChatId(event.chatId);
+      if (!parsed) {
+        this.logger.warn(`Некорректный chatId превью, событие пропущено: chatId=${event.chatId}`);
+        return;
+      }
+      previewProjectId = parsed.projectId;
     }
-    const botId = event.botId;
+    const contextBotId = isPreview ? null : event.botId;
 
     const processed = await this.prisma.$transaction(async (tx): Promise<Processed | null> => {
-      const bot = await this.findBot(botId, tx);
-      if (!bot || bot.status !== 'PUBLISHED' || !bot.publishedScenario) {
-        this.logger.warn(`Бот ${botId} не найден или не опубликован, событие пропущено`);
-        return null;
+      let scenario: Scenario;
+      let envVars: Environment;
+      let env: Record<string, string>;
+      let projectId: string;
+
+      if (isPreview) {
+        const project = await tx.project.findUnique({ where: { id: previewProjectId! } });
+        if (!project) {
+          this.logger.warn(`Проект ${previewProjectId} не найден, событие превью пропущено`);
+          return null;
+        }
+        scenario = scenarioSchema.parse(project.scenario);
+        envVars = environmentSchema.parse(project.environment);
+        env = buildEnvironment(project.id, envVars, this.vault);
+        projectId = project.id;
+      } else {
+        const botId = contextBotId!;
+        const bot = await this.findBot(botId, tx);
+        if (!bot || bot.status !== 'PUBLISHED' || !bot.publishedScenario) {
+          this.logger.warn(`Бот ${botId} не найден или не опубликован, событие пропущено`);
+          return null;
+        }
+        scenario = scenarioSchema.parse(bot.publishedScenario);
+        envVars = environmentSchema.parse(bot.environment);
+        env = buildEnvironment(botId, envVars, this.vault);
+        projectId = bot.projectId;
       }
-      const scenario: Scenario = scenarioSchema.parse(bot.publishedScenario);
-      const envVars = environmentSchema.parse(bot.environment);
-      const env = buildEnvironment(botId, envVars, this.vault);
       const secretMasks = collectSecretMasks(envVars, env);
 
-      await this.repository.ensureExists(tx, botId, event.chatId, event.userId, event.channel);
-      const row = await this.loadContext(tx, botId, event.chatId);
+      await this.repository.ensureExists(tx, contextBotId, event.chatId, event.userId, event.channel);
+      const row = await this.loadContext(tx, contextBotId, event.chatId);
       if (!row) throw new Error('Контекст диалога не найден после создания');
 
       let outcome: HttpOutcome | undefined;
@@ -86,7 +113,7 @@ export class DialogService {
           };
         } else if (httpReq?.status === 'SENT') {
           this.logger.log(
-            `ответ отброшен: запрос ещё в статусе SENT, botId=${botId}, chatId=${event.chatId}, requestId=${event.requestId ?? 'null'}`,
+            `ответ отброшен: запрос ещё в статусе SENT, botId=${contextBotId ?? 'preview'}, chatId=${event.chatId}, requestId=${event.requestId ?? 'null'}`,
           );
           return null;
         }
@@ -109,7 +136,7 @@ export class DialogService {
       const result = this.engine.handleEvent(event, toState(row), scenario, env, outcome);
       if (result.stale) {
         this.logger.log(
-          `ответ отброшен: botId=${botId}, chatId=${event.chatId}, requestId=${event.requestId ?? 'null'}`,
+          `ответ отброшен: botId=${contextBotId ?? 'preview'}, chatId=${event.chatId}, requestId=${event.requestId ?? 'null'}`,
         );
         return null;
       }
@@ -169,12 +196,16 @@ export class DialogService {
           });
         }
       }
-      return { result, contextId: saved.id, httpRequestId, projectId: bot.projectId };
+      return { result, contextId: saved.id, httpRequestId, projectId };
     });
     if (!processed) return;
 
-    // После фиксации: сообщения пользователю, затем запуск HTTP-запроса
-    await this.sendAll(botId, event.chatId, processed.result.outbox);
+    // После фиксации: сообщения пользователю (или публикация в Redis для превью), затем запуск HTTP-запроса
+    if (isPreview) {
+      await this.publishPreview(event.chatId, processed.result);
+    } else {
+      await this.sendAll(contextBotId!, event.chatId, processed.result.outbox);
+    }
     if (processed.result.httpRequest && processed.httpRequestId) {
       const request = processed.result.httpRequest;
       this.launcher.launch(
@@ -220,6 +251,30 @@ export class DialogService {
       await this.gateway.sendMessages(botId, chatId, messages);
     } catch (error) {
       this.logger.error(`Не удалось отправить сообщения боту ${botId}, чат ${chatId}`, error);
+    }
+  }
+
+  // Публикация событий превью в Redis после фиксации: сообщения, системное сообщение (если было),
+  // подсветка текущего блока и переменные. Ошибка публикации не отменяет сохранённое состояние.
+  private async publishPreview(chatId: string, result: EngineResult): Promise<void> {
+    try {
+      const last = result.outbox[result.outbox.length - 1];
+      const hasHighlightedSystem = result.highlightBlockId !== null && last?.kind === 'text';
+      const regularMessages = hasHighlightedSystem ? result.outbox.slice(0, -1) : result.outbox;
+
+      for (const message of regularMessages) {
+        await this.preview.publishMessage(chatId, message);
+      }
+      if (hasHighlightedSystem) {
+        await this.preview.publishSystemMessage(chatId, last.text, result.highlightBlockId);
+      }
+      await this.preview.publishCurrentBlock(
+        chatId,
+        result.highlightBlockId ?? result.context.currentBlockId,
+      );
+      await this.preview.publishVariables(chatId, result.context.variables);
+    } catch (error) {
+      this.logger.error(`Не удалось опубликовать события превью для ${chatId}`, error);
     }
   }
 }

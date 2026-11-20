@@ -1,29 +1,56 @@
-import { NotImplementedError } from '@chatbot/model';
-import { Inject, Injectable } from '@nestjs/common';
+import type { OutgoingMessageLike, PreviewEvent } from '@chatbot/model';
+import { createRedisConnection } from '@chatbot/queue';
+import { Inject, Injectable, type OnApplicationShutdown } from '@nestjs/common';
+import type IORedis from 'ioredis';
 import { APP_CONFIG, type AppConfig } from '../infra/tokens';
 
 /**
- * Публикатор событий канала PREVIEW в Redis (сообщение, текущий блок, переменные, системное сообщение).
- * Реализует UC-A-20…A-23 (сторона движка); реализация запланирована на спринт 2.
+ * Публикатор событий канала PREVIEW в Redis pub/sub (`preview:<chatId>`):
+ * сообщения бота, подсветка текущего блока, переменные и системные сообщения (UC-A-20…A-23).
  */
 @Injectable()
-export class PreviewPublisher {
+export class PreviewPublisher implements OnApplicationShutdown {
+  private redis: IORedis | null = null;
+
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
 
-  publishMessage(_chatId: string, _text: string, _buttons?: string[]): Promise<void> {
-    void this.config;
-    throw new NotImplementedError('PreviewPublisher.publishMessage');
+  async publishMessage(chatId: string, message: OutgoingMessageLike): Promise<void> {
+    await this.publish(chatId, { type: 'message', message });
   }
 
-  publishCurrentBlock(_chatId: string, _blockId: string): Promise<void> {
-    throw new NotImplementedError('PreviewPublisher.publishCurrentBlock');
+  async publishCurrentBlock(chatId: string, blockId: string | null): Promise<void> {
+    await this.publish(chatId, { type: 'currentBlock', blockId });
   }
 
-  publishVariables(_chatId: string, _variables: Record<string, string>): Promise<void> {
-    throw new NotImplementedError('PreviewPublisher.publishVariables');
+  async publishVariables(chatId: string, variables: Record<string, string>): Promise<void> {
+    await this.publish(chatId, { type: 'variables', variables });
   }
 
-  publishSystemMessage(_chatId: string, _text: string): Promise<void> {
-    throw new NotImplementedError('PreviewPublisher.publishSystemMessage');
+  async publishSystemMessage(
+    chatId: string,
+    text: string,
+    blockId: string | null = null,
+  ): Promise<void> {
+    await this.publish(chatId, { type: 'system', text, blockId });
+  }
+
+  async onApplicationShutdown(): Promise<void> {
+    if (this.redis) {
+      const client = this.redis;
+      this.redis = null;
+      await client.quit();
+    }
+  }
+
+  private async publish(chatId: string, event: PreviewEvent): Promise<void> {
+    const client = this.getClient();
+    await client.publish(`preview:${chatId}`, JSON.stringify(event));
+  }
+
+  private getClient(): IORedis {
+    if (!this.redis) {
+      this.redis = createRedisConnection(this.config.redisUrl);
+    }
+    return this.redis;
   }
 }

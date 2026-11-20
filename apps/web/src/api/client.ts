@@ -7,12 +7,15 @@ export interface ApiIssue {
 export class ApiError extends Error {
   readonly status: number;
   readonly issues?: ApiIssue[];
+  // Тело ответа целиком (например, { errors } при 422 публикации)
+  readonly body?: unknown;
 
-  constructor(status: number, message: string, issues?: ApiIssue[]) {
+  constructor(status: number, message: string, issues?: ApiIssue[], body?: unknown) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.issues = issues;
+    this.body = body;
   }
 }
 
@@ -38,7 +41,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     }
     const message = typeof body.message === 'string' ? body.message : response.statusText;
     const issues = Array.isArray(body.issues) ? (body.issues as ApiIssue[]) : undefined;
-    throw new ApiError(response.status, message, issues);
+    throw new ApiError(response.status, message, issues, body);
   }
 
   if (response.status === 204) {

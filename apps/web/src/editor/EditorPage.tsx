@@ -116,6 +116,7 @@ function showIssues(title: string, issues: { path: string; message: string }[]) 
 }
 
 function EditorHeader({ name, children }: { name?: string; children?: ReactNode }) {
+  const { id } = useParams();
   return (
     <header className="flex items-center gap-4 border-b px-4 py-2">
       <Link to="/projects" className="flex items-center gap-1 text-sm text-muted-foreground">
@@ -123,6 +124,11 @@ function EditorHeader({ name, children }: { name?: string; children?: ReactNode 
         {ru.editor.back}
       </Link>
       <h1 className="min-w-0 flex-1 truncate text-base font-semibold">{name}</h1>
+      {id ? (
+        <Link to={`/projects/${id}/bots`} className="text-sm text-muted-foreground">
+          {ru.editor.bots}
+        </Link>
+      ) : null}
       {children}
     </header>
   );

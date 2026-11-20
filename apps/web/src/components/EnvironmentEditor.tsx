@@ -35,6 +35,10 @@ function validate(rows: Row[]): Map<number, RowErrors> {
     seen.add(row.name);
     const needsValue = row.secret && (row.mask === null || row.replacing);
     if (needsValue && row.value === '') rowErrors.value = ru.environment.secretRequired;
+    // Сохранённый секрет, ставший обычной переменной: прежнее значение недоступно, нужно новое
+    if (!row.secret && row.mask !== null && row.value === '') {
+      rowErrors.value = ru.environment.valueRequired;
+    }
     if (rowErrors.name || rowErrors.value) errors.set(row.key, rowErrors);
   }
   return errors;
@@ -104,12 +108,12 @@ export function EnvironmentEditor(props: {
                 />
                 {row.secret && saved && !row.replacing ? (
                   <>
-                    <span
-                      className="flex h-9 w-full min-w-0 items-center rounded-md border bg-muted px-3 font-mono text-sm text-muted-foreground"
+                    <Input
+                      readOnly
+                      className="bg-muted font-mono text-muted-foreground"
                       aria-label={`${ru.environment.value} ${row.name}`}
-                    >
-                      {row.mask}
-                    </span>
+                      value={row.mask ?? ''}
+                    />
                     <Button
                       type="button"
                       variant="outline"
@@ -129,11 +133,11 @@ export function EnvironmentEditor(props: {
                       aria-invalid={rowErrors?.value ? true : undefined}
                       onChange={(event) => update(row.key, { value: event.target.value })}
                     />
-                    {saved ? (
+                    {saved && row.secret ? (
                       <Button
                         type="button"
                         variant="outline"
-                        onClick={() => update(row.key, { replacing: false, value: '' })}
+                        onClick={() => update(row.key, { replacing: false, secret: true, value: '' })}
                       >
                         {ru.environment.cancelReplace}
                       </Button>
@@ -145,8 +149,14 @@ export function EnvironmentEditor(props: {
                     type="checkbox"
                     aria-label={ru.environment.secret}
                     checked={row.secret}
-                    disabled={saved}
-                    onChange={(event) => update(row.key, { secret: event.target.checked })}
+                    onChange={(event) =>
+                      update(
+                        row.key,
+                        saved
+                          ? { secret: event.target.checked, replacing: false, value: '' }
+                          : { secret: event.target.checked },
+                      )
+                    }
                   />
                   {ru.environment.secret}
                 </label>

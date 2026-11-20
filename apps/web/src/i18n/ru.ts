@@ -404,6 +404,7 @@ export const ru = {
     tokenUnavailable: 'Telegram сейчас недоступен. Попробуйте позже',
     environmentSection: 'Окружение бота',
     environmentSaved: 'Окружение сохранено',
+    environmentInvalid: 'Проверьте имена и значения переменных',
     publish: 'Опубликовать',
     republish: 'Опубликовать заново',
     publishing: 'Публикация…',
@@ -427,6 +428,7 @@ export const ru = {
     nameInvalid: 'Имя: заглавные латинские буквы, цифры и _, не начинается с цифры',
     nameDuplicate: 'Такое имя уже есть',
     secretRequired: 'Введите значение секретной переменной',
+    valueRequired: 'Введите значение переменной',
   },
   preview: {
     title: 'Превью сценария',

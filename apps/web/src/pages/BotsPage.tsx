@@ -60,8 +60,12 @@ function CreateBotDialog(props: {
       onError: () => toast.error(ru.common.unknownError),
     });
   });
+  const close = (open: boolean) => {
+    if (!open) form.reset();
+    props.onOpenChange(open);
+  };
   return (
-    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+    <Dialog open={props.open} onOpenChange={close}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{ru.bots.createTitle}</DialogTitle>
@@ -82,7 +86,7 @@ function CreateBotDialog(props: {
               )}
             />
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => props.onOpenChange(false)}>
+              <Button type="button" variant="outline" onClick={() => close(false)}>
                 {ru.common.cancel}
               </Button>
               <Button type="submit" disabled={createBot.isPending}>
@@ -221,18 +225,29 @@ function TelegramSection(props: { projectId: string; bot: BotView }) {
 function EnvironmentSection(props: { projectId: string; bot: BotView }) {
   const save = useSaveEnvironment(props.projectId, props.bot.id);
   const [error, setError] = useState<string | null>(null);
+  // После успешного сохранения строки собираются заново: введённые секреты не остаются в состоянии
+  const [resetKey, setResetKey] = useState(0);
   return (
     <section className="flex flex-col gap-2">
       <h3 className="text-sm font-medium">{ru.bots.environmentSection}</h3>
       <EnvironmentEditor
+        key={resetKey}
         value={props.bot.environment}
         saving={save.isPending}
         error={error}
         onSave={(input) => {
           setError(null);
           save.mutate(input, {
-            onSuccess: () => toast.success(ru.bots.environmentSaved),
-            onError: (e) => setError(e instanceof ApiError ? e.message : ru.common.unknownError),
+            onSuccess: () => {
+              setResetKey((key) => key + 1);
+              toast.success(ru.bots.environmentSaved);
+            },
+            onError: (e) =>
+              setError(
+                e instanceof ApiError && e.status === 400
+                  ? ru.bots.environmentInvalid
+                  : ru.common.unknownError,
+              ),
           });
         }}
       />

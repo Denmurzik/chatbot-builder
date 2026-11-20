@@ -25,7 +25,7 @@ export interface PreviewPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCurrentBlock?: (blockId: string | null) => void;
-  onErrorBlock?: (blockId: string) => void;
+  onErrorBlock?: (blockId: string | null) => void;
 }
 
 const STATUS_META: Record<PreviewConnectionStatus, { label: string; dotClass: string }> = {
@@ -106,7 +106,16 @@ export function PreviewPanel({
 
   const statusMeta = STATUS_META[status];
   const isConnected = status === 'connected';
-  const lastIndex = messages.length - 1;
+  // Кнопки активны у последнего вопроса бота, если после него не было новой реплики бота
+  // (системные сообщения и текстовый ввод автора не блокируют кнопки)
+  let activeQuestionId: number | null = null;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const item = messages[i]!;
+    if (item.role === 'bot') {
+      if (item.kind === 'question') activeQuestionId = item.id;
+      break;
+    }
+  }
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -124,6 +133,8 @@ export function PreviewPanel({
         data-testid="preview-panel"
         className="w-96 gap-0 p-0 sm:max-w-md"
         onCloseAutoFocus={(event) => event.preventDefault()}
+        onInteractOutside={(event) => event.preventDefault()}
+        onPointerDownOutside={(event) => event.preventDefault()}
       >
         <SheetHeader className="border-b pr-12 pb-3">
           <div className="flex items-center justify-between gap-2">
@@ -153,7 +164,7 @@ export function PreviewPanel({
             {messages.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">{ru.preview.empty}</p>
             ) : (
-              messages.map((item, index) => {
+              messages.map((item) => {
                 if (item.role === 'user') {
                   return (
                     <div
@@ -181,7 +192,7 @@ export function PreviewPanel({
                   );
                 }
 
-                const isLatestQuestion = item.kind === 'question' && index === lastIndex;
+                const isLatestQuestion = item.kind === 'question' && item.id === activeQuestionId;
                 return (
                   <div key={item.id} className="flex max-w-[85%] flex-col gap-2 self-start">
                     <div className="rounded-2xl rounded-tl-sm bg-muted px-3 py-2 text-sm whitespace-pre-wrap break-words text-foreground">

@@ -181,6 +181,92 @@ describe('PreviewPanel', () => {
     expect(currentSocket.emit).toHaveBeenCalledWith('restart', expect.any(Function));
     expect(screen.queryByText('Привет, бот')).toBeNull();
   });
+
+  it('кнопки последнего вопроса остаются активны после пользовательского ввода и системного ответа и отключаются только после новой реплики бота', () => {
+    render(<PreviewPanel projectId="p1" open onOpenChange={vi.fn()} />);
+    connectSocket();
+
+    act(() => {
+      currentSocket.trigger('preview', {
+        type: 'message',
+        message: {
+          kind: 'question',
+          text: 'Выберите вариант',
+          buttons: [
+            { label: 'Вариант А', callbackData: 'q1:0' },
+            { label: 'Вариант Б', callbackData: 'q1:1' },
+          ],
+        },
+      } satisfies PreviewEvent);
+    });
+
+    // Автор вводит текст вместо нажатия кнопки, бот отвечает системным сообщением
+    const input = screen.getByLabelText(ru.preview.inputLabel);
+    fireEvent.change(input, { target: { value: 'что-то текстом' } });
+    fireEvent.click(screen.getByRole('button', { name: ru.preview.send }));
+
+    act(() => {
+      currentSocket.trigger('preview', {
+        type: 'system',
+        text: 'Выберите вариант кнопкой',
+        blockId: null,
+      } satisfies PreviewEvent);
+    });
+
+    const btnA = screen.getByRole('button', { name: 'Вариант А' }) as HTMLButtonElement;
+    expect(btnA.disabled).toBe(false);
+
+    // Новая реплика бота отключает кнопки предыдущего вопроса
+    act(() => {
+      currentSocket.trigger('preview', {
+        type: 'message',
+        message: { kind: 'text', text: 'Спасибо, записали' },
+      } satisfies PreviewEvent);
+    });
+    expect(btnA.disabled).toBe(true);
+  });
+
+  it('не закрывается при клике снаружи (по холсту) и закрывается только кнопкой закрытия', () => {
+    const onOpenChange = vi.fn();
+    render(
+      <div>
+        <button type="button">Холст</button>
+        <PreviewPanel projectId="p1" open onOpenChange={onOpenChange} />
+      </div>,
+    );
+    connectSocket();
+
+    const outside = screen.getByRole('button', { name: 'Холст' });
+    fireEvent.pointerDown(outside);
+    fireEvent.mouseDown(outside);
+    fireEvent.click(outside);
+    expect(onOpenChange).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: ru.common.close }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('отображает ошибки подключения (connect_error) и ack {error}', () => {
+    render(<PreviewPanel projectId="p1" open onOpenChange={vi.fn()} />);
+
+    act(() => {
+      currentSocket.trigger('connect_error');
+    });
+    expect(screen.getByText(ru.preview.error)).toBeTruthy();
+    expect(screen.getByText(ru.preview.startError)).toBeTruthy();
+
+    connectSocket();
+    const input = screen.getByLabelText(ru.preview.inputLabel);
+    fireEvent.change(input, { target: { value: 'тест' } });
+    fireEvent.click(screen.getByRole('button', { name: ru.preview.send }));
+
+    const inputCall = currentSocket.emit.mock.calls.find(([ev]) => ev === 'input');
+    const ack = inputCall?.[2] as ((res: { error: string }) => void) | undefined;
+    act(() => {
+      ack?.({ error: 'Ошибка отправки' });
+    });
+    expect(screen.getByText('Ошибка отправки')).toBeTruthy();
+  });
 });
 
 describe('EditorPage — превью и тестовое окружение', () => {
@@ -294,6 +380,12 @@ describe('EditorPage — превью и тестовое окружение', (
       zoom: 1,
       duration: 200,
     });
+
+    // Следующий ввод автора сбрасывает красную рамку ошибки
+    const input = screen.getByLabelText(ru.preview.inputLabel);
+    fireEvent.change(input, { target: { value: 'далее' } });
+    fireEvent.click(screen.getByRole('button', { name: ru.preview.send }));
+    expect(node.classList.contains('preview-node-error')).toBe(false);
   });
 
   it('при несохранённых изменениях «Превью» сохраняет сценарий и не открывается при ошибке сохранения', async () => {

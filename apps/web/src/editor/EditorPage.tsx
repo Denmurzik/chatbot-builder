@@ -561,9 +561,9 @@ function ScenarioEditor({
   }, []);
 
   const handlePreviewErrorBlock = useCallback(
-    (blockId: string) => {
+    (blockId: string | null) => {
       setPreviewErrorBlockId(blockId);
-      centerOnBlock(blockId);
+      if (blockId !== null) centerOnBlock(blockId);
     },
     [centerOnBlock],
   );

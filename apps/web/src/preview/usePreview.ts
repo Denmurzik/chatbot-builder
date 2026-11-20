@@ -54,7 +54,7 @@ export interface UsePreviewOptions {
   projectId: string;
   enabled: boolean;
   onCurrentBlock?: (blockId: string | null) => void;
-  onErrorBlock?: (blockId: string) => void;
+  onErrorBlock?: (blockId: string | null) => void;
 }
 
 export interface UsePreviewResult {
@@ -125,9 +125,11 @@ export function usePreview({
     socketRef.current = socket;
 
     const handleConnect = () => {
+      if (socketRef.current !== socket) return;
       const savedSessionId = readSavedSessionId(projectId);
       const payload = savedSessionId ? { projectId, sessionId: savedSessionId } : { projectId };
       socket.emit('start', payload, (ack?: StartAck) => {
+        if (socketRef.current !== socket) return;
         if (!ack || 'error' in ack) {
           setStatus('error');
           setError(ack && 'error' in ack ? ack.error : ru.preview.startError);
@@ -237,8 +239,10 @@ export function usePreview({
 
       setError(null);
       setErrorBlockId(null);
+      onErrorBlockRef.current?.(null);
       setMessages((prev) => [...prev, { id: nextId(), role: 'user', text }]);
       socket.emit('input', { text }, (ack?: ActionAck) => {
+        if (socketRef.current !== socket) return;
         if (ack && 'error' in ack) {
           setError(ack.error || ru.preview.sendError);
         }
@@ -256,8 +260,10 @@ export function usePreview({
 
       setError(null);
       setErrorBlockId(null);
+      onErrorBlockRef.current?.(null);
       setMessages((prev) => [...prev, { id: nextId(), role: 'user', text: button.label }]);
       socket.emit('button', { callbackData: button.callbackData }, (ack?: ActionAck) => {
+        if (socketRef.current !== socket) return;
         if (ack && 'error' in ack) {
           setError(ack.error || ru.preview.sendError);
         }
@@ -276,8 +282,10 @@ export function usePreview({
     setCurrentBlockId(null);
     setErrorBlockId(null);
     onCurrentBlockRef.current?.(null);
+    onErrorBlockRef.current?.(null);
 
     socket.emit('restart', (ack?: ActionAck) => {
+      if (socketRef.current !== socket) return;
       if (ack && 'error' in ack) {
         setError(ack.error || ru.preview.restartError);
       }

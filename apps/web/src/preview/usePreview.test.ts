@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PreviewEvent } from '@chatbot/model';
+import { ru } from '@/i18n/ru';
 import { usePreview } from './usePreview';
 
 type Listener = (...args: unknown[]) => void;
@@ -189,5 +190,60 @@ describe('usePreview', () => {
     expect(currentSocket.emit).toHaveBeenCalledWith('restart', expect.any(Function));
     expect(result.current.messages).toHaveLength(0);
     expect(result.current.variables).toEqual({});
+    expect(onErrorBlock).toHaveBeenLastCalledWith(null);
+  });
+
+  it('обрабатывает ошибки start ack, input ack, connect_error и игнорирует поздние ack после закрытия', () => {
+    const { result, rerender } = renderHook(
+      ({ enabled }) => usePreview({ projectId: 'proj-1', enabled }),
+      { initialProps: { enabled: true } },
+    );
+
+    // Ошибка connect_error
+    act(() => {
+      currentSocket.trigger('connect_error');
+    });
+    expect(result.current.status).toBe('error');
+    expect(result.current.error).toBe(ru.preview.startError);
+
+    // Ошибка start ack
+    act(() => {
+      currentSocket.trigger('connect');
+    });
+    const startAck = currentSocket.emit.mock.calls.find(([ev]) => ev === 'start')![2] as (
+      res: { chatId: string } | { error: string },
+    ) => void;
+    act(() => {
+      startAck({ error: 'forbidden' });
+    });
+    expect(result.current.status).toBe('error');
+    expect(result.current.error).toBe('forbidden');
+
+    // Успешный старт, затем ошибка input ack
+    act(() => {
+      startAck({ chatId: 'preview:proj-1:s2' });
+    });
+    expect(result.current.status).toBe('connected');
+
+    act(() => {
+      result.current.sendInput('привет');
+    });
+    const inputAck = currentSocket.emit.mock.calls.find(([ev]) => ev === 'input')![2] as (
+      res: { ok: true } | { error: string },
+    ) => void;
+    act(() => {
+      inputAck({ error: 'Сеанс превью не запущен' });
+    });
+    expect(result.current.error).toBe('Сеанс превью не запущен');
+
+    // Закрытие и повторное открытие: поздний ack от старого сокета игнорируется
+    rerender({ enabled: false });
+    rerender({ enabled: true });
+    act(() => {
+      startAck({ error: 'stale-error' });
+      inputAck({ error: 'stale-input-error' });
+    });
+    expect(result.current.status).toBe('connecting');
+    expect(result.current.error).toBeNull();
   });
 });

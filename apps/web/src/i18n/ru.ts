@@ -433,7 +433,6 @@ export const ru = {
   preview: {
     button: 'Превью',
     title: 'Превью сценария',
-    description: 'Проверка диалога в реальном времени',
     connecting: 'Подключение…',
     connected: 'Подключено',
     disconnected: 'Отключено',
@@ -445,7 +444,6 @@ export const ru = {
     empty: 'Диалог начинается…',
     variablesTitle: 'Переменные',
     variablesEmpty: 'Переменных пока нет',
-    variablesToggle: 'Переменные диалога',
     systemLabel: 'Системное сообщение',
     startError: 'Не удалось запустить превью',
     sendError: 'Не удалось отправить сообщение',

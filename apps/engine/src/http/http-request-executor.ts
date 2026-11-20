@@ -1,58 +1,56 @@
-import type { HttpRequest, PrismaClient } from '@chatbot/db';
-import { ExpressionEvaluator } from '@chatbot/engine-core';
-import { NotImplementedError, type HttpRequestBlock } from '@chatbot/model';
+import type { PrismaClient } from '@chatbot/db';
+import type { ChatEvent } from '@chatbot/model';
 import type { EventQueue } from '@chatbot/queue';
-import { SecretVault } from '@chatbot/vault';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { EVENT_QUEUE, PRISMA } from '../infra/tokens';
-import { ExternalApiClient } from './external-api-client';
-import { ResponseParser } from './response-parser';
+
+export const RESTART_INTERRUPTED_ERROR = 'запрос прерван перезапуском';
 
 /**
- * Класс модели BCE: HttpRequestExecutor — выполнение блока HTTP-запроса, разбор ответа,
- * стратегии ошибок и восстановление незавершённых запросов после перезапуска.
- * Реализует UC-U-14…U-20, SD-3, SD-4, SD-5; реализация запланирована на спринт 2.
+ * Класс модели BCE: HttpRequestExecutor — восстановление незавершённых HTTP-запросов
+ * после перезапуска engine (п. 1.5). Обработка ответов, стратегий ошибок и возобновления
+ * выполняется в DialogEngine (engine-core), а запись и отправка — в DialogService.
  */
 @Injectable()
 export class HttpRequestExecutor {
-  private readonly evaluator = new ExpressionEvaluator();
+  private readonly logger = new Logger(HttpRequestExecutor.name);
 
   constructor(
     @Inject(PRISMA) private readonly prisma: PrismaClient,
     @Inject(EVENT_QUEUE) private readonly queue: EventQueue,
-    private readonly apiClient: ExternalApiClient,
-    private readonly responseParser: ResponseParser,
-    private readonly vault: SecretVault,
   ) {}
 
-  createAndSend(_block: HttpRequestBlock, _ctxId: string): HttpRequest {
-    void this.prisma;
-    void this.queue;
-    void this.apiClient;
-    void this.responseParser;
-    void this.vault;
-    void this.evaluator;
-    throw new NotImplementedError('HttpRequestExecutor.createAndSend');
-  }
+  // Переводит все http_request в статусе SENT в FAILED и ставит REQUEST_FAILED в очередь (п. 1.5)
+  async recoverAfterRestart(): Promise<number> {
+    const pending = await this.prisma.httpRequest.findMany({
+      where: { status: 'SENT' },
+      include: { dialogContext: true },
+    });
 
-  handleResponse(_ctxId: string): boolean {
-    throw new NotImplementedError('HttpRequestExecutor.handleResponse');
-  }
+    let recovered = 0;
+    for (const req of pending) {
+      const updated = await this.prisma.httpRequest.updateMany({
+        where: { id: req.id, status: 'SENT' },
+        data: { status: 'FAILED', error: RESTART_INTERRUPTED_ERROR },
+      });
+      if (updated.count === 0) continue;
 
-  handleFailure(_ctxId: string): void {
-    throw new NotImplementedError('HttpRequestExecutor.handleFailure');
-  }
+      const ctx = req.dialogContext;
+      const event: ChatEvent = {
+        type: 'REQUEST_FAILED',
+        channel: ctx.channel,
+        botId: ctx.botId,
+        chatId: ctx.chatId,
+        userId: ctx.userId,
+        requestId: req.id,
+      };
+      await this.queue.enqueue(event, `http-${req.id}-REQUEST_FAILED-${req.attempt}`);
+      recovered += 1;
+    }
 
-  resend(_requestId: string): void {
-    throw new NotImplementedError('HttpRequestExecutor.resend');
-  }
-
-  resume(_ctxId: string): void {
-    throw new NotImplementedError('HttpRequestExecutor.resume');
-  }
-
-  // Восстановление диалогов с запросами в статусе SENT после перезапуска engine (п. 1.5, спринт 2)
-  recoverAfterRestart(): Promise<void> {
-    throw new NotImplementedError('HttpRequestExecutor.recoverAfterRestart');
+    if (recovered > 0) {
+      this.logger.warn(`Восстановлено прерванных HTTP-запросов после перезапуска: ${recovered}`);
+    }
+    return recovered;
   }
 }

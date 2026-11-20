@@ -1,12 +1,14 @@
 import { headerAad } from '@chatbot/vault';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { NoopHttpRequestLauncher } from '../http/http-request-launcher';
 import { createTestEnv, textEvent, waitFor, type TestEnv } from '../testing/test-env';
 
 describe('обработка событий диалога (PostgreSQL + Redis)', () => {
   let env: TestEnv;
 
   beforeAll(async () => {
-    env = await createTestEnv();
+    // Без реальных HTTP-вызовов: проверяется сохранение http_request в статусе SENT
+    env = await createTestEnv({ launcher: new NoopHttpRequestLauncher() });
   }, 120000);
 
   afterAll(async () => {

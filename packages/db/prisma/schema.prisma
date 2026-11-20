@@ -120,6 +120,7 @@ model HttpRequest {
   headers         Json
   body            String
   status          RequestStatus
+  attempt         Int             @default(0)
   responseCode    Int?            @map("response_code")
   responseBody    String?         @map("response_body")
   error           String?

@@ -1,10 +1,16 @@
 import type { Bot, Prisma, PrismaClient } from '@chatbot/db';
-import { DialogEngine, type EngineResult, type OutgoingMessage } from '@chatbot/engine-core';
+import {
+  DialogEngine,
+  type EngineResult,
+  type HttpOutcome,
+  type OutgoingMessage,
+} from '@chatbot/engine-core';
 import {
   environmentSchema,
   NotImplementedError,
   scenarioSchema,
   type ChatEvent,
+  type Environment,
   type Scenario,
 } from '@chatbot/model';
 import { SecretVault } from '@chatbot/vault';
@@ -52,12 +58,42 @@ export class DialogService {
         return null;
       }
       const scenario: Scenario = scenarioSchema.parse(bot.publishedScenario);
-      const env = buildEnvironment(botId, environmentSchema.parse(bot.environment), this.vault);
+      const envVars = environmentSchema.parse(bot.environment);
+      const env = buildEnvironment(botId, envVars, this.vault);
+      const secretMasks = collectSecretMasks(envVars, env);
 
       await this.repository.ensureExists(tx, botId, event.chatId, event.userId, event.channel);
       const row = await this.loadContext(tx, botId, event.chatId);
       if (!row) throw new Error('Контекст диалога не найден после создания');
-      const result = this.engine.handleEvent(event, toState(row), scenario, env);
+
+      let outcome: HttpOutcome | undefined;
+      if (event.type === 'RESPONSE_RECEIVED' || event.type === 'REQUEST_FAILED') {
+        const httpReq = event.requestId
+          ? await tx.httpRequest.findUnique({ where: { id: event.requestId } })
+          : null;
+        if (httpReq) {
+          outcome =
+            event.type === 'RESPONSE_RECEIVED'
+              ? {
+                  kind: 'response',
+                  status: httpReq.responseCode ?? 200,
+                  body: httpReq.responseBody ?? '',
+                }
+              : {
+                  kind: 'failure',
+                  code: httpReq.responseCode ?? 0,
+                  message: httpReq.error ?? 'Не удалось выполнить запрос',
+                };
+        }
+      }
+
+      const result = this.engine.handleEvent(event, toState(row), scenario, env, outcome);
+      if (result.stale) {
+        this.logger.log(
+          `ответ отброшен: botId=${botId}, chatId=${event.chatId}, requestId=${event.requestId ?? 'null'}`,
+        );
+        return null;
+      }
 
       const data = {
         userId: event.userId,
@@ -72,23 +108,47 @@ export class DialogService {
       let httpRequestId: string | null = null;
       if (result.httpRequest) {
         const request = result.httpRequest;
-        // В базу пишется маска; секреты расшифровываются в памяти после фиксации
-        const created = await tx.httpRequest.create({
-          data: {
-            dialogContextId: saved.id,
-            blockId: request.blockId,
-            method: request.method,
-            url: request.url,
-            headers: toStoredHeaders(request.headers) as object[],
-            body: request.body ?? '',
-            status: 'SENT',
-          },
-        });
-        httpRequestId = created.id;
-        await tx.dialogContext.update({
-          where: { id: saved.id },
-          data: { currentRequestId: created.id },
-        });
+        // В базу пишутся маски вместо секретных заголовков и секретных переменных окружения (п. 2.13)
+        const storedUrl = maskSecrets(request.url, secretMasks, 'URL');
+        const storedHeaders = toStoredHeaders(request.headers).map((h) =>
+          h.secret ? h : { ...h, value: maskSecrets(h.value, secretMasks, 'HEADER') },
+        );
+        const storedBody = maskSecrets(request.body ?? '', secretMasks, 'JSON');
+
+        if (result.resumeRequestId) {
+          const updated = await tx.httpRequest.update({
+            where: { id: result.resumeRequestId },
+            data: {
+              method: request.method,
+              url: storedUrl,
+              headers: storedHeaders as object[],
+              body: storedBody,
+              status: 'SENT',
+              attempt: { increment: 1 },
+              responseCode: null,
+              responseBody: null,
+              error: null,
+            },
+          });
+          httpRequestId = updated.id;
+        } else {
+          const created = await tx.httpRequest.create({
+            data: {
+              dialogContextId: saved.id,
+              blockId: request.blockId,
+              method: request.method,
+              url: storedUrl,
+              headers: storedHeaders as object[],
+              body: storedBody,
+              status: 'SENT',
+            },
+          });
+          httpRequestId = created.id;
+          await tx.dialogContext.update({
+            where: { id: saved.id },
+            data: { currentRequestId: created.id },
+          });
+        }
       }
       return { result, contextId: saved.id, httpRequestId, projectId: bot.projectId };
     });
@@ -152,4 +212,38 @@ function toState(row: DialogContextRow) {
     variables: row.variables,
     currentRequestId: row.currentRequestId,
   };
+}
+
+interface SecretMask {
+  value: string;
+  mask: string;
+}
+
+// Собирает пары (расшифрованное значение, маска) для секретных переменных окружения
+function collectSecretMasks(variables: Environment, env: Record<string, string>): SecretMask[] {
+  const masks: SecretMask[] = [];
+  for (const variable of variables) {
+    if (!variable.secret || !variable.secretValue) continue;
+    const value = env[variable.name];
+    if (value) masks.push({ value, mask: variable.secretValue.mask });
+  }
+  // Более длинные секреты заменяем первыми, чтобы короткий не разбил длинный
+  masks.sort((a, b) => b.value.length - a.value.length);
+  return masks;
+}
+
+// Заменяет значения секретных переменных окружения их маской перед записью в http_request
+function maskSecrets(text: string, masks: SecretMask[], mode: 'URL' | 'HEADER' | 'JSON'): string {
+  let out = text;
+  for (const { value, mask } of masks) {
+    const rendered =
+      mode === 'HEADER'
+        ? value.replace(/[\r\n]+/g, '')
+        : mode === 'JSON'
+          ? JSON.stringify(value).slice(1, -1)
+          : value;
+    if (rendered) out = out.replaceAll(rendered, mask);
+    if (rendered !== value) out = out.replaceAll(value, mask);
+  }
+  return out;
 }

@@ -449,6 +449,7 @@ export const ru = {
     sendError: 'Не удалось отправить сообщение',
     restartError: 'Не удалось перезапустить превью',
     tooLong: 'Сообщение слишком длинное (максимум 4096 символов)',
+    sessionRestartedAfterReconnect: 'Сеанс перезапущен после переподключения',
   },
   testEnvironment: {
     button: 'Тестовое окружение',

@@ -254,6 +254,48 @@ describe('ImportDialog — проверка JSON и предупреждение
     expect(successSpy).toHaveBeenCalledWith(ru.importExport.importSuccess);
     expect(warningSpy).toHaveBeenCalledWith(ru.importExport.secretsToFill(2));
   });
+
+  it('во время выполнения импорта (busy) блокирует кнопку «Отмена» и предотвращает закрытие', async () => {
+    let resolveImport!: (res: Response) => void;
+    const fetchMock = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveImport = resolve;
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const onOpenChange = vi.fn();
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <ImportDialog projectId="p1" open onOpenChange={onOpenChange} onImported={vi.fn()} />
+      </QueryClientProvider>,
+    );
+
+    const input = screen.getByLabelText(ru.importExport.fileLabel);
+    fireEvent.change(input, {
+      target: { files: [makeJsonFile(JSON.stringify(IMPORTED_SCENARIO))] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: ru.importExport.confirmImport }));
+
+    // Диалог перешёл в состояние busy (fetch вызван и ожидает ответа)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const cancelButton = screen.getByRole('button', { name: ru.common.cancel }) as HTMLButtonElement;
+    expect(cancelButton.disabled).toBe(true);
+
+    // Нажатие на кнопку «Отмена» или попытка закрытия не вызывает onOpenChange
+    fireEvent.click(cancelButton);
+    expect(onOpenChange).not.toHaveBeenCalled();
+
+    // Завершаем запрос
+    resolveImport(
+      new Response(JSON.stringify({ updatedAt: '2026-01-03T00:00:00Z', secretsToFill: 0 }), {
+        status: 200,
+      }),
+    );
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
 });
 
 describe('EditorPage — импорт сценария', () => {

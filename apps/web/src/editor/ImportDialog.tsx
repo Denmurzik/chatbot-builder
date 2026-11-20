@@ -57,6 +57,7 @@ export function ImportDialog({ projectId, open, onOpenChange, onImported }: Impo
   }
 
   function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen && busy) return;
     if (!nextOpen) resetState();
     onOpenChange(nextOpen);
   }

@@ -85,6 +85,7 @@ export function usePreview({
 
   const socketRef = useRef<Socket | null>(null);
   const counterRef = useRef(0);
+  const connectedOnceRef = useRef(false);
   const onCurrentBlockRef = useRef(onCurrentBlock);
   const onErrorBlockRef = useRef(onErrorBlock);
 
@@ -123,9 +124,27 @@ export function usePreview({
       withCredentials: true,
     });
     socketRef.current = socket;
+    connectedOnceRef.current = false;
 
     const handleConnect = () => {
       if (socketRef.current !== socket) return;
+      const isReconnect = connectedOnceRef.current;
+      connectedOnceRef.current = true;
+      if (isReconnect) {
+        // На переподключении: сбрасываем чат и добавляем системную строку
+        setMessages([
+          {
+            id: (counterRef.current += 1),
+            role: 'system',
+            text: ru.preview.sessionRestartedAfterReconnect,
+            blockId: null,
+          },
+        ]);
+        setVariables({});
+        setCurrentBlockId(null);
+        setErrorBlockId(null);
+        onErrorBlockRef.current?.(null);
+      }
       const savedSessionId = readSavedSessionId(projectId);
       const payload = savedSessionId ? { projectId, sessionId: savedSessionId } : { projectId };
       socket.emit('start', payload, (ack?: StartAck) => {

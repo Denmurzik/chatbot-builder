@@ -193,6 +193,62 @@ describe('usePreview', () => {
     expect(onErrorBlock).toHaveBeenLastCalledWith(null);
   });
 
+  it('при повторном подключении (reconnect) сбрасывает состояние и добавляет системное сообщение о перезапуске', () => {
+    const onCurrentBlock = vi.fn();
+    const onErrorBlock = vi.fn();
+
+    const { result } = renderHook(() =>
+      usePreview({
+        projectId: 'proj-1',
+        enabled: true,
+        onCurrentBlock,
+        onErrorBlock,
+      }),
+    );
+
+    // Первое подключение
+    act(() => {
+      currentSocket.trigger('connect');
+      const ack = currentSocket.emit.mock.calls[0]![2] as (res: { chatId: string }) => void;
+      ack({ chatId: 'preview:proj-1:s1' });
+    });
+
+    // Получаем сообщение и переменные
+    act(() => {
+      currentSocket.trigger('preview', {
+        type: 'message',
+        message: { kind: 'text', text: 'Привет' },
+      });
+      currentSocket.trigger('preview', {
+        type: 'variables',
+        variables: { foo: 'bar' },
+      });
+      currentSocket.trigger('preview', {
+        type: 'currentBlock',
+        blockId: 'block_1',
+      });
+    });
+
+    expect(result.current.messages).toHaveLength(1);
+    expect(result.current.variables).toEqual({ foo: 'bar' });
+    expect(result.current.currentBlockId).toBe('block_1');
+
+    // Переподключение
+    act(() => {
+      currentSocket.trigger('connect');
+    });
+
+    expect(result.current.variables).toEqual({});
+    expect(result.current.currentBlockId).toBeNull();
+    expect(onErrorBlock).toHaveBeenCalledWith(null);
+    expect(result.current.messages).toHaveLength(1);
+    expect(result.current.messages[0]).toMatchObject({
+      role: 'system',
+      text: ru.preview.sessionRestartedAfterReconnect,
+      blockId: null,
+    });
+  });
+
   it('обрабатывает ошибки start ack, input ack, connect_error и игнорирует поздние ack после закрытия', () => {
     const { result, rerender } = renderHook(
       ({ enabled }) => usePreview({ projectId: 'proj-1', enabled }),

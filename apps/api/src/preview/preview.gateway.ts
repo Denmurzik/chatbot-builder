@@ -51,14 +51,39 @@ const MAX_TEXT_LENGTH = 4096;
 const MAX_CALLBACK_DATA_LENGTH = 64;
 const ENQUEUE_ERROR_MESSAGE = 'Не удалось отправить событие';
 
-// Защита в глубину от CSWSH: при наличии заголовка Origin разрешаем только same-origin
+// Извлекает hostname (без порта) из заголовка Host или первой части X-Forwarded-Host
+function extractHostname(header: string | string[] | undefined): string | null {
+  const raw = Array.isArray(header) ? header[0] : header;
+  if (!raw) return null;
+  const first = raw.split(',')[0]?.trim();
+  if (!first) return null;
+  try {
+    const parsed = new URL(`http://${first}`);
+    if (
+      parsed.username ||
+      parsed.password ||
+      parsed.pathname !== '/' ||
+      parsed.search ||
+      parsed.hash
+    ) {
+      return null;
+    }
+    return parsed.hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+// Защита в глубину от CSWSH: при наличии заголовка Origin сравниваем hostname (nginx шлёт Host без порта)
 function isSameOriginRequest(req: IncomingMessage): boolean {
   const origin = req.headers.origin;
   if (!origin) return true;
-  const host = req.headers.host;
-  if (!host) return false;
+  const forwardedHost = req.headers['x-forwarded-host'];
+  const rawForwarded = Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost;
+  const targetHostname = extractHostname(rawForwarded?.trim() ? rawForwarded : req.headers.host);
+  if (!targetHostname) return false;
   try {
-    return new URL(origin).host.toLowerCase() === host.toLowerCase();
+    return new URL(origin).hostname.toLowerCase() === targetHostname;
   } catch {
     return false;
   }
@@ -178,7 +203,12 @@ export class PreviewGateway implements OnGatewayInit, OnGatewayDisconnect {
       chatId,
       userId: `author:${author.id}`,
     });
-    if (!enqueued) return { error: ENQUEUE_ERROR_MESSAGE };
+    if (!enqueued) {
+      await client.leave(chatId);
+      client.data.chatId = undefined;
+      client.data.sessionId = undefined;
+      return { error: ENQUEUE_ERROR_MESSAGE };
+    }
 
     return { chatId };
   }

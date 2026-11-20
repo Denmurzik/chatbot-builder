@@ -366,6 +366,12 @@ describe('Socket.IO-шлюз превью (интеграционные тест
     const startAck = await emitAck<StartAck>(socket, 'start', { projectId: owner.projectId });
     expect(startAck).toEqual({ error: 'Не удалось отправить событие' });
 
+    // После неудачного start сеанс не считается запущенным
+    enqueueSpy.mockClear();
+    const inputAfterFailedStart = await emitAck<ActionAck>(socket, 'input', { text: 'привет' });
+    expect(inputAfterFailedStart).toEqual({ error: 'Сеанс превью не запущен' });
+    expect(enqueueSpy).not.toHaveBeenCalled();
+
     const okStart = await emitAck<StartAck>(socket, 'start', { projectId: owner.projectId });
     expect(okStart.chatId).toBeDefined();
 
@@ -408,19 +414,38 @@ describe('Socket.IO-шлюз превью (интеграционные тест
     expect(enqueueSpy).toHaveBeenCalledTimes(2);
   });
 
-  it('отклоняет рукопожатие с чужим заголовком Origin и пропускает same-origin', async () => {
+  it('проверяет hostname в Origin против Host и X-Forwarded-Host (и пропускает без Origin)', async () => {
     const owner = await registerAuthorWithProject('origin@example.com');
 
+    // Чужой Origin отклоняется
     await expect(
       connectPreview(port, owner.cookieHeader, { origin: 'http://evil.example' }),
     ).rejects.toThrow();
 
-    const allowed = await connectPreview(port, owner.cookieHeader, {
-      origin: `http://127.0.0.1:${port}`,
+    // Origin с нестандартным портом при Host без порта (за nginx) проходит
+    const behindNginx = await connectPreview(port, owner.cookieHeader, {
+      origin: 'http://127.0.0.1:18180',
+      host: '127.0.0.1',
     });
-    openSockets.push(allowed);
-    const ack = await emitAck<StartAck>(allowed, 'start', { projectId: owner.projectId });
-    expect(ack.chatId).toBeDefined();
+    openSockets.push(behindNginx);
+    const ackNginx = await emitAck<StartAck>(behindNginx, 'start', { projectId: owner.projectId });
+    expect(ackNginx.chatId).toBeDefined();
+
+    // X-Forwarded-Host (первая часть, без порта) имеет приоритет над Host
+    const forwarded = await connectPreview(port, owner.cookieHeader, {
+      origin: 'https://bot.example.com:8443',
+      'x-forwarded-host': 'bot.example.com:443, internal-proxy',
+      host: '127.0.0.1',
+    });
+    openSockets.push(forwarded);
+    const ackForwarded = await emitAck<StartAck>(forwarded, 'start', { projectId: owner.projectId });
+    expect(ackForwarded.chatId).toBeDefined();
+
+    // Запрос без Origin проходит
+    const noOrigin = await connectPreview(port, owner.cookieHeader);
+    openSockets.push(noOrigin);
+    const ackNoOrigin = await emitAck<StartAck>(noOrigin, 'start', { projectId: owner.projectId });
+    expect(ackNoOrigin.chatId).toBeDefined();
   });
 
   it('start с существующим sessionId проекта переиспользует chatId, а чужой sessionId заменяет новым', async () => {

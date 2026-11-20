@@ -4,7 +4,8 @@ import { SecretVault, tokenAad } from '@chatbot/vault';
 import { Inject, Injectable } from '@nestjs/common';
 import { Api } from 'grammy';
 import { MessengerGateway } from '../dialog/ports';
-import { PRISMA } from '../infra/tokens';
+import { APP_CONFIG, PRISMA, type AppConfig } from '../infra/tokens';
+import { telegramClientOptions } from './telegram-client-options';
 import { parseTelegramChatId, toInlineKeyboard } from './telegram-format';
 
 // Реализация порта MessengerGateway для Telegram: токен расшифровывается в памяти
@@ -13,6 +14,7 @@ export class TelegramMessengerGateway extends MessengerGateway {
   constructor(
     @Inject(PRISMA) private readonly prisma: PrismaClient,
     private readonly vault: SecretVault,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {
     super();
   }
@@ -50,6 +52,6 @@ export class TelegramMessengerGateway extends MessengerGateway {
       { cipherText: connection.tokenCipher, mask: connection.tokenMask },
       tokenAad(botId),
     );
-    return new Api(token);
+    return new Api(token, telegramClientOptions(this.config.telegramProxy));
   }
 }

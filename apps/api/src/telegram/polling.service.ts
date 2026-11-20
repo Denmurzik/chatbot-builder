@@ -9,6 +9,7 @@ import {
 import { Bot } from 'grammy';
 import { API_CONFIG, type ApiConfig } from '../config';
 import { PrismaService } from '../prisma/prisma.module';
+import { telegramClientOptions } from './telegram-client-options';
 import { errorName } from './telegram-errors';
 import { UpdateIngestService } from './update-ingest.service';
 
@@ -60,7 +61,8 @@ export class PollingService implements OnApplicationBootstrap, BeforeApplication
     if (running?.token === token) return;
     if (running) await this.stopBot(botId);
 
-    const bot = new Bot(token);
+    const client = telegramClientOptions(this.config.telegramProxy);
+    const bot = new Bot(token, client ? { client } : undefined);
     bot.use(async (ctx) => {
       try {
         await this.ingestService.ingest(botId, ctx.update);

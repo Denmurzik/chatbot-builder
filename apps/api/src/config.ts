@@ -21,8 +21,26 @@ export interface ApiConfig {
   nodeEnv: string;
   isProduction: boolean;
   telegramPolling: boolean;
+  telegramProxy?: string;
   publicUrl?: string;
   queuePrefix?: string;
+}
+
+function parseOptionalProxyUrl(raw: string | undefined): string | undefined {
+  const value = raw?.trim();
+  if (!value) return undefined;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`Некорректный URL прокси TELEGRAM_PROXY: "${value}"`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(
+      `Некорректный URL прокси TELEGRAM_PROXY (ожидается http:// или https://): "${value}"`,
+    );
+  }
+  return value;
 }
 
 // Читает и проверяет конфигурацию API из переменных окружения
@@ -67,6 +85,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   }
 
   const queuePrefix = env.QUEUE_PREFIX?.trim() || undefined;
+  const telegramProxy = parseOptionalProxyUrl(env.TELEGRAM_PROXY);
 
   return {
     databaseUrl,
@@ -75,6 +94,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     nodeEnv,
     isProduction,
     telegramPolling,
+    ...(telegramProxy ? { telegramProxy } : {}),
     ...(publicUrl ? { publicUrl } : {}),
     ...(queuePrefix ? { queuePrefix } : {}),
   };

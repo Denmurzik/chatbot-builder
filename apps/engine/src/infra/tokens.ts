@@ -8,4 +8,6 @@ export interface AppConfig {
   redisUrl: string;
   // Префикс ключей BullMQ (в тестах — уникальный)
   queuePrefix?: string;
+  // URL HTTP-прокси для исходящих запросов к Telegram Bot API
+  telegramProxy?: string;
 }

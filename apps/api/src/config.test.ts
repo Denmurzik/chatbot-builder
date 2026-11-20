@@ -89,4 +89,21 @@ describe('loadConfig', () => {
     );
     expect(loadConfig({ ...baseEnv, QUEUE_PREFIX: '   ' }).queuePrefix).toBeUndefined();
   });
+
+  it('читает валидный TELEGRAM_PROXY и отклоняет некорректный URL', () => {
+    expect(loadConfig(baseEnv).telegramProxy).toBeUndefined();
+    expect(loadConfig({ ...baseEnv, TELEGRAM_PROXY: '   ' }).telegramProxy).toBeUndefined();
+    expect(
+      loadConfig({ ...baseEnv, TELEGRAM_PROXY: '  http://telegram-proxy:10809  ' }).telegramProxy,
+    ).toBe('http://telegram-proxy:10809');
+    expect(
+      loadConfig({ ...baseEnv, TELEGRAM_PROXY: 'https://proxy.example.com:8443' }).telegramProxy,
+    ).toBe('https://proxy.example.com:8443');
+    expect(() => loadConfig({ ...baseEnv, TELEGRAM_PROXY: 'not-a-url' })).toThrow(
+      /TELEGRAM_PROXY/,
+    );
+    expect(() => loadConfig({ ...baseEnv, TELEGRAM_PROXY: 'socks5://127.0.0.1:1080' })).toThrow(
+      /TELEGRAM_PROXY/,
+    );
+  });
 });

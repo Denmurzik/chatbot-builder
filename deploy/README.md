@@ -48,6 +48,26 @@ DNS-запись домена должна указывать на сервер.
 
 Движок отправляет HTTP-запросы бота только на хосты из `HTTP_ALLOWED_HOSTS` (в `deploy/.env.prod`, через запятую, без схемы и порта). По умолчанию — только `mock-clinic`: остальные адреса получают ошибку «Адрес не разрешён», чтобы сценарий не мог обращаться к внутренней сети сервера. Чтобы разрешить реальный внешний API, добавьте его имя хоста (например, `HTTP_ALLOWED_HOSTS=mock-clinic,api.example.com`) и перезапустите `engine`: `docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod up -d engine`.
 
+## Telegram через прокси
+
+Если с сервера нет прямого доступа к `api.telegram.org`, можно пустить исходящие запросы `api` и `engine` через контейнер `telegram-proxy` (xray, HTTP-прокси на внутреннем порту `10809`, порты на хосте не публикуются).
+
+1. Скопируйте шаблон конфига и заполните секцию `outbounds` параметрами вашего прокси-сервера (`deploy/xray/config.json` добавлен в `.gitignore` и в git не попадает):
+   ```bash
+   cp deploy/xray/config.example.json deploy/xray/config.json
+   nano deploy/xray/config.json
+   ```
+2. В `deploy/.env.prod` укажите адрес прокси внутри сети compose:
+   ```dotenv
+   TELEGRAM_PROXY=http://telegram-proxy:10809
+   ```
+3. Запустите (или обновите) стек с профилем `telegram-proxy`:
+   ```bash
+   docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod --profile telegram-proxy up -d --build
+   ```
+
+Если `TELEGRAM_PROXY` пуст или не задан, `api` и `engine` обращаются к `api.telegram.org` напрямую, а профиль `telegram-proxy` указывать не нужно.
+
 ## Проверка без сервера
 
 Нужен заполненный `deploy/.env.prod`. В production cookie помечены `secure`, поэтому войти по http://127.0.0.1:18180 нельзя; ожидаемая проверка — ответ 401 на `/api/auth/me`.

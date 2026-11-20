@@ -40,5 +40,8 @@ dist/
 coverage/
 *.tsbuildinfo
 
+# Конфиг xray с секретами лежит только на сервере
+deploy/xray/config.json
+
 # Блокировка Visual Paradigm
 *.lck

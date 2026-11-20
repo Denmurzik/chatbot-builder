@@ -273,19 +273,16 @@ export class DialogService {
     }
   }
 
-  // Публикация событий превью в Redis после фиксации: сообщения, системное сообщение (если было),
+  // Публикация событий превью в Redis после фиксации: обычные сообщения и системные (с их blockId),
   // подсветка текущего блока и переменные. Ошибка публикации не отменяет сохранённое состояние.
   private async publishPreview(chatId: string, result: EngineResult): Promise<void> {
     try {
-      const last = result.outbox[result.outbox.length - 1];
-      const hasHighlightedSystem = result.highlightBlockId !== null && last?.kind === 'text';
-      const regularMessages = hasHighlightedSystem ? result.outbox.slice(0, -1) : result.outbox;
-
-      for (const message of regularMessages) {
-        await this.preview.publishMessage(chatId, message);
-      }
-      if (hasHighlightedSystem) {
-        await this.preview.publishSystemMessage(chatId, last.text, result.highlightBlockId);
+      for (const message of result.outbox) {
+        if (message.kind === 'system') {
+          await this.preview.publishSystemMessage(chatId, message.text, message.blockId ?? null);
+        } else {
+          await this.preview.publishMessage(chatId, message);
+        }
       }
       await this.preview.publishCurrentBlock(
         chatId,

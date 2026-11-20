@@ -4,7 +4,9 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
 import { ImportExportController } from '../src/import-export/import-export.controller';
-import { PreviewController } from '../src/preview/preview.controller';
+import { ImportExportService } from '../src/import-export/import-export.service';
+import { PreviewGateway } from '../src/preview/preview.gateway';
+import { PreviewSubscriber } from '../src/preview/preview-subscriber';
 import { ProjectController } from '../src/projects/project.controller';
 import { ScenarioEditor } from '../src/projects/scenario-editor';
 import { PublicationController } from '../src/publication/publication.controller';
@@ -37,7 +39,9 @@ describe('Каркас модулей API (skeleton)', () => {
     expect(moduleRef.get(ScenarioValidator)).toBeInstanceOf(ScenarioValidator);
     expect(moduleRef.get(PublicationController)).toBeInstanceOf(PublicationController);
     expect(moduleRef.get(ImportExportController)).toBeInstanceOf(ImportExportController);
-    expect(moduleRef.get(PreviewController)).toBeInstanceOf(PreviewController);
+    expect(moduleRef.get(ImportExportService)).toBeInstanceOf(ImportExportService);
+    expect(moduleRef.get(PreviewGateway)).toBeInstanceOf(PreviewGateway);
+    expect(moduleRef.get(PreviewSubscriber)).toBeInstanceOf(PreviewSubscriber);
     expect(moduleRef.get(ProjectController)).toBeInstanceOf(ProjectController);
     expect(moduleRef.get(ScenarioEditor)).toBeInstanceOf(ScenarioEditor);
   });
@@ -47,36 +51,6 @@ describe('Каркас модулей API (skeleton)', () => {
 
     expect(() => controller.isTokenInUse('TELEGRAM', 'hash')).toThrowError(
       'PublicationController.isTokenInUse',
-    );
-  });
-
-  it('методы ImportExportController и PreviewController бросают NotImplementedError', () => {
-    const importExport = moduleRef.get(ImportExportController);
-    const preview = moduleRef.get(PreviewController);
-    const scenario = emptyScenario();
-    const block = scenario.blocks[0];
-
-    expect(() => importExport.exportScenario('proj-1', 'json')).toThrowError(
-      'ImportExportController.exportScenario',
-    );
-    expect(() => importExport.importScenario('author-1', '{}')).toThrowError(
-      'ImportExportController.importScenario',
-    );
-    expect(() => importExport.serialize(scenario, 'json')).toThrowError(
-      'ImportExportController.serialize',
-    );
-    expect(() => importExport.checkStructure('{}')).toThrowError(
-      'ImportExportController.checkStructure',
-    );
-    expect(() => importExport.deserialize('{}')).toThrowError(
-      'ImportExportController.deserialize',
-    );
-
-    expect(() => preview.startPreview('proj-1')).toThrowError('PreviewController.startPreview');
-    expect(() => preview.sendInput('ctx-1', 'привет')).toThrowError('PreviewController.sendInput');
-    expect(() => preview.restartPreview('ctx-1')).toThrowError('PreviewController.restartPreview');
-    expect(() => preview.stopAtUnconnectedOutput('ctx-1', block, 'default')).toThrowError(
-      'PreviewController.stopAtUnconnectedOutput',
     );
   });
 

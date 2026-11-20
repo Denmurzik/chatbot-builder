@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
-import { ProjectModule } from '../projects/project.module';
-import { PreviewController } from './preview.controller';
+import { PreviewGateway } from './preview.gateway';
+import { PreviewSubscriber } from './preview-subscriber';
 
-// Модуль превью сценария без Socket.IO-шлюза (UC-A-20…A-23, спринт 3)
+// Модуль превью сценария: Socket.IO-шлюз и подписчик Redis pub/sub (UC-A-20…A-23)
 @Module({
-  imports: [AuthModule, ProjectModule],
-  controllers: [PreviewController],
+  imports: [AuthModule],
+  providers: [PreviewSubscriber, PreviewGateway],
 })
 export class PreviewModule {}

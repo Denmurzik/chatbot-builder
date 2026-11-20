@@ -15,7 +15,7 @@
 - `packages/vault` (`@chatbot/vault`) — шифрование секретов (AES-256-GCM) и хеширование токенов
 - `packages/db` (`@chatbot/db`) — схема Prisma и доступ к PostgreSQL
 - `packages/queue` (`@chatbot/queue`) — очередь событий BullMQ (16 разделов по ключу диалога)
-- `apps/api` (`@chatbot/api`) — REST API и webhook мессенджеров (NestJS, порт `3000`)
+- `apps/api` (`@chatbot/api`) — REST API, webhook мессенджеров и Socket.IO-шлюз превью (NestJS, порт `3000`)
 - `apps/engine` (`@chatbot/engine`) — воркеры очереди событий и HTTP-клиент внешних систем (NestJS)
 - `apps/web` (`@chatbot/web`) — веб-редактор сценариев и интерфейс превью (React 18 + Vite, порт `5173`)
 - `apps/mock-clinic` (`@chatbot/mock-clinic`) — тестовый HTTP API записи к врачу (`node:http`, порт `4010`)
@@ -116,6 +116,18 @@ pnpm --filter @chatbot/db db:generate
    # с проверкой исходящего HTTP-запроса:
    pnpm --filter @chatbot/engine p1 -- --http
    ```
+
+## Превью, экспорт и импорт сценария
+
+- **Превью в редакторе** — выдвижная панель чата, подключённая по Socket.IO (`path: /api/socket.io`, `namespace: /preview`). События проходят через ту же очередь и `apps/engine`, а ответы движка приходят из Redis pub/sub (`preview:<chatId>`). Превью использует тестовое окружение проекта (настраивается в редакторе), подсвечивает текущий блок на холсте, показывает переменные диалога и системные сообщения отдельным видом, поддерживает перезапуск.
+- **Экспорт и импорт JSON** — доступны из редактора и по REST API:
+  - `GET /api/projects/:id/export` — выгружает сценарий в JSON без значений секретных заголовков;
+  - `POST /api/projects/:id/import` — проверяет JSON схемой Zod, сохраняет сценарий в проект и сообщает, сколько секретов нужно заполнить.
+- **Сквозной тест записи к врачу** (нужен `pnpm infra:up`):
+  ```bash
+  pnpm exec vitest run apps/engine/test/doctor-flow.int.test.ts
+  ```
+  Прогоняет сценарий `doctor-with-http.json` через `apps/engine` и `apps/mock-clinic`, включая сбои API и изоляцию ботов.
 
 ## Тестовый API записи к врачу (`apps/mock-clinic`)
 

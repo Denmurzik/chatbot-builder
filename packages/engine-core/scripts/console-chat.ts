@@ -17,6 +17,10 @@ let buttons: { label: string; callbackData: string }[] = [];
 
 function print(messages: OutgoingMessage[]): void {
   for (const m of messages) {
+    if (m.kind === 'system') {
+      console.log(`[Система]: ${m.text}`);
+      continue;
+    }
     console.log(`Бот: ${m.text}`);
     if (m.kind === 'question') {
       buttons = m.buttons;

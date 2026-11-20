@@ -8,13 +8,23 @@ import {
   type EdgeChange,
   type NodeChange,
 } from '@xyflow/react';
-import { ArrowLeft, CheckCheck, CircleHelp, Redo2, Save, Undo2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  CheckCheck,
+  CircleHelp,
+  Play,
+  Redo2,
+  Save,
+  SlidersHorizontal,
+  Undo2,
+} from 'lucide-react';
 import { Link, useBlocker, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   BLOCK_TYPES,
   scenarioSchema,
   type BlockType,
+  type EnvVarView,
   type Scenario,
   type ValidationError,
 } from '@chatbot/model';
@@ -58,6 +68,9 @@ import {
   ValidationPanel,
   groupServerErrorsByBlock,
 } from './ValidationPanel';
+import { TestEnvironmentDialog } from './TestEnvironmentDialog';
+import { ImportExportMenu } from './ImportExportMenu';
+import { PreviewPanel } from '@/preview/PreviewPanel';
 
 // Окно, в пределах которого серия сдвигов стрелками считается одним действием
 const KEY_MOVE_SERIES_MS = 500;
@@ -138,10 +151,14 @@ function ScenarioEditor({
   projectId,
   name,
   initial,
+  environment,
+  onImported,
 }: {
   projectId: string;
   name: string;
   initial: Scenario;
+  environment: EnvVarView[];
+  onImported: () => Promise<void>;
 }) {
   const [initialFlow] = useState(() => scenarioToFlow(initial));
   const [nodes, setNodes] = useState<BlockNode[]>(initialFlow.nodes);
@@ -149,6 +166,11 @@ function ScenarioEditor({
   const [dirty, setDirty] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [validationOpen, setValidationOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [testEnvOpen, setTestEnvOpen] = useState(false);
+  // Подсветка блока в превью — отдельное состояние (не через commitNodes/историю)
+  const [previewBlockId, setPreviewBlockId] = useState<string | null>(null);
+  const [previewErrorBlockId, setPreviewErrorBlockId] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   // Ошибки сервера для значков на блоках сбрасываются при первом изменении сценария
   const [serverBlockErrors, setServerBlockErrors] = useState<ValidationError[]>([]);
@@ -474,6 +496,11 @@ function ScenarioEditor({
     void saveScenario();
   }, [saveScenario]);
 
+  const handleSaveBeforeExport = useCallback(
+    () => saveScenario({ silent: true }),
+    [saveScenario],
+  );
+
   const handleValidate = useCallback(async () => {
     if (save.isPending || validate.isPending) return;
     if (dirty) {
@@ -492,12 +519,10 @@ function ScenarioEditor({
     }
   }, [save.isPending, validate, dirty, saveScenario]);
 
-  const handleSelectValidationBlock = useCallback(
+  const centerOnBlock = useCallback(
     (blockId: string) => {
-      const current = nodesRef.current;
-      const target = current.find((node) => node.id === blockId);
+      const target = nodesRef.current.find((node) => node.id === blockId);
       if (!target) return;
-      commitNodes(current.map((node) => ({ ...node, selected: node.id === blockId })));
       const measured = getNodes().find((node) => node.id === blockId)?.measured ?? target.measured;
       const width = measured?.width ?? NODE_WIDTH;
       const height = measured?.height ?? NODE_HEIGHT;
@@ -506,8 +531,67 @@ function ScenarioEditor({
         duration: 200,
       });
     },
-    [commitNodes, getNodes, setCenter],
+    [getNodes, setCenter],
   );
+
+  const handleSelectValidationBlock = useCallback(
+    (blockId: string) => {
+      const current = nodesRef.current;
+      if (!current.some((node) => node.id === blockId)) return;
+      commitNodes(current.map((node) => ({ ...node, selected: node.id === blockId })));
+      centerOnBlock(blockId);
+    },
+    [commitNodes, centerOnBlock],
+  );
+
+  const handleOpenPreview = useCallback(async () => {
+    if (save.isPending) return;
+    if (dirty) {
+      const saved = await saveScenario({ silent: true });
+      if (!saved) return;
+    }
+    setPreviewOpen(true);
+  }, [save.isPending, dirty, saveScenario]);
+
+  const handlePreviewOpenChange = useCallback((open: boolean) => {
+    setPreviewOpen(open);
+    if (!open) {
+      setPreviewBlockId(null);
+      setPreviewErrorBlockId(null);
+    }
+  }, []);
+
+  const handlePreviewCurrentBlock = useCallback((blockId: string | null) => {
+    setPreviewBlockId(blockId);
+    if (blockId !== null) {
+      setPreviewErrorBlockId((prev) => (prev === blockId ? prev : null));
+    }
+  }, []);
+
+  const handlePreviewErrorBlock = useCallback(
+    (blockId: string | null) => {
+      setPreviewErrorBlockId(blockId);
+      if (blockId !== null) centerOnBlock(blockId);
+    },
+    [centerOnBlock],
+  );
+
+  // Подсветка текущего/ошибочного блока в превью накладывается при рендере, не меняя состояние графа
+  const displayNodes = useMemo(() => {
+    if (!previewBlockId && !previewErrorBlockId) return nodes;
+    return nodes.map((node) => {
+      const isError = node.id === previewErrorBlockId;
+      const isCurrent = !isError && node.id === previewBlockId;
+      if (!isError && !isCurrent) return node;
+      const highlight = isError
+        ? 'preview-node-error rounded-2xl ring-2 ring-destructive ring-offset-2 ring-offset-background shadow-[0_0_0_4px_color-mix(in_oklab,var(--destructive)_25%,transparent)]'
+        : 'preview-node-current rounded-2xl ring-2 ring-primary ring-offset-2 ring-offset-background shadow-[0_0_0_4px_color-mix(in_oklab,var(--primary)_20%,transparent)]';
+      return {
+        ...node,
+        className: node.className ? `${node.className} ${highlight}` : highlight,
+      };
+    });
+  }, [nodes, previewBlockId, previewErrorBlockId]);
 
   // Ctrl+S — сохранить; code не зависит от раскладки (в русской key = «ы»)
   useEffect(() => {
@@ -523,7 +607,7 @@ function ScenarioEditor({
 
   // Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y — по code (не зависит от раскладки); поля ввода и окна не трогаем
   const { undo, redo } = history;
-  const overlayOpen = dialog !== null || picker !== null;
+  const overlayOpen = dialog !== null || picker !== null || testEnvOpen;
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
@@ -606,6 +690,33 @@ function ScenarioEditor({
           >
             <CircleHelp className="size-4" />
           </Button>
+          <ImportExportMenu
+            projectId={projectId}
+            projectName={name}
+            dirty={dirty}
+            disabled={save.isPending}
+            onSaveBeforeExport={handleSaveBeforeExport}
+            onImported={onImported}
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setTestEnvOpen(true)}
+          >
+            <SlidersHorizontal className="size-4" />
+            {ru.testEnvironment.button}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={save.isPending}
+            onClick={() => void handleOpenPreview()}
+          >
+            <Play className="size-4" />
+            {ru.preview.button}
+          </Button>
           <Button
             type="button"
             size="sm"
@@ -635,7 +746,7 @@ function ScenarioEditor({
           <EditorActionsContext.Provider value={actions}>
             <ServerIssuesContext.Provider value={serverIssuesByBlock}>
               <Canvas
-                nodes={nodes}
+                nodes={displayNodes}
                 edges={edges}
                 onNodesChange={handleNodesChange}
                 onEdgesChange={handleEdgesChange}
@@ -674,6 +785,19 @@ function ScenarioEditor({
         onOpenChange={setValidationOpen}
         errors={validationErrors}
         onSelectBlock={handleSelectValidationBlock}
+      />
+      <PreviewPanel
+        projectId={projectId}
+        open={previewOpen}
+        onOpenChange={handlePreviewOpenChange}
+        onCurrentBlock={handlePreviewCurrentBlock}
+        onErrorBlock={handlePreviewErrorBlock}
+      />
+      <TestEnvironmentDialog
+        projectId={projectId}
+        environment={environment}
+        open={testEnvOpen}
+        onOpenChange={setTestEnvOpen}
       />
       <NodePicker
         open={picker !== null}
@@ -716,7 +840,16 @@ function ScenarioEditor({
 
 export function EditorPage() {
   const { id = '' } = useParams();
-  const { data: project, isError } = useProject(id);
+  const { data: project, isError, refetch } = useProject(id);
+  // Счётчик импортов: перемонтирует редактор после успешного импорта, сбрасывая историю и dirty
+  const [importRevision, setImportRevision] = useState(0);
+
+  const handleImported = useCallback(async () => {
+    const result = await refetch();
+    if (!result.isError) {
+      setImportRevision((prev) => prev + 1);
+    }
+  }, [refetch]);
 
   return (
     <TooltipProvider>
@@ -735,10 +868,12 @@ export function EditorPage() {
           <ReactFlowProvider>
             {/* Состояние редактора инициализируется один раз из загруженного проекта */}
             <ScenarioEditor
-              key={project.id}
+              key={`${project.id}:${importRevision}`}
               projectId={project.id}
               name={project.name}
               initial={project.scenario}
+              environment={project.environment ?? []}
+              onImported={handleImported}
             />
           </ReactFlowProvider>
         )}

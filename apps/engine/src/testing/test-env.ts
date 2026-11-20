@@ -5,7 +5,7 @@ import { createPrismaClient, type Bot, type PrismaClient } from '@chatbot/db';
 import type { OutgoingMessage } from '@chatbot/engine-core';
 import type { ChatEvent, Scenario } from '@chatbot/model';
 import { EventQueue, createRedisConnection } from '@chatbot/queue';
-import { SecretVault } from '@chatbot/vault';
+import { SecretVault, envAad } from '@chatbot/vault';
 import { Test, type TestingModule } from '@nestjs/testing';
 import type IORedis from 'ioredis';
 import { AppModule } from '../app.module';
@@ -57,6 +57,12 @@ export const echoScenario: Scenario = {
   ],
 };
 
+export interface TestEnvVar {
+  name: string;
+  value: string;
+  secret: boolean;
+}
+
 export interface TestEnv {
   module: TestingModule;
   db: PrismaClient;
@@ -64,7 +70,7 @@ export interface TestEnv {
   queue: EventQueue;
   config: AppConfig;
   vault: SecretVault;
-  createBot(scenario?: Scenario): Promise<Bot>;
+  createBot(scenario?: Scenario, env?: TestEnvVar[]): Promise<Bot>;
   emit(event: ChatEvent): Promise<void>;
   texts(botId: string, chatId: string): string[];
   close(): Promise<void>;
@@ -138,14 +144,14 @@ export async function createTestEnv(options: TestEnvOptions = {}): Promise<TestE
     queue,
     config,
     vault,
-    async createBot(scenario = echoScenario) {
+    async createBot(scenario = echoScenario, env?: TestEnvVar[]) {
       const author = await db.author.create({
         data: { email: `${randomUUID()}@x.ru`, passwordHash: 'h' },
       });
       const project = await db.project.create({
         data: { authorId: author.id, name: 'p', scenario: {}, environment: [] },
       });
-      return db.bot.create({
+      const bot = await db.bot.create({
         data: {
           projectId: project.id,
           name: 'b',
@@ -153,6 +159,20 @@ export async function createTestEnv(options: TestEnvOptions = {}): Promise<TestE
           publishedScenario: scenario as object,
           environment: [],
         },
+      });
+      if (!env || env.length === 0) return bot;
+      const stored = env.map((item) =>
+        item.secret
+          ? {
+              name: item.name,
+              secret: true,
+              secretValue: vault.encrypt(item.value, envAad(bot.id, item.name)),
+            }
+          : { name: item.name, value: item.value, secret: false },
+      );
+      return db.bot.update({
+        where: { id: bot.id },
+        data: { environment: stored as object[] },
       });
     },
     async emit(event) {

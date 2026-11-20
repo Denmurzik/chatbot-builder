@@ -54,7 +54,8 @@ export interface OutgoingButtonLike {
 // Исходящее сообщение бота (совместимо с OutgoingMessage из engine-core)
 export type OutgoingMessageLike =
   | { kind: 'text'; text: string }
-  | { kind: 'question'; text: string; buttons: OutgoingButtonLike[] };
+  | { kind: 'question'; text: string; buttons: OutgoingButtonLike[] }
+  | { kind: 'system'; text: string; blockId?: string | null };
 
 // Событие канала превью, публикуемое в Redis pub/sub (`preview:<chatId>`)
 export type PreviewEvent =

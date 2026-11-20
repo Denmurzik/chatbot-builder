@@ -1,47 +1,34 @@
-import type { Project } from '@chatbot/db';
-import { NotImplementedError, type Scenario } from '@chatbot/model';
-import { Controller, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
+import { type AuthenticatedAuthor, CurrentAuthor } from '../auth/current-author.decorator';
 import { JwtGuard } from '../auth/jwt.guard';
-import { PrismaService } from '../prisma/prisma.module';
-import { ProjectService } from '../projects/project.service';
-import { ScenarioEditor } from '../projects/scenario-editor';
-import { ScenarioValidator, type ValidationError } from '../validation/scenario-validator';
+import { ImportExportService, type ImportScenarioResult } from './import-export.service';
 
-/**
- * Класс модели BCE: ImportExportController — экспорт сценария без секретов и импорт с проверкой структуры.
- * Реализует UC-A-29, UC-A-30, UC-A-31; реализация запланирована на спринт 3.
- */
-@Controller('import-export')
+// Класс модели BCE: ImportExportController — экспорт сценария без секретов и импорт с проверкой структуры (UC-A-29..A-31)
+@Controller('projects')
 @UseGuards(JwtGuard)
 export class ImportExportController {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly projectService: ProjectService,
-    private readonly scenarioEditor: ScenarioEditor,
-    private readonly validator: ScenarioValidator,
-  ) {}
+  constructor(private readonly importExportService: ImportExportService) {}
 
-  exportScenario(_projectId: string, _format: string): string {
-    void this.prisma;
-    void this.projectService;
-    void this.scenarioEditor;
-    void this.validator;
-    throw new NotImplementedError('ImportExportController.exportScenario');
+  @Get(':id/export')
+  async exportScenario(
+    @CurrentAuthor() author: AuthenticatedAuthor,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { fileName, json } = await this.importExportService.exportScenario(author.id, id);
+    res.attachment(fileName);
+    res.type('application/json; charset=utf-8');
+    res.status(HttpStatus.OK).send(json);
   }
 
-  importScenario(_authorId: string, _file: string): Project {
-    throw new NotImplementedError('ImportExportController.importScenario');
-  }
-
-  serialize(_scenario: Scenario, _format: string): string {
-    throw new NotImplementedError('ImportExportController.serialize');
-  }
-
-  checkStructure(_file: string): ValidationError[] {
-    throw new NotImplementedError('ImportExportController.checkStructure');
-  }
-
-  deserialize(_file: string): Scenario {
-    throw new NotImplementedError('ImportExportController.deserialize');
+  @Post(':id/import')
+  @HttpCode(HttpStatus.OK)
+  importScenario(
+    @CurrentAuthor() author: AuthenticatedAuthor,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ): Promise<ImportScenarioResult> {
+    return this.importExportService.importScenario(author.id, id, body);
   }
 }

@@ -87,6 +87,37 @@ export class AuthService {
     return argon2.verify(hash, password);
   }
 
+  // Проверяет JWT (HS256) и возвращает существующего автора (используется в JwtGuard и PreviewGateway)
+  async authenticate(token: string): Promise<AuthenticatedAuthor> {
+    if (typeof token !== 'string' || token.length === 0) {
+      throw new UnauthorizedException('Требуется авторизация');
+    }
+
+    let payload: { sub?: unknown };
+    try {
+      payload = await this.jwtService.verifyAsync<{ sub?: unknown }>(token, {
+        algorithms: ['HS256'],
+      });
+    } catch {
+      throw new UnauthorizedException('Недействительная сессия');
+    }
+
+    if (typeof payload.sub !== 'string' || payload.sub.length === 0) {
+      throw new UnauthorizedException('Недействительная сессия');
+    }
+
+    const author = await this.prisma.client.author.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, email: true },
+    });
+
+    if (!author) {
+      throw new UnauthorizedException('Требуется авторизация');
+    }
+
+    return author;
+  }
+
   private signSessionToken(authorId: string): Promise<string> {
     return this.jwtService.signAsync({ sub: authorId }, { algorithm: 'HS256' });
   }

@@ -9,7 +9,8 @@ export interface OutgoingButton {
 // Исходящее сообщение пользователю
 export type OutgoingMessage =
   | { kind: 'text'; text: string }
-  | { kind: 'question'; text: string; buttons: OutgoingButton[] };
+  | { kind: 'question'; text: string; buttons: OutgoingButton[] }
+  | { kind: 'system'; text: string; blockId?: string | null };
 
 // Заголовок подготовленного HTTP-запроса: секретное значение передаётся как есть (расшифровка — в задаче 8)
 export interface PendingHttpHeader {

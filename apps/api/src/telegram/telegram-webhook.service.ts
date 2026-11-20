@@ -7,7 +7,8 @@ import { webhookSecret } from './webhook-secret';
 
 const ALLOWED_UPDATES: Array<'message' | 'callback_query'> = ['message', 'callback_query'];
 
-// Подключение бота к Telegram: webhook в production, long polling локально (п. 2.11)
+// Подключение бота к Telegram: webhook по умолчанию или long polling (TELEGRAM_POLLING=1)
+// для сетей, куда Telegram не может достучаться (одна копия api)
 @Injectable()
 export class TelegramWebhookService {
   private readonly logger = new Logger(TelegramWebhookService.name);

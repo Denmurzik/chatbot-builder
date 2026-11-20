@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { Global, Logger, Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import dotenv from 'dotenv';
 
 // Загружаем корневой .env независимо от текущей рабочей директории (одинаковая глубина из src/ и dist/)
@@ -73,14 +73,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     );
   }
 
-  const pollingRequested = env.TELEGRAM_POLLING?.trim() === '1';
-  if (isProduction && pollingRequested) {
-    Logger.warn('TELEGRAM_POLLING=1 игнорируется в production', 'Config');
-  }
-  const telegramPolling = !isProduction && pollingRequested;
+  const telegramPolling = env.TELEGRAM_POLLING?.trim() === '1';
 
   const publicUrl = env.PUBLIC_URL?.trim() || undefined;
-  if (isProduction && !publicUrl) {
+  if (isProduction && !telegramPolling && !publicUrl) {
     throw new Error('В production не задана переменная окружения PUBLIC_URL');
   }
 

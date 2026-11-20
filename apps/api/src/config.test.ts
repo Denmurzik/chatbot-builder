@@ -1,5 +1,4 @@
-import { Logger } from '@nestjs/common';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { loadConfig } from './config';
 
 describe('loadConfig', () => {
@@ -17,36 +16,31 @@ describe('loadConfig', () => {
     expect(cfg.telegramPolling).toBe(false);
   });
 
-  it('включает telegramPolling только при TELEGRAM_POLLING=1 вне production', () => {
+  it('включает telegramPolling только при TELEGRAM_POLLING=1', () => {
     expect(loadConfig({ ...baseEnv, TELEGRAM_POLLING: '1' }).telegramPolling).toBe(true);
     expect(loadConfig({ ...baseEnv, TELEGRAM_POLLING: '0' }).telegramPolling).toBe(false);
     expect(loadConfig({ ...baseEnv, TELEGRAM_POLLING: 'true' }).telegramPolling).toBe(false);
   });
 
-  it('отключает telegramPolling в production с предупреждением даже при TELEGRAM_POLLING=1', () => {
-    const warnSpy = vi.spyOn(Logger, 'warn').mockImplementation(() => undefined);
-    try {
-      const cfg = loadConfig({
-        ...baseEnv,
-        ...prod,
-        NODE_ENV: 'production',
-        JWT_SECRET: 'a-very-strong-production-jwt-secret-key-32-plus-chars',
-        TELEGRAM_POLLING: '1',
-      });
-      expect(cfg.telegramPolling).toBe(false);
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('TELEGRAM_POLLING'),
-        'Config',
-      );
-    } finally {
-      warnSpy.mockRestore();
-    }
+  it('разрешает telegramPolling в production и не требует PUBLIC_URL при включённом опросе', () => {
+    const cfg = loadConfig({
+      ...baseEnv,
+      NODE_ENV: 'production',
+      JWT_SECRET: 'a-very-strong-production-jwt-secret-key-32-plus-chars',
+      TELEGRAM_POLLING: '1',
+    });
+    expect(cfg.isProduction).toBe(true);
+    expect(cfg.telegramPolling).toBe(true);
+    expect(cfg.publicUrl).toBeUndefined();
   });
 
-  it('требует PUBLIC_URL в production и читает его вне production', () => {
+  it('требует PUBLIC_URL в production при выключенном опросе и читает его вне production', () => {
     const strong = 'a-very-strong-production-jwt-secret-key-32-plus-chars';
     expect(() =>
       loadConfig({ ...baseEnv, NODE_ENV: 'production', JWT_SECRET: strong }),
+    ).toThrow(/PUBLIC_URL/);
+    expect(() =>
+      loadConfig({ ...baseEnv, NODE_ENV: 'production', JWT_SECRET: strong, TELEGRAM_POLLING: '0' }),
     ).toThrow(/PUBLIC_URL/);
     expect(loadConfig({ ...baseEnv, PUBLIC_URL: 'http://localhost:3000' }).publicUrl).toBe(
       'http://localhost:3000',

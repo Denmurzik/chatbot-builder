@@ -26,12 +26,12 @@
 3. `model-no-project-packages` — `@chatbot/model` не зависит ни от одного пакета или приложения проекта.
 4. `engine-core-only-model` — `@chatbot/engine-core` из пакетов проекта зависит только от `@chatbot/model`.
 5. `web-allowed-packages` — `apps/web` из пакетов проекта импортирует только `@chatbot/model` и `@chatbot/engine-core`.
-6. `no-cross-app-imports` — запрет прямых импортов между приложениями `apps/api`, `apps/engine`, `apps/web` (взаимодействие идёт по HTTP и через очередь Redis/PostgreSQL).
+6. `no-cross-app-imports` — запрет прямых импортов между приложениями `apps/api`, `apps/engine`, `apps/web`, `apps/mock-clinic` (взаимодействие идёт по HTTP и через очередь Redis/PostgreSQL).
 
 ### Проверка слоёв и ацикличности
 
 - **Уровень файлов:** подтверждено `pnpm arch` (`no-circular` — 0 нарушений).
-- **Уровень модулей:** агрегированный граф из 25 прикладных модулей ниже — **все стрелки направлены вниз, циклов нет** (строгий слоистый ориентированный ациклический граф, DAG). Межслойные зависимости направлены исключительно сверху вниз (`взаимодействие → бизнес-логика → базовый`), допускаются зависимости внутри одного слоя без циклов. Вспомогательные файлы (`apps/api/src/config.ts`, `common/`, `apps/engine/src/config.ts`, `apps/web/src/{app,components,i18n,lib}`) включены в состав соответствующих модулей или указаны в примечаниях; в `apps/engine` файл `config.ts` является частью `InfraModule`.
+- **Уровень модулей:** агрегированный граф из 25 прикладных модулей ниже (плюс отдельное приложение `apps/mock-clinic` без зависимостей) — **все стрелки направлены вниз, циклов нет** (строгий слоистый ориентированный ациклический граф, DAG). Межслойные зависимости направлены исключительно сверху вниз (`взаимодействие → бизнес-логика → базовый`), допускаются зависимости внутри одного слоя без циклов. Вспомогательные файлы (`apps/api/src/config.ts`, `common/`, `apps/engine/src/config.ts`, `apps/web/src/{app,components,i18n,lib}`) включены в состав соответствующих модулей или указаны в примечаниях; в `apps/engine` файл `config.ts` является частью `InfraModule`.
 
 ---
 
@@ -47,18 +47,18 @@
 | 1 | `web / API-клиент` | `apps/web/src/api` | взаимодействие | HTTP-клиент к REST API (`apps/api`) для авторизации и работы с проектами | *(клиентский транспорт `apps/web`)* | `@chatbot/model` |
 | 2 | `web / Страницы аккаунта` | `apps/web/src/pages` | взаимодействие | Экраны входа, регистрации, списка и создания проектов | `AccountUI` | `web / API-клиент` |
 | 3 | `web / Редактор сценария` | `apps/web/src/editor` | взаимодействие | Визуальный холст (React Flow) слева направо, панель «Что дальше?», окно блока «Вход — Настройки — Выход», конструктор условий, поля выражений с подсказками, отмена действий, конвертация и сохранение сценария | `EditorUI` | `@chatbot/engine-core`, `@chatbot/model`, `web / API-клиент` |
-| 4 | `web / Превью-чат` | `apps/web/src/preview` | взаимодействие | Интерфейс тестового превью-чата — заглушка спринта 3 | `PreviewChatUI` | `@chatbot/model` |
+| 4 | `web / Превью-чат` | `apps/web/src/preview` | взаимодействие | Окно превью: чат по Socket.IO (`/api/socket.io`, `/preview`), подсветка текущего блока, панель переменных, системные сообщения, перезапуск | `PreviewChatUI` | `@chatbot/model` |
 | 5 | `api / TelegramModule` | `apps/api/src/telegram` | взаимодействие | Приём webhook Telegram, dev-polling, преобразование обновлений в `ChatEvent` и постановка в очередь | `MessengerGateway` (приём) | `@chatbot/model`, `@chatbot/queue`, `@chatbot/vault`, `api / PrismaModule`, `api / QueueModule` |
 | 6 | `engine / MessengerModule` | `apps/engine/src/messenger` | взаимодействие | Адаптер отправки сообщений и вопросов в Telegram Bot API (grammY), реализует порт `MessengerGateway` | `MessengerGateway` (отправка) | `@chatbot/db`, `@chatbot/engine-core`, `@chatbot/vault`, `engine / DialogModule`, `engine / InfraModule` |
 | 7 | `engine / HttpModule` | `apps/engine/src/http` | взаимодействие | Исходящие HTTP-запросы с тайм-аутами и повторами (`undici` + `p-retry`), возврат результата в очередь, разбор ответов, реализация порта `HttpRequestLauncher` и каркас `HttpRequestExecutor` | `ExternalApiClient`, `HttpRequestExecutor`, `ResponseParser` | `@chatbot/db`, `@chatbot/engine-core`, `@chatbot/model`, `@chatbot/queue`, `@chatbot/vault`, `engine / DialogModule`, `engine / InfraModule` |
-| 8 | `engine / PreviewModule` | `apps/engine/src/preview` | взаимодействие | Публикация событий канала `PREVIEW` в Redis (сообщения, текущий блок, переменные) — каркас спринта 2 | `PreviewPublisher` | `@chatbot/model`, `engine / InfraModule` |
+| 8 | `engine / PreviewModule` | `apps/engine/src/preview` | взаимодействие | Публикация событий канала `PREVIEW` в Redis (сообщения, текущий блок, переменные) — публикация `PreviewEvent` в канал `preview:<chatId>`; системные сообщения — отдельный вид события | `PreviewPublisher` | `@chatbot/model`, `engine / InfraModule` |
 | 9 | `@chatbot/engine-core` | `packages/engine-core` | бизнес-логика | Чистое ядро диалогов без I/O: автопроход (лимит 100 шагов), безопасные выражения, шаблоны (1 проход), jsonPath, контекст в памяти | `DialogEngine` (ядро), `ExpressionEvaluator`, `DialogContext` (в памяти) | `@chatbot/model` |
 | 10 | `api / AuthModule` | `apps/api/src/auth` | бизнес-логика | Регистрация, вход (argon2), выдача и проверка JWT-сессии в cookie (`JwtGuard`) | `AuthController` | `@chatbot/db`, `api / PrismaModule` |
 | 11 | `api / ProjectModule` | `apps/api/src/projects` | бизнес-логика | CRUD проектов автора (список, создание, чтение), валидация, шифрование секретных заголовков и сохранение сценария | `ProjectController`, `ScenarioEditor` | `@chatbot/db`, `@chatbot/model`, `@chatbot/vault`, `api / AuthModule`, `api / PrismaModule` |
 | 12 | `api / ValidatorModule` | `apps/api/src/validation` | бизнес-логика | Статическая проверка графа сценария (точка входа, выходы, поля, циклы) — каркас спринта 2 | `ScenarioValidator`, `ValidationError` | `@chatbot/model`, `api / PrismaModule` |
 | 13 | `api / PublicationModule` | `apps/api/src/publication` | бизнес-логика | Создание бота, окружения, подключение мессенджера, публикация и перепубликация — каркас спринтов 2–3 | `PublicationController` | `@chatbot/db`, `@chatbot/model`, `@chatbot/queue`, `@chatbot/vault`, `api / AuthModule`, `api / PrismaModule`, `api / ProjectModule`, `api / QueueModule`, `api / ValidatorModule` |
-| 14 | `api / ImportExportModule` | `apps/api/src/import-export` | бизнес-логика | Сериализация, проверка структуры, экспорт и импорт сценария — каркас спринта 3 | `ImportExportController` | `@chatbot/db`, `@chatbot/model`, `api / AuthModule`, `api / PrismaModule`, `api / ProjectModule`, `api / ValidatorModule` |
-| 15 | `api / PreviewModule` | `apps/api/src/preview` | бизнес-логика | Управление сессией превью сценария (запуск, ввод, перезапуск) — каркас спринта 3 | `PreviewController` | `@chatbot/db`, `@chatbot/model`, `@chatbot/queue`, `api / AuthModule`, `api / PrismaModule`, `api / ProjectModule`, `api / QueueModule` |
+| 14 | `api / ImportExportModule` | `apps/api/src/import-export` | бизнес-логика | Экспорт (`GET /api/projects/:id/export`, без значений секретных заголовков) и импорт (`POST /api/projects/:id/import`, проверка схемой Zod, число секретов для заполнения) | `ImportExportController` | `@chatbot/db`, `@chatbot/model`, `api / AuthModule`, `api / PrismaModule`, `api / ProjectModule`, `api / ValidatorModule` |
+| 15 | `api / PreviewGateway` | `apps/api/src/preview` | бизнес-логика | Socket.IO-шлюз превью (путь `/api/socket.io`, пространство имён `/preview`): проверка сессии, запуск, ввод и перезапуск диалога через очередь; `PreviewSubscriber` читает Redis pub/sub `preview:<chatId>` и передаёт события в комнату сеанса | `PreviewController` (реализован как шлюз) | `@chatbot/model`, `@chatbot/queue`, `api / AuthModule`, `api / PrismaModule`, `api / QueueModule` |
 | 16 | `engine / DialogModule` | `apps/engine/src/dialog` | бизнес-логика | Транзакционная обработка событий диалога (`FOR UPDATE`), загрузка бота и окружения, провайдер `DialogEngine`, сохранение состояния, порты `MessengerGateway` и `HttpRequestLauncher` | `DialogEngine` (I/O-слой `DialogService`), `DialogContext` (`ContextRepository`) | `@chatbot/db`, `@chatbot/engine-core`, `@chatbot/model`, `@chatbot/vault`, `engine / InfraModule` |
 | 17 | `engine / DispatcherModule` | `apps/engine/src/dispatcher` | бизнес-логика | 16 воркеров BullMQ (`events-0..15`), диспетчеризация событий в `DialogService` | `EventDispatcher` | `@chatbot/model`, `@chatbot/queue`, `engine / DialogModule`, `engine / InfraModule` |
 | 18 | `@chatbot/model` | `packages/model` | базовый | Формат сценария (`formatVersion: 1`), схемы Zod 10 типов блоков, выходы блоков, типы событий, окружений, секретов и `NotImplementedError` | `Scenario`, `Block` (10 типов), `Transition`, `HttpHeader`, `ResponseMapping`, `Event`, `EventType`, `Channel`, `DialogState`, `EnvironmentVariable`, `EncryptedSecret` | *(нет)* |
@@ -69,6 +69,7 @@
 | 23 | `api / VaultModule` | `apps/api/src/vault` | базовый | Глобальный DI-провайдер `SecretVault` в `apps/api` | `SecretVault` (DI) | `@chatbot/vault` |
 | 24 | `api / QueueModule` | `apps/api/src/queue` | базовый | Глобальный DI-провайдер `EventQueue` (`EVENT_QUEUE`) в `apps/api` | *(инфраструктура очереди)* | `@chatbot/queue` |
 | 25 | `engine / InfraModule` | `apps/engine/src/infra` | базовый | Глобальный DI-модуль `apps/engine`: конфигурация (`config.ts`), `PRISMA`, `EVENT_QUEUE`, `SecretVault` | *(инфраструктура `apps/engine`)* | `@chatbot/db`, `@chatbot/queue`, `@chatbot/vault` |
+| 26 | `apps/mock-clinic` | `apps/mock-clinic/src` | внешняя система | Тестовый HTTP API записи к врачу (`node:http`, порт `4010`, брони в памяти); отдельное приложение, не импортирует код других модулей, сценарий обращается к нему HTTP-блоком | *(тестовая внешняя система)* | *(нет)* |
 
 ---
 
@@ -78,6 +79,8 @@
 - **Межпроцессные связи (не являются импортами кода):**
   - `apps/web` → `apps/api` — по HTTP (REST JSON + cookie-сессия);
   - `apps/api` → `apps/engine` — асинхронно через очередь событий BullMQ/Redis (`@chatbot/queue`, 16 разделов);
+  - `apps/api` → `apps/web` — события превью по Socket.IO; `apps/engine` → `apps/api` — через Redis pub/sub `preview:<chatId>`;
+  - `apps/engine` → `apps/mock-clinic` — HTTP-запросы блока (в production только хосты из `HTTP_ALLOWED_HOSTS`);
   - `apps/api` и `apps/engine` разделяют базу PostgreSQL (`@chatbot/db`).
 - **Корневые модули сборки NestJS:** `apps/api/src/app.module.ts` и `apps/engine/src/app.module.ts` (а также `apps/web/src/App.tsx` и `routes.tsx`) являются точками композиции приложений и не выносятся отдельными прикладными модулями на диаграмму.
 - **Глобальные DI-провайдеры:** `api / VaultModule` помечен `@Global()`, поэтому `api / ProjectModule`, `api / PublicationModule` и `api / TelegramModule` внедряют `SecretVault` через токен класса из `@chatbot/vault` без прямого импорта `VaultModule`.

@@ -315,7 +315,7 @@ export class DialogService {
 }
 
 // Формирует краткое описание ошибки (ZodError или обычного Error) для системного сообщения в превью
-function describeError(error: unknown): string {
+export function describeError(error: unknown): string {
   if (error && typeof error === 'object' && 'issues' in error && Array.isArray(error.issues)) {
     const first = error.issues[0] as { path?: Array<string | number>; message?: string } | undefined;
     if (first?.message) {
@@ -324,7 +324,7 @@ function describeError(error: unknown): string {
     }
   }
   if (error instanceof Error && error.message.trim() !== '') {
-    return error.message.split('\n')[0]!.trim().slice(0, 200);
+    return error.message.trim().split('\n')[0]!.slice(0, 200);
   }
   return 'неизвестная ошибка';
 }

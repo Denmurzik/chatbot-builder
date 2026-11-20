@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { maskSecrets } from './dialog.service';
+import { describeError, maskSecrets } from './dialog.service';
 
 describe('maskSecrets', () => {
   it('заменяет секрет во всех режимах', () => {
@@ -13,5 +13,11 @@ describe('maskSecrets', () => {
     const masks = [{ value: 'ab\ud800cd', mask: '***' }];
     expect(() => maskSecrets('http://x/?k=ab%EF%BF%BDcd', masks, 'URL')).not.toThrow();
     expect(maskSecrets('http://x/?k=ab%EF%BF%BDcd', masks, 'URL')).toBe('http://x/?k=***');
+  });
+});
+
+describe('describeError', () => {
+  it('берёт первую непустую строку сообщения', () => {
+    expect(describeError(new Error('\n\nпервая\nвторая'))).toBe('первая');
   });
 });

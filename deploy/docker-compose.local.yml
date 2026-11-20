@@ -1,6 +1,6 @@
 # Локальная проверка прод-стека без внешней сети Nginx Proxy Manager:
 # docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.local.yml \
-#   --env-file deploy/.env.prod.example up -d --build
+#   --env-file deploy/.env.prod up -d --build
 services:
   chatbot-web:
     ports:

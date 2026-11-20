@@ -46,9 +46,9 @@ DNS-запись домена должна указывать на сервер.
 
 ```bash
 docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.local.yml \
-  --env-file deploy/.env.prod.example up -d --build
+  --env-file deploy/.env.prod up -d --build
 curl http://127.0.0.1:18180/                 # HTML SPA
 curl -i http://127.0.0.1:18180/api/auth/me   # 401
 docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.local.yml \
-  --env-file deploy/.env.prod.example down -v
+  --env-file deploy/.env.prod down -v
 ```

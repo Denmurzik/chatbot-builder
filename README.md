@@ -138,3 +138,7 @@ pnpm --filter @chatbot/mock-clinic start
 - Заголовок `X-Mock-Fail: 500` имитирует ошибку 500, `X-Mock-Fail: timeout` — задержку ответа 30 с
 
 Пример сценария для работы с этим API: `packages/engine-core/examples/doctor-with-http.json` (требует переменные окружения сценария `API_URL=http://127.0.0.1:4010` и `API_KEY=test-key`).
+
+## Развёртывание на сервере
+
+Docker-образы, Compose для сервера за Nginx Proxy Manager и инструкция — в [`deploy/README.md`](deploy/README.md).

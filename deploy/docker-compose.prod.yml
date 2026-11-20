@@ -1,0 +1,109 @@
+name: chatbot-prod
+
+x-app-env: &app-env
+  NODE_ENV: production
+  DATABASE_URL: postgresql://chatbot:${POSTGRES_PASSWORD}@postgres:5432/chatbot
+  REDIS_URL: redis://redis:6379
+  VAULT_KEY: ${VAULT_KEY}
+  VAULT_HASH_KEY: ${VAULT_HASH_KEY}
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: chatbot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: chatbot
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U chatbot -d chatbot']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: ..
+      target: migrate
+    restart: 'no'
+    environment:
+      <<: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ..
+      target: api
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      JWT_SECRET: ${JWT_SECRET}
+      PUBLIC_URL: ${PUBLIC_URL}
+      TELEGRAM_POLLING: '0'
+      API_PORT: '3000'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  engine:
+    build:
+      context: ..
+      target: engine
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  # Тестовый API клиники; в окружении бота адрес — http://mock-clinic:4010
+  mock-clinic:
+    build:
+      context: ..
+      target: mock-clinic
+    restart: unless-stopped
+    environment:
+      MOCK_CLINIC_PORT: '4010'
+      MOCK_CLINIC_API_KEY: ${MOCK_CLINIC_API_KEY}
+
+  # Статика SPA и прокси /api/ и /webhook/ на api; порты хоста не публикуются
+  web:
+    build:
+      context: ..
+      target: web
+    restart: unless-stopped
+    depends_on:
+      - api
+    networks:
+      default:
+      proxy_manager_default:
+        aliases:
+          - chatbot-web
+
+networks:
+  proxy_manager_default:
+    external: true
+
+volumes:
+  postgres_data:
+  redis_data:

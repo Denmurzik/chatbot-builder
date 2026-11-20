@@ -23,6 +23,9 @@
 !/packages/
 !/.github/
 !/scripts/
+!/Dockerfile
+!/.dockerignore
+!/deploy/
 
 # Бэкапы Visual Paradigm
 *.bak_*
@@ -33,6 +36,7 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.prod.example
 coverage/
 *.tsbuildinfo
 

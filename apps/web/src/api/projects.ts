@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Scenario } from '@chatbot/model';
+import type { EnvVarInput, EnvVarView, Scenario } from '@chatbot/model';
 import { apiFetch } from './client';
 
 export interface ProjectSummary {
@@ -12,6 +12,7 @@ export interface ProjectDetails {
   id: string;
   name: string;
   scenario: Scenario;
+  environment: EnvVarView[];
   updatedAt: string;
 }
 
@@ -50,5 +51,22 @@ export function useSaveScenario(id: string) {
         body: JSON.stringify(scenario),
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects'] }),
+  });
+}
+
+export function useSaveEnvironment(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: EnvVarInput[]) =>
+      apiFetch<EnvVarView[]>(`/projects/${id}/environment`, {
+        method: 'PUT',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: (environment) => {
+      queryClient.setQueryData<ProjectDetails>(['projects', id], (prev) =>
+        prev ? { ...prev, environment } : prev,
+      );
+      void queryClient.invalidateQueries({ queryKey: ['projects', id] });
+    },
   });
 }

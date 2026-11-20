@@ -480,10 +480,12 @@ function ScenarioEditor({
       const saved = await saveScenario({ silent: true });
       if (!saved) return;
     }
+    // Если сценарий изменился, пока шла проверка, ошибки сервера устарели и на блоки не переносятся
+    const validatedRevision = revisionRef.current;
     try {
       const result = await validate.mutateAsync();
       setValidationErrors(result.errors);
-      setServerBlockErrors(result.errors);
+      if (revisionRef.current === validatedRevision) setServerBlockErrors(result.errors);
       setValidationOpen(true);
     } catch {
       toast.error(ru.validationPanel.checkError);

@@ -1,7 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Scenario, ValidationError } from '@chatbot/model';
 import { createQueryClient } from '@/app/queryClient';
 import { ru } from '@/i18n/ru';
@@ -22,7 +22,7 @@ vi.mock('@xyflow/react', async (importOriginal) => {
   };
 });
 
-beforeAll(() => {
+beforeEach(() => {
   setupCodeMirrorJsdom();
   vi.stubGlobal(
     'DOMMatrixReadOnly',
@@ -46,6 +46,7 @@ describe('ValidationPanel', () => {
     cleanup();
     setCenterMock.mockClear();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('отрисовывает список ошибок и предупреждений с иконками уровня', () => {
@@ -166,6 +167,7 @@ describe('EditorPage — проверка сценария', () => {
     cleanup();
     setCenterMock.mockClear();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('кнопка «Проверить» открывает панель, отмечает ошибки на блоке и центрирует холст по клику', async () => {

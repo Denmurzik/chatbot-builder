@@ -77,9 +77,11 @@ describe('Сквозная проверка: запись к врачу чере
   let server: http.Server;
   let apiUrl = '';
   const failureScenario = scenarioWithMockFail(doctorScenario);
+  let savedHttpAllowedHosts: string | undefined;
 
   beforeAll(async () => {
-    // Разрешаем запросы к локальному тестовому серверу без ограничений по хостам
+    // Сохраняем и удаляем ограничение хостов, чтобы запросы к локальному серверу проходили
+    savedHttpAllowedHosts = process.env.HTTP_ALLOWED_HOSTS;
     delete process.env.HTTP_ALLOWED_HOSTS;
     server = createClinicServer({ apiKey: CLINIC_API_KEY, timeoutDelayMs: 3000 });
     apiUrl = await listenOnFreePort(server);
@@ -89,6 +91,12 @@ describe('Сквозная проверка: запись к врачу чере
   afterAll(async () => {
     await env?.close();
     await closeServer(server);
+    // Восстанавливаем HTTP_ALLOWED_HOSTS после тестов
+    if (savedHttpAllowedHosts !== undefined) {
+      process.env.HTTP_ALLOWED_HOSTS = savedHttpAllowedHosts;
+    } else {
+      delete process.env.HTTP_ALLOWED_HOSTS;
+    }
   });
 
   function sentFor(botId: string, chatId: string): OutgoingMessage[] {
@@ -210,6 +218,12 @@ describe('Сквозная проверка: запись к врачу чере
     await waitFor(() => env.texts(bot.id, chatId).includes(API_ERROR_TEXT));
     const ctx = await contextOf(bot.id, chatId);
     expect(ctx.state).toBe('FINISHED');
+
+    // Проверяем строку http_request: статус ошибки и код ответа 500
+    const rows = await env.db.httpRequest.findMany({ where: { dialogContextId: ctx.id } });
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    const failRow = rows[rows.length - 1];
+    expect(failRow!.responseCode).toBe(500);
   });
 
   it('неверный ключ API ведёт по ветке ошибки', async () => {
@@ -229,6 +243,12 @@ describe('Сквозная проверка: запись к врачу чере
     await waitFor(() => env.texts(bot.id, chatId).includes(API_ERROR_TEXT));
     const ctx = await contextOf(bot.id, chatId);
     expect(ctx.state).toBe('FINISHED');
+
+    // Проверяем строку http_request: код ответа 401
+    const rows = await env.db.httpRequest.findMany({ where: { dialogContextId: ctx.id } });
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    const failRow = rows[rows.length - 1];
+    expect(failRow!.responseCode).toBe(401);
   });
 
   it('тайм-аут ответа API ведёт по ветке ошибки', async () => {
@@ -245,6 +265,12 @@ describe('Сквозная проверка: запись к врачу чере
     await waitFor(() => env.texts(bot.id, chatId).includes(API_ERROR_TEXT));
     const ctx = await contextOf(bot.id, chatId);
     expect(ctx.state).toBe('FINISHED');
+
+    // Проверяем строку http_request: статус TIMED_OUT
+    const rows = await env.db.httpRequest.findMany({ where: { dialogContextId: ctx.id } });
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    const failRow = rows[rows.length - 1];
+    expect(failRow!.status).toBe('TIMED_OUT');
   });
 
   it('два бота с разным окружением ведут независимые диалоги', async () => {

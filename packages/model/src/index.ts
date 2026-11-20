@@ -4,5 +4,6 @@ export * from './outputs';
 export * from './scenario';
 export * from './events';
 export * from './environment';
+export * from './bots';
 export * from './errors';
 export * from './variables';

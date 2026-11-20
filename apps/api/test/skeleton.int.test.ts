@@ -70,15 +70,6 @@ describe('Каркас модулей API (skeleton)', () => {
   it('методы PublicationController бросают NotImplementedError с именем класса и метода', () => {
     const controller = moduleRef.get(PublicationController);
 
-    expect(() => controller.createBot('proj-1', 'Бот')).toThrowError(
-      'PublicationController.createBot',
-    );
-    expect(() => controller.setEnvironment('bot-1', [])).toThrowError(
-      'PublicationController.setEnvironment',
-    );
-    expect(() => controller.connectMessenger('bot-1', 'TELEGRAM', 'tok')).toThrowError(
-      'PublicationController.connectMessenger',
-    );
     expect(() => controller.publish('proj-1', 'bot-1')).toThrowError(
       'PublicationController.publish',
     );

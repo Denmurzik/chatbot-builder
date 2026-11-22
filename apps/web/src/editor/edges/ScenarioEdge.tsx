@@ -86,6 +86,7 @@ export function ScenarioEdge({
   sourcePosition,
   targetPosition,
   selected,
+  style,
 }: EdgeProps) {
   const { insertOnEdge, removeEdge } = useEditorActions();
   const { hovered, handlers } = useHoverDelay(150);
@@ -110,9 +111,11 @@ export function ScenarioEdge({
     });
   }
 
-  // Стрелка рисуется здесь же: обычная и акцентная (у выделенной связи) — разные маркеры
-  const markerId = `arrow-${id.replace(/[^a-zA-Z0-9_-]/g, '_')}${selected ? '-selected' : ''}`;
-  const color = selected ? ARROW_COLOR_SELECTED : ARROW_COLOR;
+  // Стрелка рисуется здесь же: обычная, акцентная (превью) и выделенная — разные маркеры
+  const customStroke = typeof style?.stroke === 'string' ? style.stroke : undefined;
+  const color = selected ? ARROW_COLOR_SELECTED : (customStroke ?? ARROW_COLOR);
+  const markerSuffix = selected ? '-selected' : customStroke ? '-accent' : '';
+  const markerId = `arrow-${id.replace(/[^a-zA-Z0-9_-]/g, '_')}${markerSuffix}`;
 
   return (
     <g {...handlers}>
@@ -135,7 +138,7 @@ export function ScenarioEdge({
         path={path}
         markerEnd={`url(#${markerId})`}
         interactionWidth={24}
-        style={{ stroke: color, strokeWidth: selected ? 2.5 : 1.5 }}
+        style={{ ...style, stroke: color, strokeWidth: selected ? 2.5 : (style?.strokeWidth ?? 1.5) }}
       />
       <EdgeLabelRenderer>
         <div

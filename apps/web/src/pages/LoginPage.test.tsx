@@ -58,4 +58,24 @@ describe('LoginPage', () => {
     await fillAndSubmit();
     await waitFor(() => expect(screen.getByText('страница проектов')).toBeTruthy());
   });
+
+  it('отображает логотип, переключатель темы и корректные a11y-атрибуты полей', () => {
+    renderLogin();
+    expect(screen.getByText(ru.appName)).toBeTruthy();
+    expect(
+      screen.getByRole('button', {
+        name: new RegExp(`${ru.theme.switchToLight}|${ru.theme.switchToDark}`),
+      }),
+    ).toBeTruthy();
+
+    const emailInput = screen.getByLabelText(ru.auth.email);
+    expect(emailInput.getAttribute('id')).toBe('auth-email');
+    expect(emailInput.getAttribute('name')).toBe('email');
+    expect(emailInput.getAttribute('autocomplete')).toBe('email');
+
+    const passwordInput = screen.getByLabelText(ru.auth.password);
+    expect(passwordInput.getAttribute('id')).toBe('auth-password');
+    expect(passwordInput.getAttribute('name')).toBe('password');
+    expect(passwordInput.getAttribute('autocomplete')).toBe('current-password');
+  });
 });

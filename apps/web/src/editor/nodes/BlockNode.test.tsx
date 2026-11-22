@@ -152,12 +152,12 @@ describe('BlockNode', () => {
     expect(screen.getAllByRole('button', { name: ru.editor.addNextBlock })).toHaveLength(1);
   });
 
-  it('у HTTP-запроса (двойная рамка) ручки выходов лежат внутри блока без лишнего отступа', () => {
+  it('у HTTP-запроса одиночная рамка, пилюля метода и моноширинный URL', () => {
     const { container } = renderBlockNode('h1', {
       type: 'HTTP_REQUEST',
       title: 'API',
-      method: 'GET',
-      url: 'https://example.com',
+      method: 'POST',
+      url: 'https://example.com/api/v1/slots',
       headers: [],
       body: '',
       variableName: 'res',
@@ -169,10 +169,31 @@ describe('BlockNode', () => {
       suspendText: null,
       responseMappings: [],
     });
-    const shape = container.querySelector('[data-block-shape="integration"]')!;
-    // Ручки — потомки самого блока (внешней рамки), без промежуточной обёртки с рамкой
+    const shape = container.querySelector<HTMLElement>('[data-block-shape="integration"]')!;
+    // Одиночная рамка без border-2 и без inset-двойной рамки
+    expect(shape.className).toContain('border');
+    expect(shape.className).not.toContain('border-2');
+    expect(shape.className).not.toContain('shadow-[inset_');
+    expect(shape.style.borderTopWidth).toBe('3px');
+    // Ручки — потомки самого блока, без промежуточной обёртки с рамкой
     expect(shape.querySelectorAll('.react-flow__handle.source').length).toBeGreaterThan(0);
     expect(shape.querySelector(':scope > div.rounded-md.border')).toBeNull();
+
+    const badge = screen.getByTestId('http-method-badge');
+    expect(badge.textContent).toBe('POST');
+    expect(badge.className).toContain('sky');
+    const urlEl = screen.getByText('https://example.com/api/v1/slots');
+    expect(urlEl.className).toContain('font-mono');
+  });
+
+  it('выделенный блок получает цветное свечение по цвету категории', () => {
+    const { container } = renderBlockNode(
+      'msg_sel',
+      { type: 'TEXT_MESSAGE', title: 'Привет', text: 'Текст' },
+      { selected: true },
+    );
+    const card = container.querySelector<HTMLElement>('[data-block-shape="talk"]')!;
+    expect(card.style.boxShadow).toContain('0 0 0 1px');
   });
 
   it('меню выделенного блока вызывает «Дублировать» и «Удалить»', () => {

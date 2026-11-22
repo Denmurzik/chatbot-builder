@@ -112,6 +112,9 @@ describe('Projects API (интеграционные тесты)', () => {
         name: 'Запись к врачу',
         updatedAt: expect.any(String),
         botsCount: 0,
+        blocksCount: 1,
+        publishedBotsCount: 0,
+        messengers: [],
       },
     ]);
 
@@ -469,6 +472,9 @@ describe('Projects API (интеграционные тесты)', () => {
         name: 'Исходный',
         updatedAt: expect.any(String),
         botsCount: 2,
+        blocksCount: 1,
+        publishedBotsCount: 0,
+        messengers: [],
       },
     ]);
 
@@ -482,6 +488,9 @@ describe('Projects API (интеграционные тесты)', () => {
       name: 'Новое название',
       updatedAt: expect.any(String),
       botsCount: 2,
+      blocksCount: 1,
+      publishedBotsCount: 0,
+      messengers: [],
     });
 
     // Чужой и несуществующий проект → 404
@@ -616,5 +625,99 @@ describe('Projects API (интеграционные тесты)', () => {
     // Соседний проект и его preview-контекст не затронуты
     expect(await db.prisma.project.findUnique({ where: { id: keepProjectId } })).not.toBeNull();
     expect(await db.prisma.dialogContext.findUnique({ where: { id: keepPreviewDialog.id } })).not.toBeNull();
+  });
+
+  it('ProjectSummary: blocksCount, publishedBotsCount и messengers в GET /api/projects и PATCH /api/projects/:id', async () => {
+    const owner = await createAuthenticatedAgent('metrics-owner@example.com');
+
+    const proj1 = await owner.post('/api/projects').send({ name: 'Основной проект' }).expect(201);
+    const proj1Id = proj1.body.id as string;
+
+    const scenario3Blocks: Scenario = {
+      formatVersion: 1,
+      blocks: [
+        { id: 'entry', type: 'ENTRY_POINT', title: 'Старт', x: 0, y: 0 },
+        { id: 'msg1', type: 'TEXT_MESSAGE', title: 'Ответ', x: 180, y: 0, text: 'Привет' },
+        { id: 'exit', type: 'EXIT_POINT', title: 'Финиш', x: 360, y: 0 },
+      ],
+      transitions: [
+        { source: { blockId: 'entry', output: 'default' }, target: 'msg1' },
+        { source: { blockId: 'msg1', output: 'default' }, target: 'exit' },
+      ],
+    };
+    await owner.put(`/api/projects/${proj1Id}/scenario`).send(scenario3Blocks).expect(200);
+
+    // 3 бота: 2 опубликованных (с подключениями VK и TELEGRAM, включая дубль TELEGRAM) и 1 черновик
+    const bot1 = await owner.post(`/api/projects/${proj1Id}/bots`).send({ name: 'Бот 1' }).expect(201);
+    const bot2 = await owner.post(`/api/projects/${proj1Id}/bots`).send({ name: 'Бот 2' }).expect(201);
+    await owner.post(`/api/projects/${proj1Id}/bots`).send({ name: 'Бот 3' }).expect(201);
+
+    await db.prisma.bot.updateMany({
+      where: { id: { in: [bot1.body.id as string, bot2.body.id as string] } },
+      data: { status: 'PUBLISHED', publishedAt: new Date() },
+    });
+
+    const vault = SecretVault.fromEnv();
+    const attachConnection = async (botId: string, messenger: 'TELEGRAM' | 'VK', rawToken: string) => {
+      const { cipherText, mask } = vault.encrypt(rawToken, tokenAad(botId, messenger));
+      await db.prisma.messengerConnection.create({
+        data: {
+          botId,
+          messenger,
+          tokenCipher: cipherText,
+          tokenMask: mask,
+          tokenHash: vault.hash(rawToken),
+        },
+      });
+    };
+
+    // Подключаем VK раньше TELEGRAM, чтобы проверить сортировку и дедупликацию
+    await attachConnection(bot1.body.id as string, 'VK', 'vk-token-metrics-1');
+    await attachConnection(bot1.body.id as string, 'TELEGRAM', 'tg-token-metrics-1');
+    await attachConnection(bot2.body.id as string, 'TELEGRAM', 'tg-token-metrics-2');
+
+    // Второй проект: 1 блок (emptyScenario), 1 неопубликованный бот с подключением VK
+    const proj2 = await owner.post('/api/projects').send({ name: 'Второй проект' }).expect(201);
+    const proj2Id = proj2.body.id as string;
+    const proj2Bot = await owner.post(`/api/projects/${proj2Id}/bots`).send({ name: 'Бот VK' }).expect(201);
+    await attachConnection(proj2Bot.body.id as string, 'VK', 'vk-token-metrics-2');
+
+    const listRes = await owner.get('/api/projects').expect(200);
+    expect(listRes.body).toEqual(
+      expect.arrayContaining([
+        {
+          id: proj1Id,
+          name: 'Основной проект',
+          updatedAt: expect.any(String),
+          botsCount: 3,
+          blocksCount: 3,
+          publishedBotsCount: 2,
+          messengers: ['TELEGRAM', 'VK'],
+        },
+        {
+          id: proj2Id,
+          name: 'Второй проект',
+          updatedAt: expect.any(String),
+          botsCount: 1,
+          blocksCount: 1,
+          publishedBotsCount: 0,
+          messengers: ['VK'],
+        },
+      ]),
+    );
+
+    const renamedRes = await owner
+      .patch(`/api/projects/${proj1Id}`)
+      .send({ name: 'Основной проект v2' })
+      .expect(200);
+    expect(renamedRes.body).toEqual({
+      id: proj1Id,
+      name: 'Основной проект v2',
+      updatedAt: expect.any(String),
+      botsCount: 3,
+      blocksCount: 3,
+      publishedBotsCount: 2,
+      messengers: ['TELEGRAM', 'VK'],
+    });
   });
 });

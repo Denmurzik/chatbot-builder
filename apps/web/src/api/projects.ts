@@ -7,6 +7,9 @@ export interface ProjectSummary {
   name: string;
   updatedAt: string;
   botsCount?: number;
+  blocksCount?: number;
+  publishedBotsCount?: number;
+  messengers?: ('TELEGRAM' | 'VK')[];
 }
 
 export interface ProjectDetails {

@@ -13,8 +13,10 @@ import {
   useProjects,
   useRenameProject,
 } from '@/api/projects';
+import { BrandLogo } from '@/components/BrandLogo';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
-import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -74,9 +76,9 @@ function CreateProjectDialog(props: { open: boolean; onOpenChange: (open: boolea
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{ru.projects.nameLabel}</FormLabel>
+                  <FormLabel htmlFor="create-project-name">{ru.projects.nameLabel}</FormLabel>
                   <FormControl>
-                    <Input {...field} />
+                    <Input {...field} id="create-project-name" name="name" autoComplete="off" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -131,9 +133,9 @@ function RenameProjectDialog(props: { project: ProjectSummary; onClose: () => vo
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{ru.projects.nameLabel}</FormLabel>
+                  <FormLabel htmlFor="rename-project-name">{ru.projects.nameLabel}</FormLabel>
                   <FormControl>
-                    <Input {...field} />
+                    <Input {...field} id="rename-project-name" name="name" autoComplete="off" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -211,13 +213,10 @@ export function ProjectsPage() {
 
   return (
     <div className="mx-auto flex min-h-svh max-w-4xl flex-col gap-6 p-6">
-      <header className="flex items-center justify-between gap-4">
-        <h1 className="text-xl font-semibold">{ru.projects.title}</h1>
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
+        <BrandLogo size={24} showWordmark className="text-base" />
         <div className="flex items-center gap-2">
-          <Button onClick={() => setDialogOpen(true)}>
-            <Plus />
-            {ru.projects.create}
-          </Button>
+          <ThemeToggle />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline">{author?.email}</Button>
@@ -234,6 +233,14 @@ export function ProjectsPage() {
         </div>
       </header>
 
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-xl font-semibold">{ru.projects.title}</h1>
+        <Button onClick={() => setDialogOpen(true)}>
+          <Plus />
+          {ru.projects.create}
+        </Button>
+      </div>
+
       {isLoading ? <p className="text-muted-foreground">{ru.common.loading}</p> : null}
       {isError ? <p className="text-destructive">{ru.projects.loadError}</p> : null}
       {projects && projects.length === 0 ? (
@@ -244,51 +251,99 @@ export function ProjectsPage() {
       ) : null}
       {projects && projects.length > 0 ? (
         <ul className="grid gap-3 sm:grid-cols-2">
-          {projects.map((project) => (
-            <li key={project.id}>
-              <Card className="relative transition-colors hover:bg-accent">
-                <Link
-                  to={`/projects/${project.id}`}
-                  className="block rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                >
-                  <CardHeader className="pr-14">
-                    <CardTitle>{project.name}</CardTitle>
-                    <CardDescription>
-                      {ru.projects.updatedAt}: {new Date(project.updatedAt).toLocaleString('ru-RU')}
-                    </CardDescription>
-                  </CardHeader>
-                </Link>
-                <div className="absolute top-3 right-3">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label={ru.projects.actionsLabel(project.name)}
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <MoreVertical className="size-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onSelect={() => setRenamingProject(project)}>
-                        <Pencil className="size-4" />
-                        {ru.projects.rename}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onSelect={() => setDeletingProject(project)}
-                      >
-                        <Trash2 className="size-4" />
-                        {ru.projects.delete}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </Card>
-            </li>
-          ))}
+          {projects.map((project) => {
+            const isPublished = (project.publishedBotsCount ?? 0) > 0;
+            return (
+              <li key={project.id}>
+                <Card className="relative transition-all hover:-translate-y-0.5 hover:border-[var(--brand)]/50 hover:shadow-sm">
+                  <Link
+                    to={`/projects/${project.id}`}
+                    className="block rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  >
+                    <CardHeader className="pr-14 pb-3">
+                      <CardTitle className="truncate">{project.name}</CardTitle>
+                      <CardDescription>
+                        {ru.projects.updatedAt}:{' '}
+                        {new Date(project.updatedAt).toLocaleString('ru-RU')}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex flex-wrap items-center gap-2 pt-0">
+                      {isPublished ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                          <span className="relative flex size-2" aria-hidden="true">
+                            <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500 opacity-75" />
+                            <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+                          </span>
+                          {ru.projects.publishedBadge}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                          <span
+                            className="inline-flex size-2 rounded-full bg-muted-foreground/50"
+                            aria-hidden="true"
+                          />
+                          {ru.projects.draftBadge}
+                        </span>
+                      )}
+                      {typeof project.blocksCount === 'number' ? (
+                        <span className="inline-flex items-center rounded-md bg-secondary px-2 py-0.5 font-mono text-xs text-secondary-foreground">
+                          {ru.projects.blocksCount(project.blocksCount)}
+                        </span>
+                      ) : null}
+                      {project.messengers?.map((messenger) =>
+                        messenger === 'TELEGRAM' ? (
+                          <span
+                            key={messenger}
+                            className="inline-flex items-center rounded-md border border-[#229ED9]/30 bg-[#229ED9]/12 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-[#167BAE] dark:text-[#4BB8EC]"
+                          >
+                            TG
+                          </span>
+                        ) : (
+                          <span
+                            key={messenger}
+                            className="inline-flex items-center rounded-md border border-[#0077FF]/30 bg-[#0077FF]/12 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-[#005FCC] dark:text-[#5CA3FF]"
+                          >
+                            VK
+                          </span>
+                        ),
+                      )}
+                    </CardContent>
+                  </Link>
+                  <div className="absolute top-3 right-3">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={ru.projects.actionsLabel(project.name)}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                          }}
+                        >
+                          <MoreVertical className="size-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={() => setRenamingProject(project)}>
+                          <Pencil className="size-4" />
+                          {ru.projects.rename}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onSelect={() => setDeletingProject(project)}
+                        >
+                          <Trash2 className="size-4" />
+                          {ru.projects.delete}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </Card>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
 

@@ -381,4 +381,48 @@ describe('Публикация и переопубликация (интегра
     );
     expect(await redis.keys(`${queuePrefix}:events-*:tg-*`)).toHaveLength(1);
   });
+
+  it('публикация возвращает предупреждение missingEnvVariable для окружения бота, но не блокирует публикацию', async () => {
+    const { agent, projectId, botId, publishUrl } = await setup({ valid: false });
+    const envScenario: Scenario = {
+      formatVersion: 1,
+      blocks: [
+        { id: 'entry', type: 'ENTRY_POINT', title: 'Старт', x: 0, y: 0 },
+        {
+          id: 'msg',
+          type: 'TEXT_MESSAGE',
+          title: 'Привет',
+          x: 100,
+          y: 0,
+          text: 'API: {{env.CLINIC_URL}}',
+        },
+        { id: 'exit', type: 'EXIT_POINT', title: 'Конец', x: 200, y: 0 },
+      ],
+      transitions: [
+        { source: { blockId: 'entry', output: 'default' }, target: 'msg' },
+        { source: { blockId: 'msg', output: 'default' }, target: 'exit' },
+      ],
+    };
+    await agent.put(`/api/projects/${projectId}/scenario`).send(envScenario).expect(200);
+
+    const firstPub = await agent.post(publishUrl).expect(200);
+    expect(firstPub.body.bot.status).toBe('PUBLISHED');
+    expect(firstPub.body.warnings).toEqual([
+      {
+        rule: 'missingEnvVariable',
+        severity: 'WARNING',
+        blockId: 'msg',
+        message: 'Переменная окружения «env.CLINIC_URL» не задана в окружении',
+      },
+    ]);
+
+    // После добавления переменной в окружение бота предупреждение исчезает
+    await agent
+      .put(`/api/projects/${projectId}/bots/${botId}/environment`)
+      .send([{ name: 'CLINIC_URL', value: 'https://clinic.example.com', secret: false }])
+      .expect(200);
+
+    const secondPub = await agent.post(publishUrl).expect(200);
+    expect(secondPub.body.warnings).toEqual([]);
+  });
 });

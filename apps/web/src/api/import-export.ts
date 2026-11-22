@@ -1,6 +1,12 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ApiError, apiFetch, type ApiIssue } from './client';
 
+export type ExportFormat = 'json' | 'yaml';
+
+export type ImportScenarioInput =
+  | { format: 'json'; payload: unknown }
+  | { format: 'yaml'; text: string };
+
 export interface ImportScenarioResponse {
   updatedAt: string;
   secretsToFill: number;
@@ -30,12 +36,13 @@ export function parseContentDispositionFileName(header: string | null, fallback:
   return rawName || fallback;
 }
 
-// Запрашивает JSON-файл экспорта сценария с сервера
+// Запрашивает файл экспорта сценария с сервера в формате JSON или YAML
 export async function exportScenarioFile(
   projectId: string,
-  fallbackName = 'scenario.json',
+  format: ExportFormat = 'json',
+  fallbackName = `scenario.${format}`,
 ): Promise<{ blob: Blob; fileName: string }> {
-  const response = await fetch(`/api/projects/${projectId}/export`, {
+  const response = await fetch(`/api/projects/${projectId}/export?format=${format}`, {
     method: 'GET',
     credentials: 'include',
   });
@@ -76,25 +83,46 @@ export function triggerFileDownload(blob: Blob, fileName: string): void {
   }
 }
 
+// Скачивает сценарий проекта в выбранном формате
+export async function exportScenario(
+  projectId: string,
+  format: ExportFormat = 'json',
+  projectName?: string,
+): Promise<string> {
+  const fallbackName = `${projectName?.trim() || 'scenario'}.${format}`;
+  const { blob, fileName } = await exportScenarioFile(projectId, format, fallbackName);
+  triggerFileDownload(blob, fileName);
+  return fileName;
+}
+
 export function useExportScenario(projectId: string, projectName?: string) {
-  const fallbackName = `${projectName?.trim() || 'scenario'}.json`;
   return useMutation({
-    mutationFn: async () => {
-      const { blob, fileName } = await exportScenarioFile(projectId, fallbackName);
-      triggerFileDownload(blob, fileName);
-      return fileName;
-    },
+    mutationFn: (format: ExportFormat = 'json') => exportScenario(projectId, format, projectName),
+  });
+}
+
+// Отправляет импортируемый сценарий на сервер (JSON или сырой YAML)
+export function importScenario(
+  projectId: string,
+  input: ImportScenarioInput,
+): Promise<ImportScenarioResponse> {
+  if (input.format === 'yaml') {
+    return apiFetch<ImportScenarioResponse>(`/projects/${projectId}/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/yaml; charset=utf-8' },
+      body: input.text,
+    });
+  }
+  return apiFetch<ImportScenarioResponse>(`/projects/${projectId}/import`, {
+    method: 'POST',
+    body: JSON.stringify(input.payload),
   });
 }
 
 export function useImportScenario(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: unknown) =>
-      apiFetch<ImportScenarioResponse>(`/projects/${projectId}/import`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      }),
+    mutationFn: (input: ImportScenarioInput) => importScenario(projectId, input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects'], exact: true }),
   });
 }

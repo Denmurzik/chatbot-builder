@@ -1,6 +1,6 @@
 import { BadGatewayException, Injectable } from '@nestjs/common';
 import { GrammyError } from 'grammy';
-import { MessengerAdminPort } from '../publication/messenger-admin.port';
+import { MessengerAdminPort } from '../common/messenger-admin.port';
 import { TelegramApiFactory } from './telegram-api.factory';
 import { TelegramWebhookService } from './telegram-webhook.service';
 

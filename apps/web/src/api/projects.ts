@@ -6,6 +6,7 @@ export interface ProjectSummary {
   id: string;
   name: string;
   updatedAt: string;
+  botsCount?: number;
 }
 
 export interface ProjectDetails {
@@ -30,6 +31,29 @@ export function useCreateProject() {
       apiFetch<{ id: string; name: string; scenario: Scenario }>('/projects', {
         method: 'POST',
         body: JSON.stringify({ name }),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects'] }),
+  });
+}
+
+export function useRenameProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      apiFetch<ProjectSummary>(`/projects/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name }),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects'] }),
+  });
+}
+
+export function useDeleteProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<void>(`/projects/${id}`, {
+        method: 'DELETE',
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects'] }),
   });

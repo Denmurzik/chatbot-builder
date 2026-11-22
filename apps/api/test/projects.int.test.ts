@@ -1,21 +1,30 @@
 import 'reflect-metadata';
 import { emptyScenario, type Scenario } from '@chatbot/model';
+import { SecretVault, tokenAad } from '@chatbot/vault';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppModule } from '../src/app.module';
+import { MessengerAdminPort } from '../src/common/messenger-admin.port';
 import { configureApp } from '../src/configure-app';
 import { createIsolatedTestDb, type IsolatedTestDb } from './test-db';
 
 describe('Projects API (интеграционные тесты)', () => {
   let db: IsolatedTestDb;
   let app: INestApplication;
+  const messengerAdminMock = {
+    connect: vi.fn().mockResolvedValue(undefined),
+    disconnect: vi.fn().mockResolvedValue(undefined),
+    verifyToken: vi.fn().mockResolvedValue({ username: 'test_bot' }),
+  };
   const prevEnv = {
     DATABASE_URL: process.env.DATABASE_URL,
     JWT_SECRET: process.env.JWT_SECRET,
     TELEGRAM_POLLING: process.env.TELEGRAM_POLLING,
     NODE_ENV: process.env.NODE_ENV,
+    VAULT_KEY: process.env.VAULT_KEY,
+    VAULT_HASH_KEY: process.env.VAULT_HASH_KEY,
   };
 
   beforeAll(async () => {
@@ -24,10 +33,15 @@ describe('Projects API (интеграционные тесты)', () => {
     process.env.JWT_SECRET = 'test-jwt-secret-key-for-projects-tests';
     process.env.TELEGRAM_POLLING = '0';
     process.env.NODE_ENV = 'test';
+    process.env.VAULT_KEY ??= Buffer.alloc(32, 1).toString('base64');
+    process.env.VAULT_HASH_KEY ??= Buffer.alloc(32, 2).toString('base64');
 
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(MessengerAdminPort)
+      .useValue(messengerAdminMock)
+      .compile();
 
     app = moduleRef.createNestApplication();
     configureApp(app);
@@ -37,14 +51,16 @@ describe('Projects API (интеграционные тесты)', () => {
   afterAll(async () => {
     await app?.close();
     await db?.destroy();
-    process.env.DATABASE_URL = prevEnv.DATABASE_URL;
-    process.env.JWT_SECRET = prevEnv.JWT_SECRET;
-    process.env.TELEGRAM_POLLING = prevEnv.TELEGRAM_POLLING;
-    process.env.NODE_ENV = prevEnv.NODE_ENV;
+    for (const [key, value] of Object.entries(prevEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   });
 
   beforeEach(async () => {
     await db.truncateAll();
+    vi.clearAllMocks();
+    messengerAdminMock.disconnect.mockResolvedValue(undefined);
   });
 
   async function createAuthenticatedAgent(email: string) {
@@ -93,6 +109,7 @@ describe('Projects API (интеграционные тесты)', () => {
         id: created.body.id,
         name: 'Запись к врачу',
         updatedAt: expect.any(String),
+        botsCount: 0,
       },
     ]);
 
@@ -426,5 +443,176 @@ describe('Projects API (интеграционные тесты)', () => {
       value: 'public-value',
       secret: false,
     });
+  });
+
+  it('UC-A-04: botsCount в списке, PATCH переименование (свой/чужой/пустое имя) и защита без cookie', async () => {
+    const server = app.getHttpServer();
+    await request(server).patch('/api/projects/non-existent').send({ name: 'Новое' }).expect(401);
+    await request(server).delete('/api/projects/non-existent').expect(401);
+
+    const owner = await createAuthenticatedAgent('rename-owner@example.com');
+    const other = await createAuthenticatedAgent('rename-other@example.com');
+
+    const created = await owner.post('/api/projects').send({ name: 'Исходный' }).expect(201);
+    const projectId = created.body.id as string;
+
+    // Добавляем 2 бота и проверяем botsCount в списке
+    await owner.post(`/api/projects/${projectId}/bots`).send({ name: 'Бот 1' }).expect(201);
+    await owner.post(`/api/projects/${projectId}/bots`).send({ name: 'Бот 2' }).expect(201);
+
+    const listRes = await owner.get('/api/projects').expect(200);
+    expect(listRes.body).toEqual([
+      {
+        id: projectId,
+        name: 'Исходный',
+        updatedAt: expect.any(String),
+        botsCount: 2,
+      },
+    ]);
+
+    // Успешное переименование владельцем
+    const renamed = await owner
+      .patch(`/api/projects/${projectId}`)
+      .send({ name: '  Новое название  ' })
+      .expect(200);
+    expect(renamed.body).toEqual({
+      id: projectId,
+      name: 'Новое название',
+      updatedAt: expect.any(String),
+      botsCount: 2,
+    });
+
+    // Чужой и несуществующий проект → 404
+    await other.patch(`/api/projects/${projectId}`).send({ name: 'Взлом' }).expect(404);
+    await owner
+      .patch('/api/projects/00000000-0000-0000-0000-000000000000')
+      .send({ name: 'Нет' })
+      .expect(404);
+
+    // Пустое имя → 400
+    const badRename = await owner.patch(`/api/projects/${projectId}`).send({ name: '   ' }).expect(400);
+    expect(badRename.body).toMatchObject({
+      message: expect.any(String),
+      issues: expect.arrayContaining([
+        expect.objectContaining({ path: 'name', message: expect.any(String) }),
+      ]),
+    });
+  });
+
+  it('UC-A-04: DELETE каскадно удаляет ботов, подключения, диалоги (бота и превью), HTTP-запросы и отключает Telegram', async () => {
+    const owner = await createAuthenticatedAgent('delete-owner@example.com');
+    const other = await createAuthenticatedAgent('delete-other@example.com');
+
+    const proj = await owner.post('/api/projects').send({ name: 'На удаление' }).expect(201);
+    const keepProj = await owner.post('/api/projects').send({ name: 'Оставить' }).expect(201);
+    const projectId = proj.body.id as string;
+    const keepProjectId = keepProj.body.id as string;
+
+    // Чужой и несуществующий проект → 404
+    await other.delete(`/api/projects/${projectId}`).expect(404);
+    await owner.delete('/api/projects/00000000-0000-0000-0000-000000000000').expect(404);
+
+    // Создаём бота с подключением, диалогом и HTTP-запросом (вкл. currentRequestId)
+    const bot = await owner.post(`/api/projects/${projectId}/bots`).send({ name: 'Бот 1' }).expect(201);
+    const botId = bot.body.id as string;
+    const rawToken = '123456:TEST-CASCADE-DELETE-TOKEN';
+    const vault = SecretVault.fromEnv();
+    const { cipherText, mask } = vault.encrypt(rawToken, tokenAad(botId, 'TELEGRAM'));
+    await db.prisma.messengerConnection.create({
+      data: {
+        botId,
+        messenger: 'TELEGRAM',
+        tokenCipher: cipherText,
+        tokenMask: mask,
+        tokenHash: vault.hash(rawToken),
+      },
+    });
+
+    const botDialog = await db.prisma.dialogContext.create({
+      data: {
+        botId,
+        chatId: 'chat-100',
+        userId: 'user-100',
+        channel: 'MESSENGER',
+        state: 'WAITING_EXTERNAL',
+        variables: {},
+      },
+    });
+    const botReq = await db.prisma.httpRequest.create({
+      data: {
+        dialogContextId: botDialog.id,
+        blockId: 'req',
+        method: 'GET',
+        url: 'https://example.com',
+        headers: [],
+        body: '',
+        status: 'SENT',
+      },
+    });
+    await db.prisma.dialogContext.update({
+      where: { id: botDialog.id },
+      data: { currentRequestId: botReq.id },
+    });
+
+    // Создаём preview-контекст с HTTP-запросом для удаляемого проекта и для соседнего проекта
+    const previewDialog = await db.prisma.dialogContext.create({
+      data: {
+        botId: null,
+        chatId: `preview:${projectId}:sess-1`,
+        userId: 'preview-user',
+        channel: 'PREVIEW',
+        state: 'WAITING_USER',
+        variables: {},
+      },
+    });
+    const previewReq = await db.prisma.httpRequest.create({
+      data: {
+        dialogContextId: previewDialog.id,
+        blockId: 'req',
+        method: 'POST',
+        url: 'https://example.com/preview',
+        headers: [],
+        body: '{}',
+        status: 'SUCCEEDED',
+      },
+    });
+    await db.prisma.dialogContext.update({
+      where: { id: previewDialog.id },
+      data: { currentRequestId: previewReq.id },
+    });
+
+    const keepPreviewDialog = await db.prisma.dialogContext.create({
+      data: {
+        botId: null,
+        chatId: `preview:${keepProjectId}:sess-1`,
+        userId: 'preview-user',
+        channel: 'PREVIEW',
+        state: 'WAITING_USER',
+        variables: {},
+      },
+    });
+
+    // Даже если внешнее отключение упадёт — HTTP 204 и БД очищена
+    messengerAdminMock.disconnect.mockRejectedValueOnce(new Error('Telegram timeout'));
+
+    await owner.delete(`/api/projects/${projectId}`).expect(204);
+
+    expect(messengerAdminMock.disconnect).toHaveBeenCalledTimes(1);
+    expect(messengerAdminMock.disconnect).toHaveBeenCalledWith(botId, rawToken);
+
+    // Все записи удаляемого проекта очищены
+    expect(await db.prisma.project.findUnique({ where: { id: projectId } })).toBeNull();
+    expect(await db.prisma.bot.count({ where: { projectId } })).toBe(0);
+    expect(await db.prisma.messengerConnection.count({ where: { botId } })).toBe(0);
+    expect(
+      await db.prisma.dialogContext.count({ where: { id: { in: [botDialog.id, previewDialog.id] } } }),
+    ).toBe(0);
+    expect(
+      await db.prisma.httpRequest.count({ where: { id: { in: [botReq.id, previewReq.id] } } }),
+    ).toBe(0);
+
+    // Соседний проект и его preview-контекст не затронуты
+    expect(await db.prisma.project.findUnique({ where: { id: keepProjectId } })).not.toBeNull();
+    expect(await db.prisma.dialogContext.findUnique({ where: { id: keepPreviewDialog.id } })).not.toBeNull();
   });
 });

@@ -1,4 +1,4 @@
-import type { Scenario, ValidationError } from '@chatbot/model';
+import { environmentSchema, type Scenario, type ValidationError } from '@chatbot/model';
 import {
   Controller,
   HttpCode,
@@ -30,7 +30,7 @@ export class ValidationController {
   ): Promise<{ errors: ValidationError[] }> {
     const project = await this.prisma.client.project.findFirst({
       where: { id: projectId, authorId: author.id },
-      select: { scenario: true },
+      select: { scenario: true, environment: true },
     });
 
     if (!project) {
@@ -38,6 +38,8 @@ export class ValidationController {
     }
 
     const scenario = project.scenario as unknown as Scenario;
-    return { errors: this.validator.validate(scenario) };
+    const parsedEnv = environmentSchema.safeParse(project.environment);
+    const envVars = parsedEnv.success ? parsedEnv.data : [];
+    return { errors: this.validator.validate(scenario, envVars) };
   }
 }

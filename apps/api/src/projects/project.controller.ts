@@ -1,10 +1,21 @@
 import {
   envVarInputListSchema,
-  NotImplementedError,
   type EnvVarInput,
   type EnvVarView,
 } from '@chatbot/model';
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Put,
+  UseGuards,
+} from '@nestjs/common';
 import { z } from 'zod';
 import { type AuthenticatedAuthor, CurrentAuthor } from '../auth/current-author.decorator';
 import { JwtGuard } from '../auth/jwt.guard';
@@ -17,7 +28,7 @@ import {
 } from './project.service';
 import { ScenarioEditor } from './scenario-editor';
 
-const createProjectBodySchema = z.object({
+const projectNameBodySchema = z.object({
   name: z
     .string()
     .trim()
@@ -25,7 +36,7 @@ const createProjectBodySchema = z.object({
     .max(200, 'Название проекта слишком длинное'),
 });
 
-type CreateProjectBody = z.infer<typeof createProjectBodySchema>;
+type ProjectNameBody = z.infer<typeof projectNameBodySchema>;
 
 // Контроллер проектов и сохранения сценария (класс модели ProjectController)
 @Controller('projects')
@@ -45,7 +56,7 @@ export class ProjectController {
   @HttpCode(HttpStatus.CREATED)
   createProject(
     @CurrentAuthor() author: AuthenticatedAuthor,
-    @Body(new ZodBodyPipe(createProjectBodySchema)) body: CreateProjectBody,
+    @Body(new ZodBodyPipe(projectNameBodySchema)) body: ProjectNameBody,
   ): Promise<CreatedProject> {
     return this.projectService.create(author.id, body.name);
   }
@@ -78,13 +89,24 @@ export class ProjectController {
     return this.projectService.setEnvironment(author.id, id, body);
   }
 
-  // Переименование проекта (класс модели ProjectController, UC-A-04, после MVP)
-  renameProject(_projectId: string, _name: string): void {
-    throw new NotImplementedError('ProjectController.renameProject');
+  // Переименование проекта (класс модели ProjectController, UC-A-04)
+  @Patch(':id')
+  @HttpCode(HttpStatus.OK)
+  renameProject(
+    @CurrentAuthor() author: AuthenticatedAuthor,
+    @Param('id') id: string,
+    @Body(new ZodBodyPipe(projectNameBodySchema)) body: ProjectNameBody,
+  ): Promise<ProjectSummary> {
+    return this.projectService.rename(author.id, id, body.name);
   }
 
-  // Удаление проекта (класс модели ProjectController, UC-A-04, после MVP)
-  deleteProject(_projectId: string): void {
-    throw new NotImplementedError('ProjectController.deleteProject');
+  // Каскадное удаление проекта (класс модели ProjectController, UC-A-04)
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  deleteProject(
+    @CurrentAuthor() author: AuthenticatedAuthor,
+    @Param('id') id: string,
+  ): Promise<void> {
+    return this.projectService.remove(author.id, id);
   }
 }

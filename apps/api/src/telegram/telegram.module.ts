@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { MessengerAdminPort } from '../publication/messenger-admin.port';
+import { MessengerAdminPort } from '../common/messenger-admin.port';
 import { MessengerGatewayController } from './messenger-gateway.controller';
 import { PollingService } from './polling.service';
 import { TelegramAdminAdapter } from './telegram-admin.adapter';

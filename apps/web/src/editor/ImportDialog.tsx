@@ -1,7 +1,8 @@
 import { useId, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import YAML from 'yaml';
 import { ApiError, type ApiIssue } from '@/api/client';
-import { useImportScenario } from '@/api/import-export';
+import { type ImportScenarioInput, useImportScenario } from '@/api/import-export';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -34,7 +35,45 @@ export interface ImportDialogProps {
   onImported: () => Promise<void> | void;
 }
 
-// Диалог импорта JSON-сценария с проверкой формата и выводом списка замечаний
+// Определяет формат файла и проверяет синтаксис до отправки на сервер
+function parseScenarioFile(
+  fileName: string,
+  text: string,
+): { ok: true; input: ImportScenarioInput } | { ok: false; error: string } {
+  const lowerName = fileName.toLowerCase();
+  const isYamlFile = lowerName.endsWith('.yaml') || lowerName.endsWith('.yml');
+  const isJsonFile = lowerName.endsWith('.json');
+
+  if (isYamlFile) {
+    try {
+      const parsed: unknown = YAML.parse(text);
+      if (parsed === null || typeof parsed !== 'object') {
+        return { ok: false, error: ru.importExport.invalidYaml };
+      }
+      return { ok: true, input: { format: 'yaml', text } };
+    } catch {
+      return { ok: false, error: ru.importExport.invalidYaml };
+    }
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return { ok: true, input: { format: 'json', payload: parsed } };
+  } catch {
+    // Если расширение не .json или файл содержит YAML — пробуем разобрать как YAML
+    try {
+      const parsed: unknown = YAML.parse(text);
+      if (parsed !== null && typeof parsed === 'object') {
+        return { ok: true, input: { format: 'yaml', text } };
+      }
+    } catch {
+      // не YAML
+    }
+    return { ok: false, error: isJsonFile ? ru.importExport.invalidJson : ru.importExport.invalidFile };
+  }
+}
+
+// Диалог импорта JSON/YAML-сценария с проверкой формата и выводом списка замечаний
 export function ImportDialog({ projectId, open, onOpenChange, onImported }: ImportDialogProps) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -67,16 +106,16 @@ export function ImportDialog({ projectId, open, onOpenChange, onImported }: Impo
     setError(null);
     setIssues([]);
 
-    let parsed: unknown;
+    let input: ImportScenarioInput;
     setReading(true);
     try {
       const text = await readFileText(file);
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        setError(ru.importExport.invalidJson);
+      const parsed = parseScenarioFile(file.name, text);
+      if (!parsed.ok) {
+        setError(parsed.error);
         return;
       }
+      input = parsed.input;
     } catch {
       setError(ru.importExport.readFileError);
       return;
@@ -85,7 +124,7 @@ export function ImportDialog({ projectId, open, onOpenChange, onImported }: Impo
     }
 
     try {
-      const result = await importMutation.mutateAsync(parsed);
+      const result = await importMutation.mutateAsync(input);
       await onImported();
       resetState();
       onOpenChange(false);
@@ -119,7 +158,7 @@ export function ImportDialog({ projectId, open, onOpenChange, onImported }: Impo
               ref={inputRef}
               id={inputId}
               type="file"
-              accept=".json,application/json"
+              accept=".json,.yaml,.yml,application/json,application/yaml,application/x-yaml,text/yaml"
               disabled={busy}
               onChange={(event) => {
                 const selected = event.target.files?.[0] ?? null;

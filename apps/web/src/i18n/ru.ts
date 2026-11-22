@@ -36,6 +36,29 @@ export const ru = {
     nameRequired: 'Введите название проекта',
     updatedAt: 'Изменён',
     loadError: 'Не удалось загрузить проекты',
+    actionsLabel: (name: string) => `Действия с проектом «${name}»`,
+    rename: 'Переименовать',
+    renameTitle: 'Переименовать проект',
+    renameSave: 'Сохранить',
+    renamed: 'Проект переименован',
+    renameError: 'Не удалось переименовать проект',
+    delete: 'Удалить',
+    deleteTitle: 'Удалить проект?',
+    deleteDescription: (name: string) =>
+      `Проект «${name}» и его сценарий будут удалены. Отменить это действие нельзя`,
+    deleteBotsWarning: (count: number) => {
+      const mod10 = count % 10;
+      const mod100 = count % 100;
+      if (mod10 === 1 && mod100 !== 11) {
+        return `Вместе с проектом будет отключён и удалён ${count} бот и все его диалоги.`;
+      }
+      if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+        return `Вместе с проектом будут отключены и удалены ${count} бота и все их диалоги.`;
+      }
+      return `Вместе с проектом будут отключены и удалены ${count} ботов и все их диалоги.`;
+    },
+    deleted: 'Проект удалён',
+    deleteError: 'Не удалось удалить проект',
   },
   editor: {
     back: 'К проектам',
@@ -462,14 +485,18 @@ export const ru = {
   importExport: {
     export: 'Экспорт',
     exporting: 'Экспорт…',
+    exportJson: 'JSON (.json)',
+    exportYaml: 'YAML (.yaml)',
     exportError: 'Не удалось экспортировать сценарий',
     import: 'Импорт',
     importing: 'Импорт…',
     importTitle: 'Импорт сценария',
     importDescription: 'Сценарий проекта будет заменён',
-    fileLabel: 'Файл сценария (.json)',
+    fileLabel: 'Файл сценария (.json, .yaml)',
     confirmImport: 'Импортировать',
     invalidJson: 'Файл не является корректным JSON',
+    invalidYaml: 'Файл не является корректным YAML',
+    invalidFile: 'Файл не является корректным JSON или YAML',
     readFileError: 'Не удалось прочитать файл',
     importError: 'Не удалось импортировать сценарий',
     importInvalidTitle: 'Файл не подходит',

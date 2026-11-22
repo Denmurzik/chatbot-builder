@@ -390,4 +390,77 @@ describe('Import/Export API (интеграционные тесты)', () => {
     const afterB = await agentA.get(`/api/projects/${projectA.body.id}`).expect(200);
     expect(afterB.body.scenario).toEqual(scenarioA);
   });
+
+  it('YAML экспорт (?format=yaml) без секретов, round-trip import и 400 на невалидный YAML/format', async () => {
+    const agent = await createAuthenticatedAgent('yaml-owner@example.com');
+    const sourceProject = await agent
+      .post('/api/projects')
+      .send({ name: 'Запись к врачу' })
+      .expect(201);
+    const targetProject = await agent
+      .post('/api/projects')
+      .send({ name: 'Целевой YAML' })
+      .expect(201);
+
+    const secretToken = 'Bearer yaml-secret-token';
+    await agent
+      .put(`/api/projects/${sourceProject.body.id}/scenario`)
+      .send(buildScenarioWithSecrets(secretToken))
+      .expect(200);
+
+    // Некорректный параметр format → 400 на русском
+    const badFormat = await agent
+      .get(`/api/projects/${sourceProject.body.id}/export?format=xml`)
+      .expect(400);
+    expect(badFormat.body.message).toMatch(/[А-Яа-яЁё]/);
+
+    // Экспорт в YAML
+    const yamlRes = await agent
+      .get(`/api/projects/${sourceProject.body.id}/export?format=yaml`)
+      .expect(200);
+    expect(yamlRes.headers['content-type']).toMatch(/application\/yaml/i);
+    expect(yamlRes.headers['content-disposition']).toMatch(/attachment;/i);
+    expect(yamlRes.headers['content-disposition']).toContain(
+      `filename*=UTF-8''${encodeURIComponent('Запись к врачу.yaml')}`,
+    );
+    expect(yamlRes.text).not.toContain(secretToken);
+    expect(yamlRes.text).not.toContain('secretValue');
+    expect(yamlRes.text).not.toContain('secretMask');
+
+    // Импорт YAML обратно в другой проект
+    const importRes = await agent
+      .post(`/api/projects/${targetProject.body.id}/import`)
+      .set('Content-Type', 'application/yaml; charset=utf-8')
+      .send(yamlRes.text)
+      .expect(200);
+    expect(importRes.body).toEqual({
+      updatedAt: expect.any(String),
+      secretsToFill: 1,
+    });
+
+    const fetched = await agent.get(`/api/projects/${targetProject.body.id}`).expect(200);
+    const expectedJson = await agent
+      .get(`/api/projects/${sourceProject.body.id}/export?format=json`)
+      .expect(200);
+    expect(fetched.body.scenario).toEqual(JSON.parse(expectedJson.text));
+
+    // Битый YAML → 400, сценарий целевого проекта не портится
+    const badYamlRes = await agent
+      .post(`/api/projects/${targetProject.body.id}/import`)
+      .set('Content-Type', 'application/yaml')
+      .send('formatVersion: 1\nblocks: [unclosed')
+      .expect(400);
+    expect(badYamlRes.body).toMatchObject({
+      message: 'Файл не подходит',
+      issues: [
+        expect.objectContaining({
+          path: '',
+          message: expect.stringContaining('Некорректный YAML'),
+        }),
+      ],
+    });
+
+    const afterBadYaml = await agent.get(`/api/projects/${targetProject.body.id}`).expect(200);
+    expect(afterBadYaml.body.scenario).toEqual(JSON.parse(expectedJson.text));
+  });
 });

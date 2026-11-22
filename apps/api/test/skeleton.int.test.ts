@@ -59,13 +59,4 @@ describe('Каркас модулей API (skeleton)', () => {
 
     await expect(controller.isTokenInUse('TELEGRAM', 'non-existent-hash')).resolves.toBe(false);
   });
-
-  it('недостающие операции ProjectController бросают NotImplementedError', () => {
-    const projects = moduleRef.get(ProjectController);
-
-    expect(() => projects.renameProject('proj-1', 'Новое имя')).toThrowError(
-      'ProjectController.renameProject',
-    );
-    expect(() => projects.deleteProject('proj-1')).toThrowError('ProjectController.deleteProject');
-  });
 });

@@ -1,4 +1,4 @@
-// Порт администрирования мессенджера (разделение слоёв: business -> interaction)
+// Порт администрирования мессенджера (базовый слой common: доступен projects, publication и telegram)
 export abstract class MessengerAdminPort {
   // Подключает бота к мессенджеру (webhook или polling); ошибка внешней системы -> 502
   abstract connect(botId: string, token: string): Promise<void>;

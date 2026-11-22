@@ -1,5 +1,8 @@
 import { checkTemplate, parseExpression, parseJsonPath } from '@chatbot/engine-core';
 import {
+  availableVariables,
+  blockDialogReads,
+  extractEnvRefs,
   getOutputs,
   type Block,
   type BlockType,
@@ -51,12 +54,15 @@ function outputLabel(output: string): string {
 export class ScenarioValidator {
   constructor(private readonly prisma: PrismaService) {}
 
-  validate(scenario: Scenario): ValidationError[] {
+  validate(scenario: Scenario, envVars?: ReadonlyArray<{ name: string }>): ValidationError[] {
     return [
       ...this.checkSingleEntryPoint(scenario),
       ...this.checkOutputsConnected(scenario),
       ...this.checkRequiredFields(scenario),
       ...this.checkLoops(scenario),
+      ...this.checkUnreachableBlocks(scenario),
+      ...this.checkUnwrittenVariables(scenario),
+      ...this.checkMissingEnvVariables(scenario, envVars),
     ];
   }
 
@@ -381,5 +387,98 @@ export class ScenarioValidator {
       blockId: block.id,
       message: `${blockLabel(block)}: обнаружен цикл без блоков ожидания`,
     }));
+  }
+
+  // Поиск блоков, недостижимых из единственной точки входа (BFS вперёд по переходам)
+  checkUnreachableBlocks(scenario: Scenario): ValidationError[] {
+    const entryPoints = scenario.blocks.filter((block) => block.type === 'ENTRY_POINT');
+    if (entryPoints.length !== 1) {
+      return [];
+    }
+
+    const adj = new Map<string, string[]>();
+    for (const transition of scenario.transitions) {
+      const targets = adj.get(transition.source.blockId);
+      if (targets) {
+        targets.push(transition.target);
+      } else {
+        adj.set(transition.source.blockId, [transition.target]);
+      }
+    }
+
+    const entryId = entryPoints[0]!.id;
+    const visited = new Set<string>([entryId]);
+    const queue: string[] = [entryId];
+
+    for (let head = 0; head < queue.length; head += 1) {
+      const current = queue[head]!;
+      for (const next of adj.get(current) ?? []) {
+        if (!visited.has(next)) {
+          visited.add(next);
+          queue.push(next);
+        }
+      }
+    }
+
+    const warnings: ValidationError[] = [];
+    for (const block of scenario.blocks) {
+      if (!visited.has(block.id)) {
+        warnings.push({
+          rule: 'unreachableBlock',
+          severity: 'WARNING',
+          blockId: block.id,
+          message: 'Блок недостижим из точки входа',
+        });
+      }
+    }
+    return warnings;
+  }
+
+  // Поиск переменных диалога, которые читаются в блоке, но не задаются ни на одном пути до него
+  checkUnwrittenVariables(scenario: Scenario): ValidationError[] {
+    const warnings: ValidationError[] = [];
+    for (const block of scenario.blocks) {
+      const reads = blockDialogReads(block);
+      if (reads.length === 0) continue;
+
+      const available = new Set(availableVariables(scenario, block.id).map((v) => v.name));
+      for (const name of reads) {
+        if (!available.has(name)) {
+          warnings.push({
+            rule: 'unwrittenVariable',
+            severity: 'WARNING',
+            blockId: block.id,
+            message: `Переменная «${name}» используется, но не задаётся до этого блока`,
+          });
+        }
+      }
+    }
+    return warnings;
+  }
+
+  // Поиск ссылок на переменные окружения {{env.X}}, отсутствующие в переданном окружении
+  checkMissingEnvVariables(
+    scenario: Scenario,
+    envVars?: ReadonlyArray<{ name: string }>,
+  ): ValidationError[] {
+    if (envVars === undefined) {
+      return [];
+    }
+
+    const defined = new Set(envVars.map((v) => v.name));
+    const warnings: ValidationError[] = [];
+    for (const block of scenario.blocks) {
+      for (const name of extractEnvRefs(block)) {
+        if (!defined.has(name)) {
+          warnings.push({
+            rule: 'missingEnvVariable',
+            severity: 'WARNING',
+            blockId: block.id,
+            message: `Переменная окружения «env.${name}» не задана в окружении`,
+          });
+        }
+      }
+    }
+    return warnings;
   }
 }

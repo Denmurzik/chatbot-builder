@@ -126,18 +126,8 @@ export function Canvas({
         <Panel
           position="top-right"
           aria-label={ru.editor.canvasActions}
-          className="flex flex-col gap-2"
+          className="flex flex-col items-end gap-2"
         >
-          <Button
-            type="button"
-            size="icon"
-            variant="outline"
-            onClick={onAddClick}
-            aria-label={ru.editor.addBlock}
-            title={`${ru.editor.addBlock} (Tab)`}
-          >
-            <Plus className="size-4" />
-          </Button>
           <Button
             type="button"
             size="sm"
@@ -147,6 +137,16 @@ export function Canvas({
           >
             <LayoutGrid className="size-4" />
             {ru.editor.autoLayout}
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            onClick={onAddClick}
+            aria-label={ru.editor.addBlock}
+            title={`${ru.editor.addBlock} (Tab)`}
+          >
+            <Plus className="size-4" />
           </Button>
         </Panel>
         {children}

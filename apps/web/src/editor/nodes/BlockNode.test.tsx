@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ru } from '@/i18n/ru';
 import { EditorActionsContext, type EditorActions } from '../actions';
 import type { BlockNode as BlockNodeType } from '../convert';
-import { BlockNode } from './BlockNode';
+import { BlockNode, SHAPE_RADIUS_CLASSES, nodeShapeOf } from './BlockNode';
 
 // В jsdom у React Flow нет DOM-узла вьюпорта, и NodeToolbar ничего не рисует (портал в него),
 // поэтому подменяем его обычной обёрткой: проверяем кнопки, а не позиционирование
@@ -248,5 +248,14 @@ describe('BlockNode', () => {
       responseMappings: [],
     });
     expect(http.querySelector('[data-block-shape="integration"]')).toBeTruthy();
+  });
+
+  it('подбирает скругление подсветки превью по точной форме каждого типа блока', () => {
+    expect(SHAPE_RADIUS_CLASSES[nodeShapeOf('ENTRY_POINT')]).toBe('rounded-l-[48px] rounded-r-lg');
+    expect(SHAPE_RADIUS_CLASSES[nodeShapeOf('EXIT_POINT')]).toBe('rounded-r-[32px] rounded-l-lg');
+    expect(SHAPE_RADIUS_CLASSES[nodeShapeOf('TEXT_MESSAGE')]).toBe('rounded-2xl');
+    expect(SHAPE_RADIUS_CLASSES[nodeShapeOf('CONDITION')]).toBe('rounded-lg');
+    expect(SHAPE_RADIUS_CLASSES[nodeShapeOf('ASSIGNMENT')]).toBe('rounded-md');
+    expect(SHAPE_RADIUS_CLASSES[nodeShapeOf('HTTP_REQUEST')]).toBe('rounded-lg');
   });
 });

@@ -106,15 +106,59 @@
 @keyframes preview-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgb(163 230 53 / 0.55);
+    box-shadow:
+      0 0 0 2px var(--background),
+      0 0 0 4px var(--brand),
+      0 0 0 4px rgb(163 230 53 / 0.55);
   }
   50% {
-    box-shadow: 0 0 0 7px rgb(163 230 53 / 0);
+    box-shadow:
+      0 0 0 2px var(--background),
+      0 0 0 4px var(--brand),
+      0 0 0 11px rgb(163 230 53 / 0);
   }
 }
 
 .animate-preview-pulse {
   animation: preview-pulse 1.8s ease-in-out infinite;
+}
+
+/* Рамка множественного выделения на холсте React Flow в палитре FIELD LIME */
+.react-flow {
+  --xy-selection-background-color: color-mix(in oklab, var(--brand) 12%, transparent);
+  --xy-selection-border: 1.5px solid var(--brand-ink);
+}
+
+.dark .react-flow {
+  --xy-selection-border: 1.5px solid var(--brand);
+}
+
+.react-flow__selection {
+  border-style: dashed;
+  border-radius: 6px;
+}
+
+.react-flow__nodesselection-rect {
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--brand) 7%, transparent);
+}
+
+.react-flow__nodesselection-rect:active {
+  cursor: grabbing;
+}
+
+/* Расширяем область касания ручек и кнопок управления холстом на сенсорных экранах */
+@media (pointer: coarse) {
+  .react-flow__handle::after {
+    content: '';
+    position: absolute;
+    inset: -9px;
+  }
+
+  .react-flow__controls-button {
+    width: 34px;
+    height: 34px;
+  }
 }
 
 @layer base {

@@ -4,8 +4,10 @@ import {
   NodeToolbar,
   Position,
   useNodeConnections,
+  useStore,
   useUpdateNodeInternals,
   type NodeProps,
+  type ReactFlowState,
 } from '@xyflow/react';
 import { Copy, MessageCircle, MoreHorizontal, Pencil, Plus, Settings2, Trash2 } from 'lucide-react';
 import type { BlockType } from '@chatbot/model';
@@ -27,14 +29,34 @@ import { dataIssues } from '../validate';
 import { useServerBlockIssues } from '../ValidationPanel';
 import { safeOutputs, type BlockNode as BlockNodeType } from '../convert';
 
-type Shape = 'start' | 'finish' | 'talk' | 'branch' | 'compact' | 'integration';
+export type BlockShape = 'start' | 'finish' | 'talk' | 'branch' | 'compact' | 'integration';
 
 // Форма блока по категории: развилки — «ромбовидная» плашка, присваивание — компактная карточка
-function shapeOf(type: BlockType): Shape {
+export function nodeShapeOf(type: BlockType): BlockShape {
   const { category } = BLOCK_META[type];
   if (category === 'logic') return type === 'ASSIGNMENT' ? 'compact' : 'branch';
   return category;
 }
+
+// Скругление внешнего контура блока (используется и для подсветки превью по форме узла).
+// Явный радиус пилюли (48px / 32px) вместо `full` (calc(infinity * 1px)), чтобы CSS не сжимал
+// противоположные скруглённые углы до 0px по правилу пропорционального уменьшения радиусов.
+export const SHAPE_RADIUS_CLASSES: Record<BlockShape, string> = {
+  start: 'rounded-l-[48px] rounded-r-lg',
+  finish: 'rounded-r-[32px] rounded-l-lg',
+  talk: 'rounded-2xl',
+  branch: 'rounded-lg',
+  compact: 'rounded-md',
+  integration: 'rounded-lg',
+};
+
+const selectSelectedCount = (state: ReactFlowState) => {
+  let count = 0;
+  for (const node of state.nodes) {
+    if (node.selected) count += 1;
+  }
+  return count;
+};
 
 // Один выход: подпись, ручка справа и «+» у неподключённого выхода
 function OutputRow({
@@ -74,10 +96,10 @@ function OutputRow({
             type="button"
             aria-label={ru.editor.addNextBlock}
             title={ru.editor.addNextBlock}
-            className="nodrag nopan pointer-events-auto flex size-5 items-center justify-center rounded-md border bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            className="nodrag nopan pointer-events-auto flex size-6 touch-manipulation items-center justify-center rounded-md border bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground sm:size-5"
             onClick={() => addFromOutput(nodeId, output)}
           >
-            <Plus className="size-3" />
+            <Plus className="size-3.5 sm:size-3" />
           </button>
         </div>
       )}
@@ -130,25 +152,25 @@ function NodeMenu({
   );
 }
 
-const SHAPE_CLASSES: Record<Shape, string> = {
+const SHAPE_CLASSES: Record<BlockShape, string> = {
   // Точка входа: скруглена слева, как «начало» потока
-  start: 'min-w-44 max-w-56 rounded-l-full rounded-r-lg border bg-card',
+  start: `min-w-44 max-w-56 ${SHAPE_RADIUS_CLASSES.start} border bg-card`,
   // Точка выхода: скруглена справа, как «конец» потока
-  finish: 'min-w-44 max-w-56 rounded-r-full rounded-l-lg border bg-card',
+  finish: `min-w-44 max-w-56 ${SHAPE_RADIUS_CLASSES.finish} border bg-card`,
   // Реплика: крупное скругление 16 px (узнаётся по значку-реплике в углу, выступов за контур нет)
-  talk: 'min-w-48 max-w-64 rounded-2xl border bg-card',
+  talk: `min-w-48 max-w-64 ${SHAPE_RADIUS_CLASSES.talk} border bg-card`,
   // Развилка: прямоугольное тело, ромб — значок
-  branch: 'min-w-48 max-w-64 rounded-lg border bg-card',
+  branch: `min-w-48 max-w-64 ${SHAPE_RADIUS_CLASSES.branch} border bg-card`,
   // Присваивание: компактная карточка
-  compact: 'min-w-40 max-w-56 rounded-md border bg-card',
+  compact: `min-w-40 max-w-56 ${SHAPE_RADIUS_CLASSES.compact} border bg-card`,
   // Интеграция: аккуратная одиночная рамка, метод и URL выделены в теле карточки
-  integration: 'min-w-48 max-w-64 rounded-lg border bg-card',
+  integration: `min-w-48 max-w-64 ${SHAPE_RADIUS_CLASSES.integration} border bg-card`,
 };
 
 // Скругление шапки под форму узла, чтобы тонкая подложка не вылезала за рамку
-const HEADER_SHAPE_CLASSES: Record<Shape, string> = {
-  start: 'rounded-tl-full rounded-tr-[7px] pl-5',
-  finish: 'rounded-r-full rounded-l-[7px] pr-5',
+const HEADER_SHAPE_CLASSES: Record<BlockShape, string> = {
+  start: 'rounded-tl-[47px] rounded-tr-[7px] pl-5',
+  finish: 'rounded-r-[31px] rounded-l-[7px] pr-5',
   talk: 'rounded-t-[15px]',
   branch: 'rounded-t-[7px]',
   compact: 'rounded-t-[5px]',
@@ -170,7 +192,7 @@ function BlockIcon({
   color,
   children,
 }: {
-  shape: Shape;
+  shape: BlockShape;
   color: string;
   children: ReactNode;
 }) {
@@ -202,11 +224,12 @@ function BlockIcon({
 
 export function BlockNode({ id, data, selected }: NodeProps<BlockNodeType>) {
   const updateNodeInternals = useUpdateNodeInternals();
+  const selectedCount = useStore(selectSelectedCount);
   const { hovered, handlers } = useHoverDelay(150);
   const [menuOpen, setMenuOpen] = useState(false);
   const meta = BLOCK_META[data.type];
   const Icon = meta.icon;
-  const shape = shapeOf(data.type);
+  const shape = nodeShapeOf(data.type);
   const outputs = safeOutputs(data);
   const preview = blockPreview(data);
   const outputsKey = JSON.stringify(outputs);
@@ -317,7 +340,7 @@ export function BlockNode({ id, data, selected }: NodeProps<BlockNodeType>) {
       <NodeMenu
         id={id}
         isEntry={data.type === 'ENTRY_POINT'}
-        visible={Boolean(selected) || hovered || menuOpen}
+        visible={selectedCount <= 1 && (Boolean(selected) || hovered || menuOpen)}
         onMenuOpenChange={setMenuOpen}
         hoverHandlers={handlers}
       />

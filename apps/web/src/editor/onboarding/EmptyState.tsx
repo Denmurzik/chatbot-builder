@@ -37,11 +37,11 @@ export function FirstStepCard({
 // Оверлей «С чего начнём?» при первом открытии проекта с пустым сценарием
 export function WelcomeOverlay({ onChoose }: { onChoose: (template: ScenarioTemplate) => void }) {
   return (
-    <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/70 p-6 backdrop-blur-[1px]">
+    <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/70 p-4 backdrop-blur-[1px] sm:p-6">
       <div
         role="region"
         aria-label={ru.editor.onboarding.welcomeTitle}
-        className="w-full max-w-md rounded-xl border bg-card p-6 shadow-lg"
+        className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-xl border bg-card p-4 shadow-lg sm:p-6"
       >
         <h2 className="mb-4 text-lg font-semibold">{ru.editor.onboarding.welcomeTitle}</h2>
         <div className="flex flex-col gap-2">

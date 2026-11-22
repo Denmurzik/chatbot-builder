@@ -145,7 +145,7 @@ export function ImportDialog({ projectId, open, onOpenChange, onImported }: Impo
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{ru.importExport.importTitle}</DialogTitle>
           <DialogDescription>{ru.importExport.importDescription}</DialogDescription>

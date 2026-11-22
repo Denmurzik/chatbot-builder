@@ -137,7 +137,7 @@ export function NodePicker({ open, onOpenChange, excluded = [], onPick }: NodePi
         side="right"
         overlay={false}
         data-testid="node-picker"
-        className="w-96 gap-3 sm:max-w-96"
+        className="w-full max-w-full gap-3 sm:w-96 sm:max-w-96"
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
         <SheetHeader className="pb-0">

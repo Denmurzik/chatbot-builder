@@ -95,9 +95,9 @@ export function EnvironmentEditor(props: {
           const saved = row.mask !== null;
           return (
             <li key={row.key} className="flex flex-col gap-1">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 rounded-md border p-2.5 sm:flex-row sm:items-center sm:border-0 sm:p-0">
                 <Input
-                  className="font-mono"
+                  className="font-mono sm:min-w-0 sm:flex-1"
                   aria-label={ru.environment.name}
                   placeholder={ru.environment.name}
                   value={row.name}
@@ -106,24 +106,27 @@ export function EnvironmentEditor(props: {
                   onChange={(event) => update(row.key, { name: event.target.value })}
                 />
                 {row.secret && saved && !row.replacing ? (
-                  <>
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
                     <Input
                       readOnly
-                      className="bg-muted font-mono text-muted-foreground"
+                      className="min-w-0 flex-1 bg-muted font-mono text-muted-foreground"
                       aria-label={`${ru.environment.value} ${row.name}`}
                       value={row.mask ?? ''}
                     />
                     <Button
                       type="button"
                       variant="outline"
+                      size="sm"
+                      className="shrink-0 sm:h-9"
                       onClick={() => update(row.key, { replacing: true })}
                     >
                       {ru.environment.replace}
                     </Button>
-                  </>
+                  </div>
                 ) : (
-                  <>
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
                     <Input
+                      className="min-w-0 flex-1"
                       aria-label={`${ru.environment.value} ${row.name}`}
                       placeholder={ru.environment.value}
                       type={row.secret ? 'password' : 'text'}
@@ -136,39 +139,43 @@ export function EnvironmentEditor(props: {
                       <Button
                         type="button"
                         variant="outline"
+                        size="sm"
+                        className="shrink-0 sm:h-9"
                         onClick={() => update(row.key, { replacing: false, secret: true, value: '' })}
                       >
                         {ru.environment.cancelReplace}
                       </Button>
                     ) : null}
-                  </>
+                  </div>
                 )}
-                <label className="flex shrink-0 items-center gap-1 text-sm">
-                  <input
-                    type="checkbox"
-                    aria-label={ru.environment.secret}
-                    checked={row.secret}
-                    onChange={(event) =>
-                      update(
-                        row.key,
-                        saved
-                          ? { secret: event.target.checked, replacing: false, value: '' }
-                          : { secret: event.target.checked },
-                      )
-                    }
-                  />
-                  {ru.environment.secret}
-                </label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label={ru.environment.remove}
-                  title={ru.environment.remove}
-                  onClick={() => setRows((current) => current.filter((r) => r.key !== row.key))}
-                >
-                  <Trash2 />
-                </Button>
+                <div className="flex items-center justify-between gap-2 sm:shrink-0 sm:justify-start">
+                  <label className="flex shrink-0 items-center gap-1.5 text-sm">
+                    <input
+                      type="checkbox"
+                      aria-label={ru.environment.secret}
+                      checked={row.secret}
+                      onChange={(event) =>
+                        update(
+                          row.key,
+                          saved
+                            ? { secret: event.target.checked, replacing: false, value: '' }
+                            : { secret: event.target.checked },
+                        )
+                      }
+                    />
+                    {ru.environment.secret}
+                  </label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={ru.environment.remove}
+                    title={ru.environment.remove}
+                    onClick={() => setRows((current) => current.filter((r) => r.key !== row.key))}
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
               </div>
               {rowErrors?.name ? (
                 <p className="text-sm text-destructive">{rowErrors.name}</p>
@@ -181,7 +188,7 @@ export function EnvironmentEditor(props: {
         })}
       </ul>
       {props.error ? <p className="text-sm text-destructive">{props.error}</p> : null}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button
           type="button"
           variant="outline"

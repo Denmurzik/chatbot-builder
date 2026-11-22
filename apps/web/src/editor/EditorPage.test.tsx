@@ -548,4 +548,87 @@ describe('EditorPage', () => {
       expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false);
     });
   });
+
+  describe('множественное выделение и режимы холста', () => {
+    const multiScenario: Scenario = {
+      formatVersion: 1,
+      blocks: [
+        { id: 'entry', type: 'ENTRY_POINT', title: 'Старт', x: 0, y: 0 },
+        { id: 'msg_1', type: 'TEXT_MESSAGE', title: 'Привет', text: 'Здравствуйте', x: 400, y: 0 },
+        { id: 'exit_1', type: 'EXIT_POINT', title: 'Конец', x: 800, y: 0 },
+      ],
+      transitions: [
+        { source: { blockId: 'entry', output: 'default' }, target: 'msg_1' },
+        { source: { blockId: 'msg_1', output: 'default' }, target: 'exit_1' },
+      ],
+    };
+
+    async function saveAndRead(fetchMock: ReturnType<typeof stubFetch>): Promise<Scenario> {
+      const before = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT').length;
+      fireEvent.keyDown(window, { key: 's', code: 'KeyS', ctrlKey: true });
+      await waitFor(() =>
+        expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT').length).toBe(
+          before + 1,
+        ),
+      );
+      const puts = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT');
+      return JSON.parse(String(puts.at(-1)![1]!.body)) as Scenario;
+    }
+
+    it('переключает режим «Выделение / Перемещение» кнопками и клавишами V / H', async () => {
+      stubFetch(multiScenario);
+      renderEditor();
+      await screen.findByText('Привет');
+
+      const canvas = screen.getByTestId('canvas');
+      expect(canvas.getAttribute('data-canvas-mode')).toBe('select');
+
+      fireEvent.click(screen.getByRole('button', { name: ru.editor.modePan }));
+      expect(canvas.getAttribute('data-canvas-mode')).toBe('pan');
+
+      fireEvent.keyDown(window, { key: 'v', code: 'KeyV' });
+      expect(canvas.getAttribute('data-canvas-mode')).toBe('select');
+
+      fireEvent.keyDown(window, { key: 'h', code: 'KeyH' });
+      expect(canvas.getAttribute('data-canvas-mode')).toBe('pan');
+    });
+
+    it('Ctrl+A выделяет все блоки, показывает групповую панель и позволяет дублировать/удалять за один шаг Undo', async () => {
+      const fetchMock = stubFetch(multiScenario);
+      renderEditor();
+      await screen.findByText('Привет');
+
+      expect(screen.queryByTestId('selection-bar')).toBeNull();
+      fireEvent.keyDown(window, { key: 'a', code: 'KeyA', ctrlKey: true });
+
+      const bar = await screen.findByTestId('selection-bar');
+      expect(bar.textContent).toContain(ru.editor.selectionCount(3));
+
+      // Дублируем выбранную группу: ENTRY_POINT не дублируется, копируются msg_1 и exit_1 + связь между ними
+      fireEvent.click(screen.getByRole('button', { name: ru.editor.nodeActions.duplicate }));
+      await waitFor(() => expect(screen.getByTestId('selection-bar').textContent).toContain(ru.editor.selectionCount(2)));
+      const afterDuplicate = await saveAndRead(fetchMock);
+      expect(afterDuplicate.blocks).toHaveLength(5);
+      expect(afterDuplicate.transitions).toHaveLength(3);
+
+      // Отмена одним шагом Ctrl+Z возвращает исходные 3 блока
+      fireEvent.keyDown(window, { key: 'z', code: 'KeyZ', ctrlKey: true });
+      const afterUndo = await saveAndRead(fetchMock);
+      expect(afterUndo.blocks).toHaveLength(3);
+
+      // Снова выделяем всё и снимаем выделение по Escape
+      fireEvent.keyDown(window, { key: 'a', code: 'KeyA', ctrlKey: true });
+      await screen.findByTestId('selection-bar');
+      fireEvent.keyDown(window, { key: 'Escape', code: 'Escape' });
+      await waitFor(() => expect(screen.queryByTestId('selection-bar')).toBeNull());
+
+      // Выделяем всё и удаляем группой: ENTRY_POINT защищена, остаётся 1 блок
+      fireEvent.keyDown(window, { key: 'a', code: 'KeyA', ctrlKey: true });
+      await screen.findByTestId('selection-bar');
+      fireEvent.click(screen.getByRole('button', { name: ru.editor.nodeActions.remove }));
+      const afterDelete = await saveAndRead(fetchMock);
+      expect(afterDelete.blocks).toHaveLength(1);
+      expect(afterDelete.blocks[0]!.type).toBe('ENTRY_POINT');
+    });
+  });
 });

@@ -10,15 +10,21 @@ import {
 } from '@xyflow/react';
 import {
   ArrowLeft,
+  Bot,
   CheckCheck,
   CircleHelp,
+  Download,
+  Moon,
+  MoreVertical,
   Play,
   Redo2,
   Save,
   SlidersHorizontal,
+  Sun,
   Undo2,
+  Upload,
 } from 'lucide-react';
-import { Link, useBlocker, useParams } from 'react-router-dom';
+import { Link, useBlocker, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   BLOCK_TYPES,
@@ -42,9 +48,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ru } from '@/i18n/ru';
-import { Canvas } from './Canvas';
+import { useTheme } from '@/lib/theme';
+import { Canvas, type CanvasMode } from './Canvas';
 import { BlockDialog } from './block-dialog/BlockDialog';
 import { EditorActionsContext, type EditorActions } from './actions';
 import {
@@ -56,6 +70,7 @@ import {
   type BlockNodeData,
 } from './convert';
 import { layoutScenario } from './layout';
+import { SHAPE_RADIUS_CLASSES, nodeShapeOf } from './nodes/BlockNode';
 import { NODE_HEIGHT, NODE_WIDTH, findFreeSpot, snapToGrid } from './placement';
 import { nodeIssues } from './validate';
 import { FirstStepCard, WelcomeOverlay } from './onboarding/EmptyState';
@@ -64,6 +79,7 @@ import { NodePicker } from './picker/NodePicker';
 import { addFree, addFromOutput, insertOnEdge, type GraphResult } from './picker/insertion';
 import { nextBlockId } from './ids';
 import { sameSnapshot, snapshotOf, useHistory, type Snapshot } from './history';
+import { duplicateSelectedNodes, removeSelectedNodes } from './selection';
 import { ShortcutsHelp } from './ShortcutsHelp';
 import {
   ServerIssuesContext,
@@ -71,7 +87,8 @@ import {
   groupServerErrorsByBlock,
 } from './ValidationPanel';
 import { TestEnvironmentDialog } from './TestEnvironmentDialog';
-import { ImportExportMenu } from './ImportExportMenu';
+import { ImportDialog } from './ImportDialog';
+import { ImportExportMenu, useScenarioExport } from './ImportExportMenu';
 import { PreviewPanel } from '@/preview/PreviewPanel';
 
 // Окно, в пределах которого серия сдвигов стрелками считается одним действием
@@ -130,6 +147,12 @@ function showIssues(title: string, issues: { path: string; message: string }[]) 
   });
 }
 
+// На сенсорных экранах по умолчанию панорамирование пальцем, на ПК — выделение рамкой
+function defaultCanvasMode(): CanvasMode {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return 'select';
+  return window.matchMedia('(pointer: coarse)').matches ? 'pan' : 'select';
+}
+
 function EditorHeader({
   name,
   dirty,
@@ -141,30 +164,41 @@ function EditorHeader({
 }) {
   const { id } = useParams();
   return (
-    <header className="flex items-center gap-3 border-b bg-card/80 px-4 py-2 backdrop-blur-sm">
-      <div className="flex min-w-0 flex-1 items-center gap-2.5">
-        <BrandLogo size={22} />
+    <header className="flex items-center justify-between gap-2 border-b bg-card/80 px-2.5 py-2 backdrop-blur-sm sm:gap-3 sm:px-4">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2.5">
+        <BrandLogo size={22} className="shrink-0" />
         <Link
           to="/projects"
-          className="flex shrink-0 items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          aria-label={ru.editor.back}
+          title={ru.editor.back}
+          className="flex shrink-0 items-center gap-1 rounded-md p-1 text-sm text-muted-foreground transition-colors hover:text-foreground sm:p-0"
         >
           <ArrowLeft className="size-4" />
-          {ru.editor.back}
+          <span className="hidden sm:inline">{ru.editor.back}</span>
         </Link>
         {name && (
           <>
-            <span className="h-5 w-px shrink-0 bg-border" aria-hidden />
-            <h1 className="min-w-0 truncate text-base font-semibold">{name}</h1>
+            <span className="hidden h-5 w-px shrink-0 bg-border sm:inline-block" aria-hidden />
+            <h1 className="min-w-0 truncate text-sm font-semibold sm:text-base">{name}</h1>
           </>
         )}
         {dirty && (
-          <span className="shrink-0 text-xs text-muted-foreground">{ru.editor.unsaved}</span>
+          <>
+            <span
+              className="size-2 shrink-0 rounded-full bg-[var(--brand)] 2xl:hidden"
+              title={ru.editor.unsaved}
+              aria-hidden="true"
+            />
+            <span className="hidden shrink-0 text-xs text-muted-foreground 2xl:inline">
+              {ru.editor.unsaved}
+            </span>
+          </>
         )}
       </div>
       {children ? (
         children
       ) : (
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <ThemeToggle size="icon-sm" />
           {id ? (
             <Link
@@ -193,10 +227,14 @@ function ScenarioEditor({
   environment: EnvVarView[];
   onImported: () => Promise<void>;
 }) {
+  const navigate = useNavigate();
+  const { theme, toggleTheme } = useTheme();
   const [initialFlow] = useState(() => scenarioToFlow(initial));
   const [nodes, setNodes] = useState<BlockNode[]>(initialFlow.nodes);
   const [edges, setEdges] = useState<Edge[]>(initialFlow.edges);
   const [dirty, setDirty] = useState(false);
+  const [canvasMode, setCanvasMode] = useState<CanvasMode>(defaultCanvasMode);
+  const [importOpen, setImportOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [validationOpen, setValidationOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -255,14 +293,18 @@ function ScenarioEditor({
 
   const getGraph = useCallback(() => ({ nodes: nodesRef.current, edges: edgesRef.current }), []);
 
-  // Отмена и повтор помечают сценарий изменённым; размеры берём у уже измеренных блоков
+  // Отмена и повтор помечают сценарий изменённым; размеры и текущее выделение сохраняются для оставшихся блоков
   const restoreGraph = useCallback(
     (snapshot: Snapshot) => {
-      const measuredById = new Map(nodesRef.current.map((node) => [node.id, node.measured]));
+      const existingById = new Map(nodesRef.current.map((node) => [node.id, node]));
       commitNodes(
         snapshot.nodes.map((node) => {
-          const measured = measuredById.get(node.id);
-          return measured ? { ...node, measured } : node;
+          const existing = existingById.get(node.id);
+          return {
+            ...node,
+            ...(existing?.measured ? { measured: existing.measured } : {}),
+            ...(existing?.selected ? { selected: true } : {}),
+          };
         }),
       );
       commitEdges(snapshot.edges);
@@ -534,6 +576,39 @@ function ScenarioEditor({
     [saveScenario],
   );
 
+  const { exporting, handleExport } = useScenarioExport({
+    projectId,
+    projectName: name,
+    dirty,
+    disabled: save.isPending,
+    onSaveBeforeExport: handleSaveBeforeExport,
+  });
+
+  const handleDuplicateSelected = useCallback(() => {
+    const selectedIds = nodesRef.current.filter((node) => node.selected).map((node) => node.id);
+    const result = duplicateSelectedNodes(nodesRef.current, edgesRef.current, selectedIds);
+    if (!result) return;
+    record();
+    commitNodes(result.nodes);
+    commitEdges(result.edges);
+    touch();
+  }, [record, commitNodes, commitEdges, touch]);
+
+  const handleDeleteSelected = useCallback(() => {
+    const selectedIds = nodesRef.current.filter((node) => node.selected).map((node) => node.id);
+    const result = removeSelectedNodes(nodesRef.current, edgesRef.current, selectedIds);
+    if (!result) return;
+    record();
+    commitNodes(result.nodes);
+    commitEdges(result.edges);
+    touch();
+  }, [record, commitNodes, commitEdges, touch]);
+
+  const handleClearSelection = useCallback(() => {
+    commitNodes(nodesRef.current.map((node) => (node.selected ? { ...node, selected: false } : node)));
+    commitEdges(edgesRef.current.map((edge) => (edge.selected ? { ...edge, selected: false } : edge)));
+  }, [commitNodes, commitEdges]);
+
   const handleValidate = useCallback(async () => {
     if (save.isPending || validate.isPending) return;
     if (dirty) {
@@ -573,6 +648,10 @@ function ScenarioEditor({
       if (!current.some((node) => node.id === blockId)) return;
       commitNodes(current.map((node) => ({ ...node, selected: node.id === blockId })));
       centerOnBlock(blockId);
+      // На узких экранах закрываем панель проверки, чтобы увидеть выделенный блок на холсте
+      if (typeof window !== 'undefined' && window.innerWidth < 768) {
+        setValidationOpen(false);
+      }
     },
     [commitNodes, centerOnBlock],
   );
@@ -609,16 +688,17 @@ function ScenarioEditor({
     [centerOnBlock],
   );
 
-  // Подсветка текущего/ошибочного блока в превью накладывается при рендере, не меняя состояние графа
+  // Подсветка текущего/ошибочного блока в превью накладывается при рендере, повторяя точную форму узла
   const displayNodes = useMemo(() => {
     if (!previewBlockId && !previewErrorBlockId) return nodes;
     return nodes.map((node) => {
       const isError = node.id === previewErrorBlockId;
       const isCurrent = !isError && node.id === previewBlockId;
       if (!isError && !isCurrent) return node;
+      const radius = SHAPE_RADIUS_CLASSES[nodeShapeOf(node.data.type)];
       const highlight = isError
-        ? 'preview-node-error rounded-2xl ring-2 ring-destructive ring-offset-2 ring-offset-background shadow-[0_0_0_4px_color-mix(in_oklab,var(--destructive)_25%,transparent)]'
-        : 'preview-node-current animate-preview-pulse rounded-2xl ring-2 ring-[var(--brand)] ring-offset-2 ring-offset-background shadow-[0_0_18px_-2px_color-mix(in_oklab,var(--brand)_45%,transparent)]';
+        ? `preview-node-error ${radius} ring-2 ring-destructive ring-offset-2 ring-offset-background shadow-[0_0_0_4px_color-mix(in_oklab,var(--destructive)_25%,transparent)]`
+        : `preview-node-current animate-preview-pulse ${radius}`;
       return {
         ...node,
         className: node.className ? `${node.className} ${highlight}` : highlight,
@@ -654,7 +734,8 @@ function ScenarioEditor({
 
   // Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y — по code (не зависит от раскладки); поля ввода и окна не трогаем
   const { undo, redo } = history;
-  const overlayOpen = dialog !== null || picker !== null || testEnvOpen;
+  const overlayOpen =
+    dialog !== null || picker !== null || testEnvOpen || importOpen || shortcutsOpen;
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
@@ -669,6 +750,33 @@ function ScenarioEditor({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [undo, redo, overlayOpen]);
+
+  // Режимы холста (V / H), выделение всех блоков (Ctrl+A) и снятие выделения (Esc)
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (showWelcome || overlayOpen || isUndoBlockedTarget(event.target)) return;
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.code === 'KeyA') {
+        event.preventDefault();
+        commitNodes(nodesRef.current.map((node) => (node.selected ? node : { ...node, selected: true })));
+        return;
+      }
+      if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+      if (event.code === 'KeyV') {
+        setCanvasMode('select');
+      } else if (event.code === 'KeyH') {
+        setCanvasMode('pan');
+      } else if (
+        event.key === 'Escape' &&
+        !validationOpen &&
+        !previewOpen &&
+        nodesRef.current.some((node) => node.selected)
+      ) {
+        handleClearSelection();
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showWelcome, overlayOpen, validationOpen, previewOpen, commitNodes, handleClearSelection]);
 
   // Предупреждение о несохранённых изменениях: закрытие вкладки и переход по ссылкам
   useEffect(() => {
@@ -703,76 +811,77 @@ function ScenarioEditor({
   return (
     <>
       <EditorHeader name={name} dirty={dirty}>
-        <div className="flex items-center gap-3">
-          {/* История изменений */}
-          <div className="flex items-center gap-1">
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="outline"
-              disabled={!history.canUndo}
-              onClick={history.undo}
-              aria-label={ru.editor.undo}
-              title={`${ru.editor.undo} (Ctrl+Z)`}
-            >
-              <Undo2 className="size-4" />
-            </Button>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="outline"
-              disabled={!history.canRedo}
-              onClick={history.redo}
-              aria-label={ru.editor.redo}
-              title={`${ru.editor.redo} (Ctrl+Shift+Z)`}
-            >
-              <Redo2 className="size-4" />
-            </Button>
-          </div>
-          <span className="h-5 w-px bg-border" aria-hidden />
-          {/* Инструменты проверки, окружения и импорта/экспорта */}
-          <div className="flex items-center gap-1.5">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={save.isPending || validate.isPending}
-              onClick={() => void handleValidate()}
-            >
-              <CheckCheck className="size-4" />
-              {validate.isPending ? ru.validationPanel.checking : ru.validationPanel.button}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => setTestEnvOpen(true)}
-            >
-              <SlidersHorizontal className="size-4" />
-              {ru.testEnvironment.button}
-            </Button>
-            <ImportExportMenu
-              projectId={projectId}
-              projectName={name}
-              dirty={dirty}
-              disabled={save.isPending}
-              onSaveBeforeExport={handleSaveBeforeExport}
-              onImported={onImported}
-            />
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="outline"
-              onClick={() => setShortcutsOpen(true)}
-              aria-label={ru.editor.shortcuts.open}
-              title={ru.editor.shortcuts.open}
-            >
-              <CircleHelp className="size-4" />
-            </Button>
-          </div>
-          <span className="h-5 w-px bg-border" aria-hidden />
-          {/* Основные действия: тема, боты, сохранение и запуск превью */}
-          <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2 lg:gap-3">
+          {/* Десктопная панель инструментов: на экранах <lg скрыта, доступна в мобильном меню */}
+          <div className="hidden items-center gap-3 lg:flex">
+            {/* История изменений */}
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                disabled={!history.canUndo}
+                onClick={history.undo}
+                aria-label={ru.editor.undo}
+                title={`${ru.editor.undo} (Ctrl+Z)`}
+              >
+                <Undo2 className="size-4" />
+              </Button>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                disabled={!history.canRedo}
+                onClick={history.redo}
+                aria-label={ru.editor.redo}
+                title={`${ru.editor.redo} (Ctrl+Shift+Z)`}
+              >
+                <Redo2 className="size-4" />
+              </Button>
+            </div>
+            <span className="h-5 w-px bg-border" aria-hidden />
+            {/* Инструменты проверки, окружения и импорта/экспорта */}
+            <div className="flex items-center gap-1.5">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={save.isPending || validate.isPending}
+                onClick={() => void handleValidate()}
+              >
+                <CheckCheck className="size-4" />
+                {validate.isPending ? ru.validationPanel.checking : ru.validationPanel.button}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setTestEnvOpen(true)}
+              >
+                <SlidersHorizontal className="size-4" />
+                {ru.testEnvironment.button}
+              </Button>
+              <ImportExportMenu
+                projectId={projectId}
+                projectName={name}
+                dirty={dirty}
+                disabled={save.isPending}
+                onSaveBeforeExport={handleSaveBeforeExport}
+                onImported={onImported}
+                onOpenImport={() => setImportOpen(true)}
+              />
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                onClick={() => setShortcutsOpen(true)}
+                aria-label={ru.editor.shortcuts.open}
+                title={ru.editor.shortcuts.open}
+              >
+                <CircleHelp className="size-4" />
+              </Button>
+            </div>
+            <span className="h-5 w-px bg-border" aria-hidden />
             <ThemeToggle size="icon-sm" />
             <Link
               to={`/projects/${projectId}/bots`}
@@ -780,6 +889,9 @@ function ScenarioEditor({
             >
               {ru.editor.bots}
             </Link>
+          </div>
+          {/* Основные действия: видны на всех экранах */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -788,9 +900,13 @@ function ScenarioEditor({
                   variant="outline"
                   disabled={save.isPending}
                   onClick={handleSave}
+                  aria-label={save.isPending ? ru.editor.saving : ru.editor.save}
+                  className="size-8 p-0 sm:w-auto sm:px-3"
                 >
                   <Save className="size-4" />
-                  {save.isPending ? ru.editor.saving : ru.editor.save}
+                  <span className="hidden sm:inline">
+                    {save.isPending ? ru.editor.saving : ru.editor.save}
+                  </span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{ru.editor.saveShortcut}</TooltipContent>
@@ -801,10 +917,81 @@ function ScenarioEditor({
               variant="default"
               disabled={save.isPending}
               onClick={() => void handleOpenPreview()}
+              className="h-8 px-2.5 sm:px-3"
             >
               <Play className="size-4" />
               {ru.preview.button}
             </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="outline"
+                  className="lg:hidden"
+                  aria-label={ru.editor.moreActions}
+                  title={ru.editor.moreActions}
+                >
+                  <MoreVertical className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem disabled={!history.canUndo} onSelect={history.undo}>
+                  <Undo2 className="size-4" />
+                  {ru.editor.undo}
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={!history.canRedo} onSelect={history.redo}>
+                  <Redo2 className="size-4" />
+                  {ru.editor.redo}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  disabled={save.isPending || validate.isPending}
+                  onSelect={() => void handleValidate()}
+                >
+                  <CheckCheck className="size-4" />
+                  {validate.isPending ? ru.validationPanel.checking : ru.validationPanel.button}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setTestEnvOpen(true)}>
+                  <SlidersHorizontal className="size-4" />
+                  {ru.testEnvironment.button}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={save.isPending || exporting}
+                  onSelect={() => void handleExport('json')}
+                >
+                  <Download className="size-4" />
+                  {ru.importExport.exportJson}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={save.isPending || exporting}
+                  onSelect={() => void handleExport('yaml')}
+                >
+                  <Download className="size-4" />
+                  {ru.importExport.exportYaml}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={save.isPending}
+                  onSelect={() => setImportOpen(true)}
+                >
+                  <Upload className="size-4" />
+                  {ru.importExport.import}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => navigate(`/projects/${projectId}/bots`)}>
+                  <Bot className="size-4" />
+                  {ru.editor.bots}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={toggleTheme}>
+                  {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
+                  {theme === 'dark' ? ru.theme.switchToLight : ru.theme.switchToDark}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setShortcutsOpen(true)}>
+                  <CircleHelp className="size-4" />
+                  {ru.editor.shortcuts.open}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </EditorHeader>
@@ -815,6 +1002,8 @@ function ScenarioEditor({
               <Canvas
                 nodes={displayNodes}
                 edges={displayEdges}
+                mode={canvasMode}
+                onModeChange={setCanvasMode}
                 onNodesChange={handleNodesChange}
                 onEdgesChange={handleEdgesChange}
                 onEdgesReplace={handleEdgesReplace}
@@ -823,6 +1012,9 @@ function ScenarioEditor({
                 onBlockDrop={handleBlockDrop}
                 onNodeDragStart={handleDragStart}
                 onNodeDragStop={handleDragStop}
+                onDuplicateSelected={handleDuplicateSelected}
+                onDeleteSelected={handleDeleteSelected}
+                onClearSelection={handleClearSelection}
               >
                 {blank && !showWelcome && entryNode && (
                   <FirstStepCard
@@ -845,6 +1037,12 @@ function ScenarioEditor({
         focusTitle={dialog?.focusTitle ?? false}
         onChange={handleDataChange}
         onClose={closeDialog}
+      />
+      <ImportDialog
+        projectId={projectId}
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={onImported}
       />
       <ShortcutsHelp open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <ValidationPanel
@@ -920,7 +1118,7 @@ export function EditorPage() {
 
   return (
     <TooltipProvider>
-      <div className="flex h-svh flex-col">
+      <div className="flex h-dvh flex-col overflow-hidden">
         {isError ? (
           <>
             <EditorHeader />

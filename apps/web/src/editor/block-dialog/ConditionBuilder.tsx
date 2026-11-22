@@ -116,9 +116,9 @@ function RowEditor({
     NUMERIC_OPERATORS.includes(row.op) && row.value.trim() !== '' && !isPlainNumber(row.value);
   return (
     <div className="flex flex-col gap-1" data-testid="condition-row">
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5 rounded-md border p-2 sm:flex-nowrap sm:rounded-none sm:border-0 sm:p-0">
         <InsertableInput
-          className="min-w-0 flex-1"
+          className="min-w-0 flex-1 basis-[calc(50%-0.25rem)] sm:basis-auto"
           list={listId}
           placeholder={t.variable}
           aria-label={`${t.variable} ${index + 1}`}
@@ -130,11 +130,12 @@ function RowEditor({
           ariaLabel={`${t.operator} ${index + 1}`}
           value={row.op}
           groups={OPERATOR_SELECT_GROUPS}
+          className="max-w-full"
           onValueChange={(op) => onChange({ op: op as ConditionOperator })}
         />
         {needsValue ? (
           <InsertableInput
-            className="min-w-0 flex-1"
+            className="min-w-0 flex-1 basis-[calc(100%-2.75rem)] sm:basis-auto"
             placeholder={t.value}
             aria-label={`${t.value} ${index + 1}`}
             value={row.value}
@@ -143,7 +144,7 @@ function RowEditor({
             onValueChange={(value) => onChange({ value })}
           />
         ) : (
-          <span className="flex-1" />
+          <span className="hidden flex-1 sm:inline" />
         )}
         <Button
           type="button"

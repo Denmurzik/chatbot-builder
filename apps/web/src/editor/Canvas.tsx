@@ -35,6 +35,17 @@ const edgeTypes = { default: ScenarioEdge };
 const SNAP_GRID: [number, number] = [GRID_SIZE, GRID_SIZE];
 const MULTI_SELECTION_KEYS = ['Meta', 'Control', 'Shift'];
 const SELECT_MODE_PAN_BUTTONS = [1, 2];
+const CONNECTION_LINE_STYLE = { stroke: 'var(--ring)', strokeWidth: 2 };
+
+function clientPointOf(event: MouseEvent | TouchEvent): { x: number; y: number } | null {
+  if ('changedTouches' in event && event.changedTouches[0]) {
+    return { x: event.changedTouches[0].clientX, y: event.changedTouches[0].clientY };
+  }
+  if ('clientX' in event) {
+    return { x: event.clientX, y: event.clientY };
+  }
+  return null;
+}
 
 // Delete в окне блока, выпадающих списках и диалогах не должен удалять блоки на холсте
 function isFocusInsidePanel(): boolean {
@@ -58,6 +69,8 @@ interface CanvasProps {
   onAddClick: () => void;
   // Блок из панели «Что дальше?» отпущен над холстом (координаты экрана)
   onBlockDrop: (type: string, point: { x: number; y: number }) => void;
+  // Связь (от ручки или «+» выхода) отпущена на пустом месте холста — предлагаем выбрать новый блок
+  onConnectDrop?: (source: { blockId: string; output: string }, point: { x: number; y: number }) => void;
   // Начало и конец перетаскивания одного или группы блоков — для истории
   onNodeDragStart: () => void;
   onNodeDragStop: () => void;
@@ -80,6 +93,7 @@ export function Canvas({
   onAutoLayout,
   onAddClick,
   onBlockDrop,
+  onConnectDrop,
   onNodeDragStart,
   onNodeDragStop,
   onDuplicateSelected,
@@ -159,6 +173,24 @@ export function Canvas({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={handleConnect}
+        connectionDragThreshold={5}
+        connectionLineStyle={CONNECTION_LINE_STYLE}
+        onConnectEnd={(event, connectionState) => {
+          if (connectionState.isValid) return;
+          const { fromHandle } = connectionState;
+          if (!fromHandle || fromHandle.type !== 'source' || fromHandle.id == null) return;
+          // Отпускание на исходный блок считаем отменой
+          if (
+            event.target instanceof Element &&
+            event.target.closest(`.react-flow__node[data-id="${fromHandle.nodeId}"]`)
+          ) {
+            return;
+          }
+          const point = clientPointOf(event);
+          if (point) {
+            onConnectDrop?.({ blockId: fromHandle.nodeId, output: fromHandle.id }, point);
+          }
+        }}
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onSelectionDragStart={onNodeDragStart}

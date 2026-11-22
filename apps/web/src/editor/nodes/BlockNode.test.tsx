@@ -139,6 +139,28 @@ describe('BlockNode', () => {
     expect(actions.addFromOutput).toHaveBeenCalledWith('opt_1', 'Отмена');
   });
 
+  it('перетаскивание «+» выхода передаёт mousedown на ручку и не вызывает повторный click', () => {
+    const { container, actions } = renderBlockNode('opt_2', {
+      type: 'TEXT_MESSAGE',
+      title: 'Привет',
+      text: 'Текст',
+    });
+
+    const sourceHandle = container.querySelector('.react-flow__handle.source')!;
+    const handleMouseDown = vi.fn();
+    sourceHandle.addEventListener('mousedown', handleMouseDown);
+
+    const addButton = screen.getByRole('button', { name: ru.editor.addNextBlock });
+    fireEvent.mouseDown(addButton, { button: 0, clientX: 100, clientY: 100 });
+    expect(handleMouseDown).toHaveBeenCalledTimes(1);
+
+    // Сдвиг > 4px подавляет click при отпускании
+    fireEvent.mouseMove(window, { clientX: 160, clientY: 120 });
+    fireEvent.mouseUp(window, { clientX: 160, clientY: 120 });
+    fireEvent.click(addButton);
+    expect(actions.addFromOutput).not.toHaveBeenCalled();
+  });
+
   it('«+» скрыт у подключённого выхода и виден у свободного', () => {
     const data = {
       type: 'CONDITION',

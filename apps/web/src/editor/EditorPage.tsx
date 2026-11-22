@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ReactFlowProvider,
+  ViewportPortal,
   applyEdgeChanges,
   applyNodeChanges,
   useReactFlow,
@@ -99,10 +100,10 @@ function isMeaningfulNodeChange(change: NodeChange<BlockNode>): boolean {
   return change.type !== 'select' && change.type !== 'dimensions';
 }
 
-// Откуда открыта панель «Что дальше?»: с выхода блока, со связи или с кнопки холста
+// Откуда открыта панель «Что дальше?»: с выхода блока (или с перетягивания «+» в точку), со связи или с кнопки холста
 type PickerTarget =
   | { kind: 'free' }
-  | { kind: 'output'; blockId: string; output: string }
+  | { kind: 'output'; blockId: string; output: string; point?: { x: number; y: number } }
   | { kind: 'edge'; edgeId: string };
 
 // Сценарий из одного «Старта» без связей — повод показать приветствие
@@ -381,7 +382,7 @@ function ScenarioEditor({
     const edges = edgesRef.current;
     let result: GraphResult | null;
     if (target.kind === 'output') {
-      result = addFromOutput(nodes, edges, target, type, point);
+      result = addFromOutput(nodes, edges, target, type, point ?? target.point);
     } else if (target.kind === 'edge') {
       result = insertOnEdge(nodes, edges, target.edgeId, type, point);
       if (!edges.some((edge) => edge.id === target.edgeId)) toast.error(ru.editor.edgeGone);
@@ -402,6 +403,20 @@ function ScenarioEditor({
       target.kind === 'edge' && type === 'EXIT_POINT' ? { kind: 'free' } : target;
     placeBlock(type, effective, snapToGridPoint(screenToFlowPosition(client)));
   }
+
+  // Перетянули «+» (или выходную ручку) на пустое место холста: запоминаем точку и открываем выбор блока
+  const handleConnectDrop = useCallback(
+    (source: { blockId: string; output: string }, client: { x: number; y: number }) => {
+      const flowPos = screenToFlowPosition(client);
+      setPicker({
+        kind: 'output',
+        blockId: source.blockId,
+        output: source.output,
+        point: snapToGridPoint({ x: flowPos.x, y: flowPos.y - 40 }),
+      });
+    },
+    [screenToFlowPosition],
+  );
 
   function applyTemplate(template: ScenarioTemplate) {
     setWelcomePending(false);
@@ -1010,12 +1025,26 @@ function ScenarioEditor({
                 onAutoLayout={handleAutoLayout}
                 onAddClick={() => setPicker({ kind: 'free' })}
                 onBlockDrop={handleBlockDrop}
+                onConnectDrop={handleConnectDrop}
                 onNodeDragStart={handleDragStart}
                 onNodeDragStop={handleDragStop}
                 onDuplicateSelected={handleDuplicateSelected}
                 onDeleteSelected={handleDeleteSelected}
                 onClearSelection={handleClearSelection}
               >
+                {picker?.kind === 'output' && picker.point && (
+                  <ViewportPortal>
+                    <div
+                      data-testid="connect-drop-marker"
+                      className="pointer-events-none absolute flex h-20 w-48 items-center justify-center rounded-lg border-2 border-dashed border-[var(--brand)] bg-[var(--brand-soft)]/45 px-3 text-xs font-medium text-foreground shadow-sm"
+                      style={{
+                        transform: `translate(${picker.point.x}px, ${picker.point.y}px)`,
+                      }}
+                    >
+                      {ru.editor.dropTargetHint}
+                    </div>
+                  </ViewportPortal>
+                )}
                 {blank && !showWelcome && entryNode && (
                   <FirstStepCard
                     entry={entryNode}

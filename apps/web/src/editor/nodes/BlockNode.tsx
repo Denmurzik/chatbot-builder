@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Handle,
   NodeToolbar,
@@ -58,7 +58,7 @@ const selectSelectedCount = (state: ReactFlowState) => {
   return count;
 };
 
-// Один выход: подпись, ручка справа и «+» у неподключённого выхода
+// Один выход: подпись, ручка справа и «+» у неподключённого выхода (можно кликнуть или потянуть)
 function OutputRow({
   nodeId,
   type,
@@ -72,6 +72,59 @@ function OutputRow({
 }) {
   const { addFromOutput } = useEditorActions();
   const connections = useNodeConnections({ id: nodeId, handleType: 'source', handleId: output });
+  const handleRef = useRef<HTMLDivElement>(null);
+  const suppressClickRef = useRef(false);
+  const cleanupDragRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => () => cleanupDragRef.current?.(), []);
+
+  function handlePlusMouseDown(event: React.MouseEvent<HTMLButtonElement>) {
+    if (event.button !== 0 || !handleRef.current) return;
+    event.preventDefault();
+    cleanupDragRef.current?.();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let dragged = false;
+    suppressClickRef.current = false;
+
+    const onMove = (moveEvent: MouseEvent) => {
+      if (!dragged && Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) > 4) {
+        dragged = true;
+        suppressClickRef.current = true;
+      }
+    };
+    const cleanup = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      cleanupDragRef.current = null;
+    };
+    const onUp = () => {
+      cleanup();
+      if (dragged) {
+        // Сбрасываем флаг сразу после возможного синхронного click
+        window.setTimeout(() => {
+          suppressClickRef.current = false;
+        }, 0);
+      }
+    };
+
+    cleanupDragRef.current = cleanup;
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp, { once: true });
+
+    // Передаём старт перетаскивания на реальную ручку выхода, чтобы React Flow потянул живую связь
+    handleRef.current.dispatchEvent(
+      new MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        buttons: 1,
+        clientX: event.clientX,
+        clientY: event.clientY,
+      }),
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -83,6 +136,7 @@ function OutputRow({
     >
       {outputLabel(type, output)}
       <Handle
+        ref={handleRef}
         id={output}
         type="source"
         position={Position.Right}
@@ -95,9 +149,16 @@ function OutputRow({
           <button
             type="button"
             aria-label={ru.editor.addNextBlock}
-            title={ru.editor.addNextBlock}
-            className="nodrag nopan pointer-events-auto flex size-6 touch-manipulation items-center justify-center rounded-md border bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground sm:size-5"
-            onClick={() => addFromOutput(nodeId, output)}
+            title={ru.editor.addNextBlockHint}
+            className="nodrag nopan pointer-events-auto flex size-6 touch-manipulation cursor-grab items-center justify-center rounded-md border bg-card text-muted-foreground transition-colors hover:border-[var(--brand)] hover:bg-accent hover:text-accent-foreground active:cursor-grabbing sm:size-5"
+            onMouseDown={handlePlusMouseDown}
+            onClick={() => {
+              if (suppressClickRef.current) {
+                suppressClickRef.current = false;
+                return;
+              }
+              addFromOutput(nodeId, output);
+            }}
           >
             <Plus className="size-3.5 sm:size-3" />
           </button>

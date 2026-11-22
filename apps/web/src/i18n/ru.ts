@@ -103,6 +103,8 @@ export const ru = {
     leaveStay: 'Остаться',
     leaveConfirm: 'Выйти без сохранения',
     addNextBlock: 'Добавить следующий блок',
+    addNextBlockHint: 'Нажмите или потяните на холст, чтобы добавить следующий блок',
+    dropTargetHint: 'Выберите блок…',
     insertOnEdge: 'Добавить блок на связь',
     deleteEdge: 'Удалить связь',
     autoLayout: 'Упорядочить',

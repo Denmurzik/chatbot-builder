@@ -1,17 +1,20 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { BotView, ValidationError } from '@chatbot/model';
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Check, Copy, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import {
+  type ConnectVkInput,
   useBots,
   useConnectTelegram,
+  useConnectVk,
   useCreateBot,
   useDeleteBot,
   useDisconnectTelegram,
+  useDisconnectVk,
   usePublishBot,
   useSaveEnvironment,
 } from '@/api/bots';
@@ -40,6 +43,28 @@ import { ru } from '@/i18n/ru';
 
 const nameSchema = z.object({ name: z.string().trim().min(1, ru.bots.nameRequired) });
 const tokenSchema = z.object({ token: z.string().trim().min(1, ru.bots.tokenRequired) });
+const vkFormSchema = z
+  .object({
+    token: z.string().trim().min(1, ru.bots.vkTokenRequired),
+    groupId: z
+      .string()
+      .trim()
+      .refine((val) => /^\d+$/.test(val) && Number(val) > 0 && Number.isSafeInteger(Number(val)), {
+        message: ru.bots.vkGroupIdInvalid,
+      }),
+    mode: z.enum(['CALLBACK', 'LONG_POLL']),
+    confirmationCode: z.string().trim().optional(),
+    secret: z.string().trim().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.mode === 'CALLBACK' && !data.confirmationCode) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['confirmationCode'],
+        message: ru.bots.vkConfirmationRequired,
+      });
+    }
+  });
 
 function CreateBotDialog(props: {
   projectId: string;
@@ -148,7 +173,7 @@ function TelegramSection(props: { projectId: string; bot: BotView }) {
   const connect = useConnectTelegram(props.projectId, props.bot.id);
   const disconnect = useDisconnectTelegram(props.projectId, props.bot.id);
   const [serverError, setServerError] = useState<string | null>(null);
-  const connection = props.bot.connections[0];
+  const connection = props.bot.connections.find((c) => c.messenger === 'TELEGRAM');
   const form = useForm<z.infer<typeof tokenSchema>>({
     resolver: zodResolver(tokenSchema),
     defaultValues: { token: '' },
@@ -222,6 +247,320 @@ function TelegramSection(props: { projectId: string; bot: BotView }) {
   );
 }
 
+function vkErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    const rawMessage = (error.body as { message?: unknown } | undefined)?.message;
+    const serverText =
+      typeof rawMessage === 'string' && rawMessage.trim().length > 0
+        ? rawMessage
+        : Array.isArray(rawMessage)
+          ? rawMessage.filter((item): item is string => typeof item === 'string').join(', ')
+          : null;
+    if (error.status === 409) return serverText ?? ru.bots.vkTokenTaken;
+    if (error.status === 400) return serverText ?? ru.bots.vkInvalid;
+    if (error.status === 502) return serverText ?? ru.bots.vkUnavailable;
+    if (serverText) return serverText;
+  }
+  return ru.common.unknownError;
+}
+
+function VkSection(props: { projectId: string; bot: BotView }) {
+  const connect = useConnectVk(props.projectId, props.bot.id);
+  const disconnect = useDisconnectVk(props.projectId, props.bot.id);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const connection = props.bot.connections.find((c) => c.messenger === 'VK');
+  const form = useForm<z.infer<typeof vkFormSchema>>({
+    resolver: zodResolver(vkFormSchema),
+    defaultValues: {
+      token: '',
+      groupId: connection?.vkGroupId ? String(connection.vkGroupId) : '',
+      mode: connection?.vkMode ?? 'CALLBACK',
+      confirmationCode: connection?.vkConfirmationCode ?? '',
+      secret: '',
+    },
+  });
+
+  const mode = form.watch('mode');
+  const webhookUrl = `${window.location.origin}/webhook/vk/${props.bot.id}`;
+  const showForm = !connection || editing;
+
+  const openEditForm = () => {
+    setServerError(null);
+    form.reset({
+      token: '',
+      groupId: connection?.vkGroupId ? String(connection.vkGroupId) : '',
+      mode: connection?.vkMode ?? 'CALLBACK',
+      confirmationCode: connection?.vkConfirmationCode ?? '',
+      secret: '',
+    });
+    setEditing(true);
+  };
+
+  const onCopyWebhook = async () => {
+    try {
+      await navigator.clipboard?.writeText(webhookUrl);
+      setCopied(true);
+      toast.success(ru.bots.vkWebhookCopied);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error(ru.common.unknownError);
+    }
+  };
+
+  const onSubmit = form.handleSubmit((values) => {
+    setServerError(null);
+    const payload: ConnectVkInput = {
+      token: values.token,
+      groupId: Number(values.groupId),
+      mode: values.mode,
+      ...(values.mode === 'CALLBACK' && values.confirmationCode
+        ? { confirmationCode: values.confirmationCode }
+        : {}),
+      ...(values.mode === 'CALLBACK' && values.secret ? { secret: values.secret } : {}),
+    };
+    connect.mutate(payload, {
+      onSuccess: () => {
+        form.reset({
+          token: '',
+          groupId: String(payload.groupId),
+          mode: payload.mode,
+          confirmationCode: payload.confirmationCode ?? '',
+          secret: '',
+        });
+        setEditing(false);
+        toast.success(ru.bots.vkSaved);
+      },
+      onError: (error) => setServerError(vkErrorMessage(error)),
+    });
+  });
+
+  return (
+    <section className="flex flex-col gap-2">
+      <h3 className="text-sm font-medium">{ru.bots.vkSection}</h3>
+      {connection ? (
+        <div className="flex flex-col gap-2 rounded-md border p-3 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-muted-foreground">{connection.tokenMask}</span>
+              {connection.vkGroupId ? (
+                <span className="text-muted-foreground">
+                  {ru.bots.vkCommunityPrefix} #{connection.vkGroupId}
+                </span>
+              ) : null}
+              <span className="rounded bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
+                {connection.vkMode === 'LONG_POLL'
+                  ? ru.bots.vkModeLongPoll
+                  : ru.bots.vkModeCallback}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {connection.vkHasSecret ? ru.bots.vkSecretSet : ru.bots.vkSecretNotSet}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              {!editing ? (
+                <Button type="button" variant="outline" size="sm" onClick={openEditForm}>
+                  {ru.bots.vkUpdate}
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={disconnect.isPending}
+                onClick={() =>
+                  disconnect.mutate(undefined, {
+                    onSuccess: () => {
+                      setEditing(false);
+                      toast.success(ru.bots.vkDisconnected);
+                    },
+                    onError: () => toast.error(ru.common.unknownError),
+                  })
+                }
+              >
+                {ru.bots.vkDisconnect}
+              </Button>
+            </div>
+          </div>
+          {connection.vkMode === 'CALLBACK' ? (
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-muted-foreground">{ru.bots.vkWebhookLabel}</span>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 truncate rounded bg-muted px-2 py-1 font-mono text-xs">
+                  {webhookUrl}
+                </code>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-label={ru.bots.vkWebhookCopy}
+                  onClick={onCopyWebhook}
+                >
+                  {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                  {ru.bots.vkWebhookCopy}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">{ru.bots.vkNotConnected}</p>
+      )}
+      {showForm ? (
+        <Form {...form}>
+          <form onSubmit={onSubmit} className="flex flex-col gap-3">
+            <FormField
+              control={form.control}
+              name="token"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{ru.bots.vkTokenLabel}</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      type="password"
+                      autoComplete="off"
+                      onChange={(event) => {
+                        setServerError(null);
+                        field.onChange(event);
+                      }}
+                    />
+                  </FormControl>
+                  <p className="text-xs text-muted-foreground">{ru.bots.vkTokenHint}</p>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="groupId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{ru.bots.vkGroupIdLabel}</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      inputMode="numeric"
+                      autoComplete="off"
+                      onChange={(event) => {
+                        setServerError(null);
+                        field.onChange(event);
+                      }}
+                    />
+                  </FormControl>
+                  <p className="text-xs text-muted-foreground">{ru.bots.vkGroupIdHint}</p>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="mode"
+              render={({ field }) => (
+                <FormItem>
+                  <fieldset className="flex flex-col gap-2">
+                    <legend className="text-sm font-medium">{ru.bots.vkModeLabel}</legend>
+                    <div className="flex flex-wrap gap-4">
+                      <label className="flex cursor-pointer items-center gap-2 text-sm">
+                        <input
+                          type="radio"
+                          name={`vk-mode-${props.bot.id}`}
+                          value="CALLBACK"
+                          checked={field.value === 'CALLBACK'}
+                          onChange={() => {
+                            setServerError(null);
+                            field.onChange('CALLBACK');
+                          }}
+                        />
+                        {ru.bots.vkModeCallback}
+                      </label>
+                      <label className="flex cursor-pointer items-center gap-2 text-sm">
+                        <input
+                          type="radio"
+                          name={`vk-mode-${props.bot.id}`}
+                          value="LONG_POLL"
+                          checked={field.value === 'LONG_POLL'}
+                          onChange={() => {
+                            setServerError(null);
+                            field.onChange('LONG_POLL');
+                          }}
+                        />
+                        {ru.bots.vkModeLongPoll}
+                      </label>
+                    </div>
+                  </fieldset>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            {mode === 'CALLBACK' ? (
+              <>
+                <FormField
+                  control={form.control}
+                  name="confirmationCode"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{ru.bots.vkConfirmationLabel}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          value={field.value ?? ''}
+                          autoComplete="off"
+                          onChange={(event) => {
+                            setServerError(null);
+                            field.onChange(event);
+                          }}
+                        />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">{ru.bots.vkConfirmationHint}</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="secret"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{ru.bots.vkSecretLabel}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          value={field.value ?? ''}
+                          type="password"
+                          autoComplete="off"
+                          onChange={(event) => {
+                            setServerError(null);
+                            field.onChange(event);
+                          }}
+                        />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">{ru.bots.vkSecretHint}</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </>
+            ) : null}
+            {serverError ? <p className="text-sm text-destructive">{serverError}</p> : null}
+            <div className="flex items-center gap-2">
+              <Button type="submit" variant="outline" disabled={connect.isPending}>
+                {connection ? ru.bots.vkSave : ru.bots.vkConnect}
+              </Button>
+              {connection ? (
+                <Button type="button" variant="ghost" onClick={() => setEditing(false)}>
+                  {ru.common.cancel}
+                </Button>
+              ) : null}
+            </div>
+          </form>
+        </Form>
+      ) : null}
+    </section>
+  );
+}
+
 // 400 несёт русское сообщение сервера с подробностями; без него — общая подсказка
 function environmentErrorMessage(error: unknown): string {
   if (error instanceof ApiError && error.status === 400) {
@@ -284,10 +623,12 @@ function PublishSection(props: { projectId: string; bot: BotView }) {
     });
   };
 
+  const hasConnection = props.bot.connections.length > 0;
+
   return (
     <section className="flex flex-col gap-2">
       <div>
-        <Button type="button" onClick={onPublish} disabled={publish.isPending}>
+        <Button type="button" onClick={onPublish} disabled={publish.isPending || !hasConnection}>
           {publish.isPending
             ? ru.bots.publishing
             : props.bot.status === 'PUBLISHED'
@@ -295,6 +636,9 @@ function PublishSection(props: { projectId: string; bot: BotView }) {
               : ru.bots.publish}
         </Button>
       </div>
+      {!hasConnection ? (
+        <p className="text-xs text-muted-foreground">{ru.bots.publishNeedsConnection}</p>
+      ) : null}
       {errors.length > 0 ? (
         <div role="alert" className="rounded-md border border-destructive/50 p-3 text-sm">
           <p className="font-medium text-destructive">{ru.bots.publishErrorsTitle}</p>
@@ -312,6 +656,8 @@ function PublishSection(props: { projectId: string; bot: BotView }) {
 
 function BotCard(props: { projectId: string; bot: BotView; onDelete: () => void }) {
   const { bot } = props;
+  const telegramConnection = bot.connections.find((c) => c.messenger === 'TELEGRAM');
+  const vkConnection = bot.connections.find((c) => c.messenger === 'VK');
   return (
     <Card>
       <CardHeader className="flex-row items-start justify-between gap-4">
@@ -322,7 +668,8 @@ function BotCard(props: { projectId: string; bot: BotView; onDelete: () => void 
             {bot.publishedAt
               ? `. ${ru.bots.publishedAt}: ${new Date(bot.publishedAt).toLocaleString('ru-RU')}`
               : ''}
-            {bot.connections[0] ? `. ${ru.bots.connectedAs}: ${bot.connections[0].tokenMask}` : ''}
+            {telegramConnection ? `. ${ru.bots.connectedAs}: ${telegramConnection.tokenMask}` : ''}
+            {vkConnection ? `. ${ru.bots.vkConnectedAs}: ${vkConnection.tokenMask}` : ''}
           </CardDescription>
         </div>
         <Button type="button" variant="outline" size="sm" onClick={props.onDelete}>
@@ -332,6 +679,7 @@ function BotCard(props: { projectId: string; bot: BotView; onDelete: () => void 
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <TelegramSection projectId={props.projectId} bot={bot} />
+        <VkSection projectId={props.projectId} bot={bot} />
         <EnvironmentSection projectId={props.projectId} bot={bot} />
         <PublishSection projectId={props.projectId} bot={bot} />
       </CardContent>

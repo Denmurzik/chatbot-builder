@@ -100,4 +100,16 @@ describe('loadConfig', () => {
       /TELEGRAM_PROXY/,
     );
   });
+
+  it('читает VK_API_BASE_URL и VK_POLLING со значениями по умолчанию', () => {
+    const def = loadConfig(baseEnv);
+    expect(def.vkApiBaseUrl).toBe('https://api.vk.com/method');
+    expect(def.vkPollingEnabled).toBe(true);
+
+    expect(
+      loadConfig({ ...baseEnv, VK_API_BASE_URL: 'http://127.0.0.1:4099/' }).vkApiBaseUrl,
+    ).toBe('http://127.0.0.1:4099');
+    expect(loadConfig({ ...baseEnv, VK_POLLING: '0' }).vkPollingEnabled).toBe(false);
+    expect(loadConfig({ ...baseEnv, VK_POLLING: '1' }).vkPollingEnabled).toBe(true);
+  });
 });

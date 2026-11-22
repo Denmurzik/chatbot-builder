@@ -22,6 +22,8 @@ export interface ApiConfig {
   isProduction: boolean;
   telegramPolling: boolean;
   telegramProxy?: string;
+  vkApiBaseUrl: string;
+  vkPollingEnabled: boolean;
   publicUrl?: string;
   queuePrefix?: string;
 }
@@ -82,6 +84,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
 
   const queuePrefix = env.QUEUE_PREFIX?.trim() || undefined;
   const telegramProxy = parseOptionalProxyUrl(env.TELEGRAM_PROXY);
+  const vkApiBaseUrl =
+    env.VK_API_BASE_URL?.trim().replace(/\/+$/, '') || 'https://api.vk.com/method';
+  const vkPollingEnabled = env.VK_POLLING?.trim() !== '0';
 
   return {
     databaseUrl,
@@ -91,6 +96,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     isProduction,
     telegramPolling,
     ...(telegramProxy ? { telegramProxy } : {}),
+    vkApiBaseUrl,
+    vkPollingEnabled,
     ...(publicUrl ? { publicUrl } : {}),
     ...(queuePrefix ? { queuePrefix } : {}),
   };

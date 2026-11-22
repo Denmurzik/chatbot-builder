@@ -18,6 +18,7 @@ describe('Каркас модулей API (skeleton)', () => {
   const prevEnv = {
     DATABASE_URL: process.env.DATABASE_URL,
     TELEGRAM_POLLING: process.env.TELEGRAM_POLLING,
+    VK_POLLING: process.env.VK_POLLING,
     VAULT_KEY: process.env.VAULT_KEY,
     VAULT_HASH_KEY: process.env.VAULT_HASH_KEY,
   };
@@ -26,6 +27,7 @@ describe('Каркас модулей API (skeleton)', () => {
     db = await createIsolatedTestDb();
     process.env.DATABASE_URL = db.databaseUrl;
     process.env.TELEGRAM_POLLING = '0';
+    process.env.VK_POLLING = '0';
     process.env.VAULT_KEY ??= Buffer.alloc(32, 1).toString('base64');
     process.env.VAULT_HASH_KEY ??= Buffer.alloc(32, 2).toString('base64');
 

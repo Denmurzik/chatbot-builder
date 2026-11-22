@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { MessengerAdminPort } from '../common/messenger-admin.port';
+import { TELEGRAM_ADMIN_ADAPTER } from '../common/messenger-admin.port';
 import { MessengerGatewayController } from './messenger-gateway.controller';
 import { PollingService } from './polling.service';
 import { TelegramAdminAdapter } from './telegram-admin.adapter';
@@ -15,8 +15,15 @@ import { UpdateIngestService } from './update-ingest.service';
     PollingService,
     TelegramApiFactory,
     TelegramWebhookService,
-    { provide: MessengerAdminPort, useClass: TelegramAdminAdapter },
+    TelegramAdminAdapter,
+    { provide: TELEGRAM_ADMIN_ADAPTER, useExisting: TelegramAdminAdapter },
   ],
-  exports: [PollingService, TelegramWebhookService, TelegramApiFactory, MessengerAdminPort],
+  exports: [
+    PollingService,
+    TelegramWebhookService,
+    TelegramApiFactory,
+    TelegramAdminAdapter,
+    TELEGRAM_ADMIN_ADAPTER,
+  ],
 })
 export class TelegramModule {}

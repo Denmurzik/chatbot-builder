@@ -59,6 +59,7 @@ describe('Webhook Telegram (интеграционные тесты)', () => {
     process.env.DATABASE_URL = db.databaseUrl;
     process.env.JWT_SECRET = 'test-jwt-secret-key-for-webhook-tests';
     process.env.TELEGRAM_POLLING = '0';
+    process.env.VK_POLLING = '0';
     process.env.NODE_ENV = 'test';
     process.env.REDIS_URL = REDIS_URL;
     process.env.QUEUE_PREFIX = prefix;

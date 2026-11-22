@@ -69,7 +69,7 @@ module.exports = {
     {
       name: 'api-business-no-interaction',
       comment:
-        'В apps/api слой бизнес-логики не может зависеть от слоя взаимодействия (telegram)',
+        'В apps/api слой бизнес-логики не может зависеть от слоя взаимодействия (telegram, vk)',
       severity: 'error',
       from: {
         path: '^apps/api/src/(auth|projects|validation|publication|import-export|preview)/',
@@ -77,7 +77,7 @@ module.exports = {
           '(^|/)(app\\.module|main|configure-app|index|config)\\.ts$|\\.(test|int\\.test)\\.ts$|(^|/)testing/',
       },
       to: {
-        path: '^apps/api/src/telegram/',
+        path: '^apps/api/src/(telegram|vk)/',
       },
     },
     {
@@ -91,7 +91,7 @@ module.exports = {
           '(^|/)(app\\.module|main|configure-app|index|config)\\.ts$|\\.(test|int\\.test)\\.ts$|(^|/)testing/',
       },
       to: {
-        path: '^apps/api/src/(auth|projects|validation|publication|import-export|preview|telegram)/',
+        path: '^apps/api/src/(auth|projects|validation|publication|import-export|preview|telegram|vk)/',
       },
     },
     {

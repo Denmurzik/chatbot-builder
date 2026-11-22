@@ -22,6 +22,7 @@ describe('Projects API (интеграционные тесты)', () => {
     DATABASE_URL: process.env.DATABASE_URL,
     JWT_SECRET: process.env.JWT_SECRET,
     TELEGRAM_POLLING: process.env.TELEGRAM_POLLING,
+    VK_POLLING: process.env.VK_POLLING,
     NODE_ENV: process.env.NODE_ENV,
     VAULT_KEY: process.env.VAULT_KEY,
     VAULT_HASH_KEY: process.env.VAULT_HASH_KEY,
@@ -32,6 +33,7 @@ describe('Projects API (интеграционные тесты)', () => {
     process.env.DATABASE_URL = db.databaseUrl;
     process.env.JWT_SECRET = 'test-jwt-secret-key-for-projects-tests';
     process.env.TELEGRAM_POLLING = '0';
+    process.env.VK_POLLING = '0';
     process.env.NODE_ENV = 'test';
     process.env.VAULT_KEY ??= Buffer.alloc(32, 1).toString('base64');
     process.env.VAULT_HASH_KEY ??= Buffer.alloc(32, 2).toString('base64');
@@ -598,7 +600,7 @@ describe('Projects API (интеграционные тесты)', () => {
     await owner.delete(`/api/projects/${projectId}`).expect(204);
 
     expect(messengerAdminMock.disconnect).toHaveBeenCalledTimes(1);
-    expect(messengerAdminMock.disconnect).toHaveBeenCalledWith(botId, rawToken);
+    expect(messengerAdminMock.disconnect).toHaveBeenCalledWith('TELEGRAM', botId, rawToken, undefined);
 
     // Все записи удаляемого проекта очищены
     expect(await db.prisma.project.findUnique({ where: { id: projectId } })).toBeNull();

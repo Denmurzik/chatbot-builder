@@ -15,20 +15,21 @@ strict digraph "dependency-cruiser output"{
     "apps/api/src/app.module.ts" -> "apps/api/src/telegram"
     "apps/api/src/app.module.ts" -> "apps/api/src/validation"
     "apps/api/src/app.module.ts" -> "apps/api/src/vault"
+    "apps/api/src/app.module.ts" -> "apps/api/src/vk"
     subgraph "cluster_apps" {label="apps" subgraph "cluster_apps/api" {label="api" subgraph "cluster_apps/api/src" {label="src" "apps/api/src/auth" [label=<auth> tooltip="auth" URL="apps/api/src/auth" shape="box3d"] } } }
     "apps/api/src/auth" -> "apps/api/src/config.ts"
     "apps/api/src/auth" -> "apps/api/src/common"
     "apps/api/src/auth" -> "apps/api/src/prisma"
     "apps/api/src/auth" -> "packages/db"
     subgraph "cluster_apps" {label="apps" subgraph "cluster_apps/api" {label="api" subgraph "cluster_apps/api/src" {label="src" "apps/api/src/common" [label=<common> tooltip="common" URL="apps/api/src/common" shape="box3d"] } } }
-    "apps/api/src/common" -> "packages/model" [arrowhead="onormal" penwidth="1.0"]
+    "apps/api/src/common" -> "packages/model"
     "apps/api/src/common" -> "packages/vault"
     subgraph "cluster_apps" {label="apps" subgraph "cluster_apps/api" {label="api" subgraph "cluster_apps/api/src" {label="src" "apps/api/src/config.ts" [label=<config.ts> tooltip="config.ts" URL="apps/api/src/config.ts" fillcolor="#ddfeff"] } } }
     subgraph "cluster_apps" {label="apps" subgraph "cluster_apps/api" {label="api" subgraph "cluster_apps/api/src" {label="src" "apps/api/src/configure-app.ts" [label=<configure-app.ts> tooltip="configure-app.ts" URL="apps/api/src/configure-app.ts" fillcolor="#ddfeff"] } } }
     subgraph "cluster_apps" {label="apps" subgraph "cluster_apps/api" {label="api" subgraph "cluster_apps/api/src" {label="src" "apps/api/src/import-export" [label=<import-export> tooltip="import-export" URL="apps/api/src/import-export" shape="box3d"] } } }
     "apps/api/src/import-export" -> "apps/api/src/auth"
-    "apps/api/src/import-export" -> "apps/api/src/projects"
     "apps/api/src/import-export" -> "apps/api/src/common"
+    "apps/api/src/import-export" -> "apps/api/src/projects"
     "apps/api/src/import-export" -> "packages/model" [arrowhead="onormal" penwidth="1.0"]
     subgraph "cluster_apps" {label="apps" subgraph "cluster_apps/api" {label="api" subgraph "cluster_apps/api/src" {label="src" "apps/api/src/index.ts" [label=<index.ts> tooltip="index.ts" URL="apps/api/src/index.ts" fillcolor="#ddfeff"] } } }
     "apps/api/src/index.ts" -> "apps/api/src/app.module.ts" [arrowhead="inv"]
@@ -53,25 +54,25 @@ strict digraph "dependency-cruiser output"{
     "apps/api/src/prisma" -> "apps/api/src/config.ts"
     "apps/api/src/prisma" -> "packages/db"
     subgraph "cluster_apps" {label="apps" subgraph "cluster_apps/api" {label="api" subgraph "cluster_apps/api/src" {label="src" "apps/api/src/projects" [label=<projects> tooltip="projects" URL="apps/api/src/projects" shape="box3d"] } } }
-    "apps/api/src/projects" -> "apps/api/src/auth"
     "apps/api/src/projects" -> "apps/api/src/common"
-    "apps/api/src/projects" -> "packages/model"
     "apps/api/src/projects" -> "apps/api/src/prisma"
-    "apps/api/src/projects" -> "packages/db" [arrowhead="onormal" penwidth="1.0"]
+    "apps/api/src/projects" -> "packages/db"
+    "apps/api/src/projects" -> "packages/model"
     "apps/api/src/projects" -> "packages/vault"
+    "apps/api/src/projects" -> "apps/api/src/auth"
     subgraph "cluster_apps" {label="apps" subgraph "cluster_apps/api" {label="api" subgraph "cluster_apps/api/src" {label="src" "apps/api/src/publication" [label=<publication> tooltip="publication" URL="apps/api/src/publication" shape="box3d"] } } }
     "apps/api/src/publication" -> "apps/api/src/auth"
     "apps/api/src/publication" -> "apps/api/src/common"
     "apps/api/src/publication" -> "apps/api/src/validation"
     "apps/api/src/publication" -> "apps/api/src/prisma"
     "apps/api/src/publication" -> "packages/db"
-    "apps/api/src/publication" -> "packages/model" [arrowhead="onormal" penwidth="1.0"]
+    "apps/api/src/publication" -> "packages/model"
     "apps/api/src/publication" -> "packages/vault"
     subgraph "cluster_apps" {label="apps" subgraph "cluster_apps/api" {label="api" subgraph "cluster_apps/api/src" {label="src" "apps/api/src/queue" [label=<queue> tooltip="queue" URL="apps/api/src/queue" shape="box3d"] } } }
     "apps/api/src/queue" -> "apps/api/src/config.ts"
     "apps/api/src/queue" -> "packages/queue"
     subgraph "cluster_apps" {label="apps" subgraph "cluster_apps/api" {label="api" subgraph "cluster_apps/api/src" {label="src" "apps/api/src/telegram" [label=<telegram> tooltip="telegram" URL="apps/api/src/telegram" shape="box3d"] } } }
-    "apps/api/src/telegram" -> "apps/api/src/publication"
+    "apps/api/src/telegram" -> "apps/api/src/common"
     "apps/api/src/telegram" -> "apps/api/src/prisma"
     "apps/api/src/telegram" -> "apps/api/src/queue"
     "apps/api/src/telegram" -> "packages/queue" [arrowhead="onormal" penwidth="1.0"]
@@ -85,6 +86,14 @@ strict digraph "dependency-cruiser output"{
     "apps/api/src/validation" -> "packages/model"
     subgraph "cluster_apps" {label="apps" subgraph "cluster_apps/api" {label="api" subgraph "cluster_apps/api/src" {label="src" "apps/api/src/vault" [label=<vault> tooltip="vault" URL="apps/api/src/vault" shape="box3d"] } } }
     "apps/api/src/vault" -> "packages/vault"
+    subgraph "cluster_apps" {label="apps" subgraph "cluster_apps/api" {label="api" subgraph "cluster_apps/api/src" {label="src" "apps/api/src/vk" [label=<vk> tooltip="vk" URL="apps/api/src/vk" shape="box3d"] } } }
+    "apps/api/src/vk" -> "apps/api/src/common"
+    "apps/api/src/vk" -> "apps/api/src/config.ts"
+    "apps/api/src/vk" -> "packages/model" [arrowhead="onormal" penwidth="1.0"]
+    "apps/api/src/vk" -> "apps/api/src/prisma"
+    "apps/api/src/vk" -> "apps/api/src/queue"
+    "apps/api/src/vk" -> "packages/queue" [arrowhead="onormal" penwidth="1.0"]
+    "apps/api/src/vk" -> "packages/vault"
     subgraph "cluster_apps" {label="apps" subgraph "cluster_apps/engine" {label="engine" subgraph "cluster_apps/engine/src" {label="src" "apps/engine/src/app.module.ts" [label=<app.module.ts> tooltip="app.module.ts" URL="apps/engine/src/app.module.ts" fillcolor="#ddfeff"] } } }
     "apps/engine/src/app.module.ts" -> "apps/engine/src/dialog"
     "apps/engine/src/app.module.ts" -> "apps/engine/src/dispatcher"
@@ -93,7 +102,7 @@ strict digraph "dependency-cruiser output"{
     "apps/engine/src/app.module.ts" -> "apps/engine/src/messenger"
     "apps/engine/src/app.module.ts" -> "apps/engine/src/preview"
     subgraph "cluster_apps" {label="apps" subgraph "cluster_apps/engine" {label="engine" subgraph "cluster_apps/engine/src" {label="src" "apps/engine/src/config.ts" [label=<config.ts> tooltip="config.ts" URL="apps/engine/src/config.ts" fillcolor="#ddfeff"] } } }
-    "apps/engine/src/config.ts" -> "apps/engine/src/infra" [arrowhead="onormal" penwidth="1.0"]
+    "apps/engine/src/config.ts" -> "apps/engine/src/infra"
     subgraph "cluster_apps" {label="apps" subgraph "cluster_apps/engine" {label="engine" subgraph "cluster_apps/engine/src" {label="src" "apps/engine/src/dialog" [label=<dialog> tooltip="dialog" URL="apps/engine/src/dialog" shape="box3d"] } } }
     "apps/engine/src/dialog" -> "packages/engine-core"
     "apps/engine/src/dialog" -> "packages/db"
@@ -123,9 +132,9 @@ strict digraph "dependency-cruiser output"{
     "apps/engine/src/main.ts" -> "apps/engine/src/app.module.ts"
     subgraph "cluster_apps" {label="apps" subgraph "cluster_apps/engine" {label="engine" subgraph "cluster_apps/engine/src" {label="src" "apps/engine/src/messenger" [label=<messenger> tooltip="messenger" URL="apps/engine/src/messenger" shape="box3d"] } } }
     "apps/engine/src/messenger" -> "apps/engine/src/dialog"
+    "apps/engine/src/messenger" -> "packages/engine-core" [arrowhead="onormal" penwidth="1.0"]
     "apps/engine/src/messenger" -> "apps/engine/src/infra"
     "apps/engine/src/messenger" -> "packages/db" [arrowhead="onormal" penwidth="1.0"]
-    "apps/engine/src/messenger" -> "packages/engine-core" [arrowhead="onormal" penwidth="1.0"]
     "apps/engine/src/messenger" -> "packages/vault"
     subgraph "cluster_apps" {label="apps" subgraph "cluster_apps/engine" {label="engine" subgraph "cluster_apps/engine/src" {label="src" "apps/engine/src/preview" [label=<preview> tooltip="preview" URL="apps/engine/src/preview" shape="box3d"] } } }
     "apps/engine/src/preview" -> "apps/engine/src/dialog"

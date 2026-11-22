@@ -16,11 +16,13 @@
 !/.dependency-cruiser.cjs
 !/.prettierrc
 !/vitest.workspace.ts
+!/playwright.config.ts
 !/docker-compose.yml
 !/.env.example
 !/README.md
 !/apps/
 !/packages/
+!/e2e/
 !/.github/
 !/scripts/
 !/Dockerfile
@@ -38,6 +40,8 @@ dist/
 !.env.example
 !.env.prod.example
 coverage/
+playwright-report/
+test-results/
 *.tsbuildinfo
 
 # Конфиг xray с секретами лежит только на сервере

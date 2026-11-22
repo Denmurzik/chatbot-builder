@@ -10,6 +10,8 @@
     "build": "tsc -b packages/model packages/engine-core packages/vault packages/db packages/queue apps/api apps/engine apps/mock-clinic && pnpm --filter @chatbot/web build",
     "test": "vitest run --project packages --project api --project engine --project web",
     "test:int": "vitest run --project integration --no-file-parallelism",
+    "test:e2e": "playwright test",
+    "test:load": "tsx scripts/load-test.ts",
     "lint": "eslint .",
     "typecheck": "tsc -b packages/model packages/engine-core packages/vault packages/db packages/queue apps/api apps/engine apps/mock-clinic && tsc -p apps/engine/tsconfig.test.json --noEmit && pnpm --filter @chatbot/web typecheck",
     "arch": "depcruise --config .dependency-cruiser.cjs \"packages/*/src\" \"apps/*/src\"",
@@ -23,6 +25,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
+    "@playwright/test": "^1.65.1",
     "@swc/core": "~1.10.18",
     "@types/node": "^22.10.2",
     "dependency-cruiser": "^16.8.0",

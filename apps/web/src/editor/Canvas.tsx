@@ -181,7 +181,7 @@ export function Canvas({
           <Panel
             position="top-left"
             aria-label={ru.editor.canvasMode}
-            className="flex items-center gap-0.5 rounded-lg border bg-card/90 p-0.5 shadow-sm backdrop-blur-sm"
+            className="flex items-center gap-0.5 rounded-lg border bg-surface/95 p-0.5 shadow-sm backdrop-blur-sm"
           >
             <Button
               type="button"
@@ -240,7 +240,7 @@ export function Canvas({
             position="bottom-center"
             aria-label={ru.editor.selectionActions}
             data-testid="selection-bar"
-            className="flex max-w-[calc(100vw-1rem)] items-center gap-1.5 rounded-full border bg-card/95 px-3 py-1.5 shadow-md backdrop-blur-sm"
+            className="flex max-w-[calc(100vw-1rem)] items-center gap-1.5 rounded-full border bg-surface/95 px-3 py-1.5 shadow-md backdrop-blur-sm"
           >
             <span className="px-1 text-xs font-medium whitespace-nowrap text-foreground">
               {ru.editor.selectionCount(selectedCount)}
@@ -293,9 +293,9 @@ export function Canvas({
         <MiniMap
           pannable
           zoomable
-          bgColor="color-mix(in oklab, var(--card) 60%, transparent)"
-          maskColor="color-mix(in oklab, var(--muted-foreground) 15%, transparent)"
-          className="hidden !border !border-border rounded-md overflow-hidden backdrop-blur-sm opacity-75 transition-[opacity,background-color] hover:opacity-100 hover:!bg-card md:block"
+          bgColor="color-mix(in oklab, var(--surface) 78%, transparent)"
+          maskColor="color-mix(in oklab, var(--muted-foreground) 16%, transparent)"
+          className="hidden !border !border-border rounded-md overflow-hidden backdrop-blur-sm opacity-80 transition-[opacity,background-color] hover:opacity-100 hover:!bg-surface md:block"
           nodeColor={(node) => BLOCK_META[(node as BlockNodeType).data.type].color}
         />
       </ReactFlow>

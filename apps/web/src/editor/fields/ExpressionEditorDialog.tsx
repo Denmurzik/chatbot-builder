@@ -103,7 +103,7 @@ export function ExpressionEditorDialog({
           viewRef.current?.focus();
         }}
       >
-        <DialogTitle className="border-b px-4 py-3 pr-12 text-base font-semibold">
+        <DialogTitle className="border-b bg-surface px-4 py-3 pr-12 text-base font-semibold">
           {title ?? t.editorTitle}
         </DialogTitle>
         <DialogDescription className="sr-only">{t.editorTitle}</DialogDescription>
@@ -135,7 +135,7 @@ export function ExpressionEditorDialog({
         <div className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)]">
           <section
             aria-label={t.variables}
-            className={`min-h-0 flex-col lg:flex lg:border-r ${activeTab === 'variables' ? 'flex flex-1' : 'hidden'}`}
+            className={`min-h-0 flex-col bg-surface/85 lg:flex lg:border-r ${activeTab === 'variables' ? 'flex flex-1' : 'hidden'}`}
           >
             <div className="border-b p-3">
               <Input
@@ -143,6 +143,7 @@ export function ExpressionEditorDialog({
                 value={query}
                 placeholder={t.searchVariables}
                 aria-label={t.searchVariables}
+                className="bg-card"
                 onChange={(event) => setQuery(event.target.value)}
               />
             </div>
@@ -190,7 +191,7 @@ export function ExpressionEditorDialog({
           </section>
           <section
             aria-label={t.result}
-            className={`min-h-0 overflow-y-auto p-4 lg:block lg:border-l ${activeTab === 'result' ? 'block flex-1' : 'hidden'}`}
+            className={`min-h-0 overflow-y-auto bg-surface/85 p-4 lg:block lg:border-l ${activeTab === 'result' ? 'block flex-1' : 'hidden'}`}
           >
             <ResultView kind={resultKind} value={value} testValues={testValues} />
           </section>

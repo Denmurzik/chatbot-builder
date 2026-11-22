@@ -60,7 +60,7 @@ function Column({
       className={cn(
         'min-h-0 flex-col border-border lg:flex lg:border-r lg:last:border-r-0',
         mobileActive ? 'flex flex-1' : 'hidden',
-        side && 'bg-muted/40',
+        side && 'bg-surface/85',
       )}
     >
       <h2 className="hidden border-b border-border px-4 py-2 text-sm font-semibold text-foreground lg:block">
@@ -124,7 +124,7 @@ function DialogBody({
           if (isTextField(event.target)) setTarget(null);
         }}
       >
-        <header className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/40 py-2.5 pr-12 pl-3 sm:gap-3 sm:py-3 sm:pl-4">
+        <header className="flex flex-wrap items-center gap-2 border-b border-border bg-surface py-2.5 pr-12 pl-3 sm:gap-3 sm:py-3 sm:pl-4">
           <span
             className="flex size-8 shrink-0 items-center justify-center rounded-md text-white sm:size-9"
             style={{ backgroundColor: meta.color }}

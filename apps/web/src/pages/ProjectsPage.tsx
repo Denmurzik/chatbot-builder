@@ -213,7 +213,7 @@ export function ProjectsPage() {
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-4xl flex-col gap-5 px-4 py-4 sm:gap-6 sm:p-6">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+      <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-surface px-4 py-3">
         <BrandLogo size={24} showWordmark className="text-base" />
         <div className="flex min-w-0 items-center gap-2">
           <ThemeToggle />
@@ -257,7 +257,7 @@ export function ProjectsPage() {
             const isPublished = (project.publishedBotsCount ?? 0) > 0;
             return (
               <li key={project.id}>
-                <Card className="relative transition-all hover:-translate-y-0.5 hover:border-[var(--brand)]/50 hover:shadow-sm">
+                <Card className="relative transition-[transform,border-color,box-shadow] hover:-translate-y-0.5 hover:border-[var(--brand)]/50 hover:shadow-sm">
                   <Link
                     to={`/projects/${project.id}`}
                     className="block rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"

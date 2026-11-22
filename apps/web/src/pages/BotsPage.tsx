@@ -772,7 +772,7 @@ export function BotsPage() {
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-4xl flex-col gap-5 px-4 py-4 sm:gap-6 sm:p-6">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+      <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-surface px-4 py-3">
         <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
           <Link
             to="/projects"

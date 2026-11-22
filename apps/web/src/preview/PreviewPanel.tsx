@@ -131,12 +131,12 @@ export function PreviewPanel({
         side="right"
         overlay={false}
         data-testid="preview-panel"
-        className="w-full max-w-full gap-0 p-0 sm:w-96 sm:max-w-md"
+        className="w-full max-w-full gap-0 bg-card p-0 sm:w-96 sm:max-w-md"
         onCloseAutoFocus={(event) => event.preventDefault()}
         onInteractOutside={(event) => event.preventDefault()}
         onPointerDownOutside={(event) => event.preventDefault()}
       >
-        <SheetHeader className="border-b pr-12 pb-3">
+        <SheetHeader className="border-b bg-surface pr-12 pb-3">
           <div className="flex items-center justify-between gap-2">
             <SheetTitle>{ru.preview.title}</SheetTitle>
             <Button
@@ -224,7 +224,7 @@ export function PreviewPanel({
 
         <VariablesSection variables={variables} />
 
-        <div className="border-t p-3">
+        <div className="border-t bg-surface p-3">
           {error ? <p className="mb-2 text-xs text-destructive">{error}</p> : null}
           <form onSubmit={handleSubmit} className="flex items-center gap-2">
             <Input
@@ -233,6 +233,7 @@ export function PreviewPanel({
               value={draft}
               maxLength={4096}
               disabled={!isConnected}
+              className="bg-card"
               onChange={(event) => setDraft(event.target.value)}
             />
             <Button

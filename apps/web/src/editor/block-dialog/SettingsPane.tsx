@@ -337,7 +337,7 @@ function HeadersEditor({
           {header.secret ? (
             <Input
               type="password"
-              placeholder={header.secretValue ? header.secretValue.mask : ru.fields.headerValue}
+              placeholder={header.secretMask ?? header.secretValue?.mask ?? ru.fields.headerValue}
               value={header.value}
               onChange={(event) => update(index, { value: event.target.value })}
             />
@@ -360,7 +360,9 @@ function HeadersEditor({
                 onChange={(event) =>
                   update(index, {
                     secret: event.target.checked,
-                    ...(event.target.checked ? {} : { secretValue: undefined }),
+                    ...(event.target.checked
+                      ? {}
+                      : { secretMask: undefined, secretValue: undefined }),
                   })
                 }
               />

@@ -11,7 +11,7 @@
     "test": "vitest run --project packages --project api --project engine --project web",
     "test:int": "vitest run --project integration --no-file-parallelism",
     "lint": "eslint .",
-    "typecheck": "tsc -b packages/model packages/engine-core packages/vault packages/db packages/queue apps/api apps/engine apps/mock-clinic && pnpm --filter @chatbot/web typecheck",
+    "typecheck": "tsc -b packages/model packages/engine-core packages/vault packages/db packages/queue apps/api apps/engine apps/mock-clinic && tsc -p apps/engine/tsconfig.test.json --noEmit && pnpm --filter @chatbot/web typecheck",
     "arch": "depcruise --config .dependency-cruiser.cjs \"packages/*/src\" \"apps/*/src\"",
     "arch:graph": "depcruise --config .dependency-cruiser.cjs --output-type archi --output-to docs/architecture/modules.dot \"packages/*/src\" \"apps/*/src\"",
     "infra:up": "docker compose up -d --wait",

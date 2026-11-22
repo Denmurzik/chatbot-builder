@@ -5,7 +5,7 @@ import {
   randomBytes,
   timingSafeEqual,
 } from 'node:crypto';
-import { NotImplementedError, type EncryptedSecret } from '@chatbot/model';
+import { type EncryptedSecret } from '@chatbot/model';
 
 const ALGORITHM = 'aes-256-gcm';
 const FORMAT_VERSION = 'v1';
@@ -44,6 +44,16 @@ function decodeBase64Part(encoded: string, allowEmpty: boolean): Buffer {
     throw new Error('Некорректный формат шифротекста');
   }
   return Buffer.from(encoded, 'base64');
+}
+
+// Формирует маску секрета: скрывает короткие значения полностью, от 12 символов оставляет 4 последних
+function makeMask(value: string): string {
+  const codePoints = Array.from(value);
+  const tail =
+    codePoints.length >= MASK_MIN_LENGTH_FOR_TAIL
+      ? codePoints.slice(-MASK_VISIBLE_CHARS).join('')
+      : '';
+  return `${MASK_PREFIX}${tail}`;
 }
 
 // Хранилище для шифрования секретов (AES-256-GCM), маскирования и хеширования токенов (п. 2.13)
@@ -87,12 +97,7 @@ export class SecretVault {
     const tag = cipher.getAuthTag();
 
     const cipherText = `${FORMAT_VERSION}:${iv.toString('base64')}:${tag.toString('base64')}:${encrypted.toString('base64')}`;
-    const codePoints = Array.from(value);
-    const tail =
-      codePoints.length >= MASK_MIN_LENGTH_FOR_TAIL
-        ? codePoints.slice(-MASK_VISIBLE_CHARS).join('')
-        : '';
-    const mask = `${MASK_PREFIX}${tail}`;
+    const mask = makeMask(value);
 
     return { cipherText, mask };
   }
@@ -135,9 +140,9 @@ export class SecretVault {
     }
   }
 
-  // Возвращает маскированное представление секрета (класс модели SecretVault, спринт 2)
-  mask(_secret: EncryptedSecret): string {
-    throw new NotImplementedError('SecretVault.mask');
+  // Возвращает маскированное представление секрета
+  mask(value: string): string {
+    return makeMask(value);
   }
 
   // Вычисляет детерминированный HMAC-SHA-256 (hex) для проверки уникальности токена

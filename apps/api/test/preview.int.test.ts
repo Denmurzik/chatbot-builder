@@ -3,13 +3,16 @@ import { randomBytes } from 'node:crypto';
 import { parsePreviewChatId, type ChatEvent, type PreviewEvent } from '@chatbot/model';
 import { dialogKey, partitionOf, queueName, type EventQueue } from '@chatbot/queue';
 import type { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import IORedis from 'ioredis';
 import { io, type Socket } from 'socket.io-client';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppModule } from '../src/app.module';
+import { SESSION_COOKIE_NAME } from '../src/config';
 import { configureApp } from '../src/configure-app';
+import { PreviewCleanupService } from '../src/preview/preview-cleanup.service';
 import { EVENT_QUEUE } from '../src/queue/queue.module';
 import { createIsolatedTestDb, type IsolatedTestDb } from './test-db';
 
@@ -574,5 +577,111 @@ describe('Socket.IO-шлюз превью (интеграционные тест
     expect(await nextOn1New).toEqual(newRoomEvent);
     expect(receivedOn1AfterRejoin).toEqual([newRoomEvent]);
     expect(receivedOn2).toEqual([]);
+  });
+
+  it('PreviewCleanupService.pruneExpired удаляет только просроченные PREVIEW-контексты и их HttpRequest', async () => {
+    const owner = await registerAuthorWithProject('cleanup@example.com');
+    const bot = await db.prisma.bot.create({
+      data: { projectId: owner.projectId, name: 'Бот', environment: [] },
+    });
+
+    const staleDate = new Date(Date.now() - 25 * 60 * 60 * 1000);
+
+    // Просроченный PREVIEW-контекст с привязанным HttpRequest и currentRequestId
+    const expiredPreview = await db.prisma.dialogContext.create({
+      data: {
+        botId: null,
+        chatId: `preview:${owner.projectId}:expired-session`,
+        userId: `author:${owner.authorId}`,
+        channel: 'PREVIEW',
+        state: 'WAITING_USER',
+        variables: {},
+      },
+    });
+    const reqRow = await db.prisma.httpRequest.create({
+      data: {
+        dialogContextId: expiredPreview.id,
+        blockId: 'http-1',
+        method: 'GET',
+        url: 'https://example.com/test',
+        headers: [],
+        body: '',
+        status: 'SENT',
+      },
+    });
+    await db.prisma.dialogContext.update({
+      where: { id: expiredPreview.id },
+      data: { currentRequestId: reqRow.id },
+    });
+    await db.prisma.$executeRaw`UPDATE dialog_context SET updated_at = ${staleDate} WHERE id = ${expiredPreview.id}`;
+
+    // Свежий PREVIEW-контекст
+    const freshPreview = await db.prisma.dialogContext.create({
+      data: {
+        botId: null,
+        chatId: `preview:${owner.projectId}:fresh-session`,
+        userId: `author:${owner.authorId}`,
+        channel: 'PREVIEW',
+        state: 'WAITING_USER',
+        variables: {},
+      },
+    });
+
+    // Просроченный MESSENGER-контекст (не должен удаляться)
+    const oldTelegram = await db.prisma.dialogContext.create({
+      data: {
+        botId: bot.id,
+        chatId: 'tg-chat-1',
+        userId: 'tg-user-1',
+        channel: 'MESSENGER',
+        state: 'WAITING_USER',
+        variables: {},
+      },
+    });
+    await db.prisma.$executeRaw`UPDATE dialog_context SET updated_at = ${staleDate} WHERE id = ${oldTelegram.id}`;
+
+    const cleanup = app.get(PreviewCleanupService);
+    const removed = await cleanup.pruneExpired();
+    expect(removed).toBe(1);
+
+    expect(await db.prisma.dialogContext.findUnique({ where: { id: expiredPreview.id } })).toBeNull();
+    expect(await db.prisma.httpRequest.findUnique({ where: { id: reqRow.id } })).toBeNull();
+    expect(await db.prisma.dialogContext.findUnique({ where: { id: freshPreview.id } })).not.toBeNull();
+    expect(await db.prisma.dialogContext.findUnique({ where: { id: oldTelegram.id } })).not.toBeNull();
+  });
+
+  it('сокет превью с короткоживущим JWT получает системное событие и отключается по истечении токена', async () => {
+    const owner = await registerAuthorWithProject('jwt-expiry@example.com');
+    const jwtService = app.get(JwtService);
+    const shortToken = await jwtService.signAsync(
+      { sub: owner.authorId },
+      { algorithm: 'HS256', expiresIn: '1s' },
+    );
+
+    const socket = await openClient(`${SESSION_COOKIE_NAME}=${shortToken}`);
+    const startAck = await emitAck<StartAck>(socket, 'start', { projectId: owner.projectId });
+    expect(startAck.chatId).toBeDefined();
+
+    const receivedEvents: PreviewEvent[] = [];
+    socket.on('preview', (ev: PreviewEvent) => receivedEvents.push(ev));
+
+    const disconnected = new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Сокет не отключился после истечения JWT')), 4000);
+      socket.once('disconnect', (reason: string) => {
+        clearTimeout(timer);
+        resolve(reason);
+      });
+    });
+
+    const reason = await disconnected;
+    expect(reason).toBe('io server disconnect');
+    expect(receivedEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'system',
+          text: expect.stringMatching(/истек/i),
+        }),
+      ]),
+    );
   });
 });

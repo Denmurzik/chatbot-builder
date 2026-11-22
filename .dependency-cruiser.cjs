@@ -66,6 +66,76 @@ module.exports = {
         pathNot: '^apps/$1/',
       },
     },
+    {
+      name: 'api-business-no-interaction',
+      comment:
+        'В apps/api слой бизнес-логики не может зависеть от слоя взаимодействия (telegram)',
+      severity: 'error',
+      from: {
+        path: '^apps/api/src/(auth|projects|validation|publication|import-export|preview)/',
+        pathNot:
+          '(^|/)(app\\.module|main|configure-app|index|config)\\.ts$|\\.(test|int\\.test)\\.ts$|(^|/)testing/',
+      },
+      to: {
+        path: '^apps/api/src/telegram/',
+      },
+    },
+    {
+      name: 'api-base-no-upper-layers',
+      comment:
+        'В apps/api базовый слой (prisma, vault, queue, common) не может зависеть от бизнес-логики или взаимодействия',
+      severity: 'error',
+      from: {
+        path: '^apps/api/src/(prisma|vault|queue|common)/',
+        pathNot:
+          '(^|/)(app\\.module|main|configure-app|index|config)\\.ts$|\\.(test|int\\.test)\\.ts$|(^|/)testing/',
+      },
+      to: {
+        path: '^apps/api/src/(auth|projects|validation|publication|import-export|preview|telegram)/',
+      },
+    },
+    {
+      name: 'api-projects-publication-isolated',
+      comment: 'В apps/api модули projects и publication не могут зависеть друг от друга',
+      severity: 'error',
+      from: {
+        path: '^apps/api/src/(projects|publication)/',
+        pathNot:
+          '(^|/)(app\\.module|main|configure-app|index|config)\\.ts$|\\.(test|int\\.test)\\.ts$|(^|/)testing/',
+      },
+      to: {
+        path: '^apps/api/src/(projects|publication)/',
+        pathNot: '^apps/api/src/$1/',
+      },
+    },
+    {
+      name: 'engine-business-no-interaction',
+      comment:
+        'В apps/engine слой бизнес-логики (dialog, dispatcher) не может зависеть от слоя взаимодействия (messenger, http, preview)',
+      severity: 'error',
+      from: {
+        path: '^apps/engine/src/(dialog|dispatcher)/',
+        pathNot:
+          '(^|/)(app\\.module|main|configure-app|index|config)\\.ts$|\\.(test|int\\.test)\\.ts$|(^|/)testing/',
+      },
+      to: {
+        path: '^apps/engine/src/(messenger|http|preview)/',
+      },
+    },
+    {
+      name: 'engine-base-no-upper-layers',
+      comment:
+        'В apps/engine базовый слой (infra) не может зависеть от бизнес-логики или взаимодействия',
+      severity: 'error',
+      from: {
+        path: '^apps/engine/src/infra/',
+        pathNot:
+          '(^|/)(app\\.module|main|configure-app|index|config)\\.ts$|\\.(test|int\\.test)\\.ts$|(^|/)testing/',
+      },
+      to: {
+        path: '^apps/engine/src/(dialog|dispatcher|messenger|http|preview)/',
+      },
+    },
   ],
   options: {
     doNotFollow: {

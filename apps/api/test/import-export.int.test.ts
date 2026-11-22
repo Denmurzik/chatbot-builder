@@ -333,14 +333,24 @@ describe('Import/Export API (интеграционные тесты)', () => {
       secretsToFill: 0,
     });
 
-    // Проверяем сохранённый сценарий: value === '', secretValue.cipherText начинается с v1:
+    // GET отдаёт только secretMask (без secretValue/cipherText), в БД лежит зашифрованный secretValue
     const details = await agent.get(`/api/projects/${projectId}`).expect(200);
     const reqBlock = details.body.scenario.blocks.find((b: { id: string }) => b.id === 'req');
     expect(reqBlock).toBeDefined();
     const authHeader = reqBlock.headers.find((h: { name: string }) => h.name === 'Authorization');
     expect(authHeader.value).toBe('');
     expect(authHeader.secret).toBe(true);
-    expect(authHeader.secretValue?.cipherText).toMatch(/^v1:/);
+    expect(authHeader.secretValue).toBeUndefined();
+    expect(authHeader.secretMask).toBeTruthy();
+
+    const dbProject = await db.prisma.project.findUniqueOrThrow({ where: { id: projectId } });
+    const dbScenario = dbProject.scenario as unknown as Scenario;
+    const dbReq = dbScenario.blocks.find((b) => b.id === 'req');
+    expect(dbReq?.type).toBe('HTTP_REQUEST');
+    if (dbReq?.type === 'HTTP_REQUEST') {
+      const dbAuth = dbReq.headers.find((h) => h.name === 'Authorization');
+      expect(dbAuth?.secretValue?.cipherText).toMatch(/^v1:/);
+    }
   });
 
   it('чужой и несуществующий проект → 404 на экспорт и импорт, чужой сценарий не меняется', async () => {

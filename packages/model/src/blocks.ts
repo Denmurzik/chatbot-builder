@@ -44,6 +44,8 @@ export const httpHeaderSchema = z.object({
   value: z.string(),
   secret: z.boolean(),
   secretValue: encryptedSecretSchema.optional(),
+  // Маска секретного заголовка, передаваемая клиенту вместо шифротекста
+  secretMask: z.string().optional(),
 });
 
 export type HttpHeader = z.infer<typeof httpHeaderSchema>;

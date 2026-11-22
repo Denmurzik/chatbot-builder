@@ -8,7 +8,6 @@ import {
 } from '@chatbot/engine-core';
 import {
   environmentSchema,
-  NotImplementedError,
   parsePreviewChatId,
   scenarioSchema,
   type ChatEvent,
@@ -18,11 +17,10 @@ import {
 import { SecretVault } from '@chatbot/vault';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PRISMA } from '../infra/tokens';
-import { PreviewPublisher } from '../preview/preview-publisher';
 import { ContextRepository, type DialogContextRow } from './context.repository';
 import { buildEnvironment } from './environment';
 import { decryptHeaders, toStoredHeaders } from './http-headers';
-import { HttpRequestLauncher, MessengerGateway } from './ports';
+import { HttpRequestLauncher, MessengerGateway, PreviewNotifier } from './ports';
 
 interface Processed {
   result: EngineResult;
@@ -44,7 +42,7 @@ export class DialogService {
     private readonly repository: ContextRepository,
     private readonly gateway: MessengerGateway,
     private readonly launcher: HttpRequestLauncher,
-    private readonly preview: PreviewPublisher,
+    private readonly preview: PreviewNotifier,
   ) {}
 
   async process(event: ChatEvent): Promise<void> {
@@ -252,16 +250,6 @@ export class DialogService {
       WHERE id = ${botId}
       FOR SHARE`;
     return rows[0] ?? null;
-  }
-
-  // Возвращает все активные контексты бота (операция DialogEngine.findContexts, SD-6, спринт 3)
-  findContexts(_botId: string): Promise<DialogContextRow[]> {
-    throw new NotImplementedError('DialogService.findContexts');
-  }
-
-  // Сбрасывает все контексты бота при переопубликации (операция DialogEngine.resetDialogs, UC-U-07, SD-6, спринт 3)
-  resetDialogs(_botId: string): Promise<void> {
-    throw new NotImplementedError('DialogService.resetDialogs');
   }
 
   // Ошибка отправки не отменяет сохранённое состояние: пишется в журнал

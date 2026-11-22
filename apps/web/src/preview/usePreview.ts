@@ -143,6 +143,7 @@ export function usePreview({
         setVariables({});
         setCurrentBlockId(null);
         setErrorBlockId(null);
+        onCurrentBlockRef.current?.(null);
         onErrorBlockRef.current?.(null);
       }
       const savedSessionId = readSavedSessionId(projectId);
@@ -165,6 +166,10 @@ export function usePreview({
 
     const handleDisconnect = () => {
       setStatus('disconnected');
+      setCurrentBlockId(null);
+      setErrorBlockId(null);
+      onCurrentBlockRef.current?.(null);
+      onErrorBlockRef.current?.(null);
     };
 
     const handleConnectError = () => {

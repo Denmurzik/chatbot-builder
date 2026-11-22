@@ -67,7 +67,7 @@ export function previewBlock(
             (header) =>
               `${header.name}: ${
                 header.secret
-                  ? (header.secretValue?.mask ?? p.secretMask)
+                  ? (header.secretMask ?? header.secretValue?.mask ?? p.secretMask)
                   : render(header.value, scope, 'HEADER')
               }`,
           );

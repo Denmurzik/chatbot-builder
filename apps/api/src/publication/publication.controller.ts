@@ -1,6 +1,5 @@
 import {
   envVarInputListSchema,
-  NotImplementedError,
   type BotView,
   type EnvVarInput,
   type EnvVarView,
@@ -111,7 +110,7 @@ export class PublicationController {
     return this.bots.publish(author.id, projectId, botId);
   }
 
-  isTokenInUse(_messenger: MessengerType, _tokenHash: string): boolean {
-    throw new NotImplementedError('PublicationController.isTokenInUse');
+  isTokenInUse(messenger: MessengerType, tokenHash: string): Promise<boolean> {
+    return this.bots.isTokenInUse(messenger, tokenHash);
   }
 }

@@ -276,7 +276,7 @@ describe('Projects API (интеграционные тесты)', () => {
     expect(afterB.body.scenario).toEqual(scenarioA);
   });
 
-  it('секретный заголовок HTTP-блока шифруется при сохранении: GET отдаёт value="" и secretValue.mask, в БД нет открытого текста', async () => {
+  it('секретный заголовок HTTP-блока: GET не отдаёт cipherText, secretMask сохраняет секрет, новое значение перешифровывает, secret:false очищает', async () => {
     const agent = await createAuthenticatedAgent('secret-header@example.com');
     const created = await agent
       .post('/api/projects')
@@ -321,8 +321,12 @@ describe('Projects API (интеграционные тесты)', () => {
       .send(scenarioWithSecret)
       .expect(200);
 
-    // GET отдаёт пустое value и маску secretValue.mask, без открытого секрета
+    // 1. GET отдаёт пустое value и secretMask, без secretValue и cipherText
     const fetched = await agent.get(`/api/projects/${projectId}`).expect(200);
+    expect(JSON.stringify(fetched.body)).not.toContain('cipherText');
+    expect(JSON.stringify(fetched.body)).not.toContain('secretValue');
+    expect(JSON.stringify(fetched.body)).not.toContain(secretToken);
+
     const reqBlock = fetched.body.scenario.blocks.find((b: { id: string }) => b.id === 'req');
     expect(reqBlock.headers).toEqual([
       { name: 'Accept', value: 'application/json', secret: false },
@@ -330,26 +334,97 @@ describe('Projects API (интеграционные тесты)', () => {
         name: 'Authorization',
         value: '',
         secret: true,
-        secretValue: {
-          cipherText: expect.stringMatching(/^v1:/),
-          mask: '••••1234',
-        },
+        secretMask: '••••1234',
       },
       { name: 'X-Empty-Secret', value: '', secret: true },
     ]);
 
-    // В базе нет открытого значения секрета
-    const dbProject = await db.prisma.project.findUniqueOrThrow({ where: { id: projectId } });
-    expect(JSON.stringify(dbProject.scenario)).not.toContain(secretToken);
+    // В базе лежит шифротекст, без открытого значения и без secretMask
+    const getDbAuthHeader = async () => {
+      const dbProject = await db.prisma.project.findUniqueOrThrow({ where: { id: projectId } });
+      expect(JSON.stringify(dbProject.scenario)).not.toContain(secretToken);
+      const dbScenario = dbProject.scenario as unknown as Scenario;
+      const dbReq = dbScenario.blocks.find((b) => b.id === 'req');
+      if (dbReq?.type !== 'HTTP_REQUEST') throw new Error('Ожидался HTTP_REQUEST');
+      return dbReq.headers.find((h) => h.name === 'Authorization');
+    };
 
-    // Повторное сохранение с value="" и пришедшим secretValue сохраняет прежний шифротекст
-    const firstCipherText: string = reqBlock.headers[1].secretValue.cipherText;
+    const firstDbAuth = await getDbAuthHeader();
+    expect(firstDbAuth?.secretValue?.cipherText).toMatch(/^v1:/);
+    expect(firstDbAuth?.secretMask).toBeUndefined();
+    const firstCipherText = firstDbAuth!.secretValue!.cipherText;
+
+    // 2. Повторное сохранение с value="" и secretMask сохраняет прежний шифротекст из БД (клиентский secretValue игнорируется)
+    const tamperedScenario = structuredClone(fetched.body.scenario) as Scenario;
+    const tamperedReq = tamperedScenario.blocks.find((b) => b.id === 'req');
+    if (tamperedReq?.type === 'HTTP_REQUEST') {
+      tamperedReq.headers[1].secretValue = { cipherText: 'v1:fake:client:cipher', mask: '••••9999' };
+    }
     await agent
       .put(`/api/projects/${projectId}/scenario`)
-      .send(fetched.body.scenario)
+      .send(tamperedScenario)
       .expect(200);
+
+    const preservedDbAuth = await getDbAuthHeader();
+    expect(preservedDbAuth?.secretValue?.cipherText).toBe(firstCipherText);
+
     const refetched = await agent.get(`/api/projects/${projectId}`).expect(200);
+    expect(JSON.stringify(refetched.body)).not.toContain('cipherText');
     const refetchedReq = refetched.body.scenario.blocks.find((b: { id: string }) => b.id === 'req');
-    expect(refetchedReq.headers[1].secretValue.cipherText).toBe(firstCipherText);
+    expect(refetchedReq.headers[1]).toEqual({
+      name: 'Authorization',
+      value: '',
+      secret: true,
+      secretMask: '••••1234',
+    });
+
+    // 3. Новое непустое значение перешифровывает секрет и обновляет маску
+    const updatedScenario = structuredClone(refetched.body.scenario) as Scenario;
+    const updatedReq = updatedScenario.blocks.find((b) => b.id === 'req');
+    if (updatedReq?.type === 'HTTP_REQUEST') {
+      updatedReq.headers[1] = { name: 'Authorization', value: 'Bearer rotated-token-9876', secret: true };
+    }
+    await agent
+      .put(`/api/projects/${projectId}/scenario`)
+      .send(updatedScenario)
+      .expect(200);
+
+    const rotatedDbAuth = await getDbAuthHeader();
+    expect(rotatedDbAuth?.secretValue?.cipherText).toMatch(/^v1:/);
+    expect(rotatedDbAuth?.secretValue?.cipherText).not.toBe(firstCipherText);
+    const afterRotate = await agent.get(`/api/projects/${projectId}`).expect(200);
+    const rotatedReq = afterRotate.body.scenario.blocks.find((b: { id: string }) => b.id === 'req');
+    expect(rotatedReq.headers[1]).toEqual({
+      name: 'Authorization',
+      value: '',
+      secret: true,
+      secretMask: '••••9876',
+    });
+
+    // 4. Переключение secret: false очищает secretValue в БД и secretMask в GET
+    const plainScenario = structuredClone(afterRotate.body.scenario) as Scenario;
+    const plainReq = plainScenario.blocks.find((b) => b.id === 'req');
+    if (plainReq?.type === 'HTTP_REQUEST') {
+      plainReq.headers[1] = {
+        name: 'Authorization',
+        value: 'public-value',
+        secret: false,
+        secretMask: '••••9876',
+      };
+    }
+    await agent
+      .put(`/api/projects/${projectId}/scenario`)
+      .send(plainScenario)
+      .expect(200);
+
+    const plainDbAuth = await getDbAuthHeader();
+    expect(plainDbAuth).toEqual({ name: 'Authorization', value: 'public-value', secret: false });
+    const afterPlain = await agent.get(`/api/projects/${projectId}`).expect(200);
+    const afterPlainReq = afterPlain.body.scenario.blocks.find((b: { id: string }) => b.id === 'req');
+    expect(afterPlainReq.headers[1]).toEqual({
+      name: 'Authorization',
+      value: 'public-value',
+      secret: false,
+    });
   });
 });

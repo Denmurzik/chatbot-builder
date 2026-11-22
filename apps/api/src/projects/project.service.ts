@@ -7,8 +7,9 @@ import {
   type Scenario,
 } from '@chatbot/model';
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { EnvironmentService } from '../common/environment.service';
+import { sanitizeScenarioForClient } from '../common/scenario-helpers';
 import { PrismaService } from '../prisma/prisma.module';
-import { EnvironmentService } from '../publication/environment.service';
 
 export interface ProjectSummary {
   id: string;
@@ -78,7 +79,7 @@ export class ProjectService {
     return {
       id: project.id,
       name: project.name,
-      scenario: project.scenario as unknown as Scenario,
+      scenario: sanitizeScenarioForClient(project.scenario as unknown as Scenario),
       environment: this.environments.toView(project.environment as unknown as EnvironmentVariable[]),
       updatedAt: project.updatedAt,
     };

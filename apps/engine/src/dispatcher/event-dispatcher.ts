@@ -1,28 +1,16 @@
 import { isStaleResponse } from '@chatbot/engine-core';
-import {
-  chatEventSchema,
-  NotImplementedError,
-  type ChatEvent,
-  type EventType,
-} from '@chatbot/model';
+import { chatEventSchema, type ChatEvent } from '@chatbot/model';
 import { PARTITIONS, createRedisConnection, queueName, type EventQueue } from '@chatbot/queue';
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnApplicationBootstrap,
-  type OnModuleDestroy,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { Worker, type Job } from 'bullmq';
 import type IORedis from 'ioredis';
 import type { DialogContextRow } from '../dialog/context.repository';
 import { DialogService } from '../dialog/dialog.service';
-import { HttpRequestExecutor } from '../http/http-request-executor';
 import { APP_CONFIG, EVENT_QUEUE, type AppConfig } from '../infra/tokens';
 
 // Диспетчер событий: по одному воркеру с concurrency = 1 на каждый из 16 разделов очереди (п. 2.2)
 @Injectable()
-export class EventDispatcher implements OnApplicationBootstrap, OnModuleDestroy {
+export class EventDispatcher implements OnModuleDestroy {
   private readonly logger = new Logger(EventDispatcher.name);
   private connection: IORedis | null = null;
   private workers: Worker[] = [];
@@ -31,14 +19,13 @@ export class EventDispatcher implements OnApplicationBootstrap, OnModuleDestroy 
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(EVENT_QUEUE) private readonly queue: EventQueue,
     private readonly dialog: DialogService,
-    private readonly executor: HttpRequestExecutor,
   ) {}
 
-  async onApplicationBootstrap(): Promise<void> {
+  // Запускает воркеры всех разделов очереди (вызывается из AppModule после recoverAfterRestart)
+  async start(): Promise<void> {
+    if (this.workers.length > 0) return;
     // Раздел не обрабатывают двое одновременно, даже при нескольких процессах engine
     await this.queue.setGlobalConcurrency(1);
-    // Незавершённые HTTP-запросы от прошлого запуска переводятся в FAILED до старта воркеров (п. 1.5)
-    await this.executor.recoverAfterRestart();
     const connection = createRedisConnection(this.config.redisUrl);
     this.connection = connection;
     for (let partition = 0; partition < PARTITIONS; partition++) {
@@ -78,16 +65,6 @@ export class EventDispatcher implements OnApplicationBootstrap, OnModuleDestroy 
   // Проверка актуальности события HTTP-ответа по текущему контексту (SD-4, п. 2.8)
   isStale(event: ChatEvent, ctx: DialogContextRow | null): boolean {
     return isStaleResponse(event, ctx);
-  }
-
-  // Рассылка служебного события по всем диалогам бота, например при переопубликации (UC-U-07, SD-6, спринт 3)
-  broadcast(_botId: string, _type: EventType): Promise<void> {
-    throw new NotImplementedError('EventDispatcher.broadcast');
-  }
-
-  // Извлечение следующего события из очереди диалога (SD-1, спринт 2)
-  takeNext(_botId: string | null, _chatId: string): ChatEvent | null {
-    throw new NotImplementedError('EventDispatcher.takeNext');
   }
 
   // Воркеры закрываются раньше Prisma и очереди (они закрываются в onApplicationShutdown InfraModule)

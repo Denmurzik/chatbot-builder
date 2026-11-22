@@ -10,7 +10,6 @@ import { SecretVault, tokenAad } from '@chatbot/vault';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/configure-app';
-import { TelegramTokenVerifier } from '../src/publication/telegram-token.verifier';
 import { TelegramApiFactory } from '../src/telegram/telegram-api.factory';
 import { webhookSecret } from '../src/telegram/webhook-secret';
 import { createIsolatedTestDb, type IsolatedTestDb } from './test-db';
@@ -52,6 +51,7 @@ describe('Публикация и переопубликация (интегра
   let onSetWebhook: ((token: string) => Promise<void>) | null = null;
   const apiFactory = {
     create: (token: string) => ({
+      getMe: async () => ({ username: 'test_bot' }),
       setWebhook: async (...args: unknown[]) => {
         calls.push({ token, method: 'setWebhook', args });
         await onSetWebhook?.(token);
@@ -72,7 +72,6 @@ describe('Публикация и переопубликация (интегра
       },
     }),
   };
-  const verifier = { verify: async () => ({ username: 'test_bot' }) };
 
   beforeAll(async () => {
     db = await createIsolatedTestDb();
@@ -87,8 +86,6 @@ describe('Публикация и переопубликация (интегра
     process.env.VAULT_HASH_KEY ??= Buffer.alloc(32, 2).toString('base64');
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(TelegramTokenVerifier)
-      .useValue(verifier)
       .overrideProvider(TelegramApiFactory)
       .useValue(apiFactory)
       .compile();

@@ -10,6 +10,11 @@ export interface AuthResult {
   token: string;
 }
 
+export interface AuthenticatedSession {
+  author: AuthenticatedAuthor;
+  exp: number | null;
+}
+
 // Фиктивный argon2id-хеш для выравнивания времени ответа при несуществующем email
 const DUMMY_PASSWORD_HASH =
   '$argon2id$v=19$m=65536,t=3,p=4$UEOyqFaDj4Jhep7YuKg3Ug$SFw1xPJj8tuz5GVTCOZ3WpbhFAmSp4g4/N9xe2k9nLE';
@@ -87,15 +92,21 @@ export class AuthService {
     return argon2.verify(hash, password);
   }
 
-  // Проверяет JWT (HS256) и возвращает существующего автора (используется в JwtGuard и PreviewGateway)
+  // Проверяет JWT (HS256) и возвращает существующего автора (используется в JwtGuard)
   async authenticate(token: string): Promise<AuthenticatedAuthor> {
+    const { author } = await this.authenticateWithExpiry(token);
+    return author;
+  }
+
+  // Проверяет JWT (HS256) и возвращает автора вместе с временем истечения exp (используется в PreviewGateway)
+  async authenticateWithExpiry(token: string): Promise<AuthenticatedSession> {
     if (typeof token !== 'string' || token.length === 0) {
       throw new UnauthorizedException('Требуется авторизация');
     }
 
-    let payload: { sub?: unknown };
+    let payload: { sub?: unknown; exp?: unknown };
     try {
-      payload = await this.jwtService.verifyAsync<{ sub?: unknown }>(token, {
+      payload = await this.jwtService.verifyAsync<{ sub?: unknown; exp?: unknown }>(token, {
         algorithms: ['HS256'],
       });
     } catch {
@@ -115,7 +126,10 @@ export class AuthService {
       throw new UnauthorizedException('Требуется авторизация');
     }
 
-    return author;
+    return {
+      author,
+      exp: typeof payload.exp === 'number' ? payload.exp : null,
+    };
   }
 
   private signSessionToken(authorId: string): Promise<string> {

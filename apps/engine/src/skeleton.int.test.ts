@@ -5,7 +5,7 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from './app.module';
 import { DialogService } from './dialog/dialog.service';
-import { MessengerGateway } from './dialog/ports';
+import { MessengerGateway, PreviewNotifier } from './dialog/ports';
 import { EventDispatcher } from './dispatcher/event-dispatcher';
 import { ExternalApiClient } from './http/external-api-client';
 import { HttpRequestExecutor } from './http/http-request-executor';
@@ -36,9 +36,11 @@ describe('Каркас модулей Engine (skeleton)', () => {
   });
 
   it('AppModule компилируется со всеми модулями и разрешает зависимости каркаса', () => {
+    expect(moduleRef.get(DialogService)).toBeInstanceOf(DialogService);
     expect(moduleRef.get(HttpRequestExecutor)).toBeInstanceOf(HttpRequestExecutor);
     expect(moduleRef.get(ResponseParser)).toBeInstanceOf(ResponseParser);
     expect(moduleRef.get(PreviewPublisher)).toBeInstanceOf(PreviewPublisher);
+    expect(moduleRef.get(PreviewNotifier)).toBe(moduleRef.get(PreviewPublisher));
     expect(moduleRef.get(EventDispatcher)).toBeInstanceOf(EventDispatcher);
     expect(moduleRef.get(ExternalApiClient)).toBeInstanceOf(ExternalApiClient);
     expect(moduleRef.get(MessengerGateway)).toBeInstanceOf(MessengerGateway);
@@ -56,11 +58,8 @@ describe('Каркас модулей Engine (skeleton)', () => {
     expect(parser.extract(json, '$.data.missing')).toEqual({ found: false });
   });
 
-  it('EventDispatcher.isStale делегирует isStaleResponse, а заглушки остальных операций бросают NotImplementedError', () => {
+  it('EventDispatcher.isStale делегирует isStaleResponse, а SecretVault.mask маскирует секрет', () => {
     const dispatcher = moduleRef.get(EventDispatcher);
-    const dialogService = moduleRef.get(DialogService);
-    const apiClient = moduleRef.get(ExternalApiClient);
-    const gateway = moduleRef.get(MessengerGateway);
     const vault = moduleRef.get(SecretVault);
     const event: ChatEvent = {
       type: 'RESPONSE_RECEIVED',
@@ -72,33 +71,6 @@ describe('Каркас модулей Engine (skeleton)', () => {
     };
 
     expect(dispatcher.isStale(event, null)).toBe(true);
-    expect(() => dispatcher.broadcast('bot-1', 'VERSION_PUBLISHED')).toThrowError(
-      'EventDispatcher.broadcast',
-    );
-    expect(() => dispatcher.takeNext('bot-1', 'tg:1')).toThrowError('EventDispatcher.takeNext');
-
-    expect(() => dialogService.findContexts('bot-1')).toThrowError('DialogService.findContexts');
-    expect(() => dialogService.resetDialogs('bot-1')).toThrowError('DialogService.resetDialogs');
-
-    expect(() => apiClient.findSentRequest('req-1')).toThrowError(
-      'ExternalApiClient.findSentRequest',
-    );
-
-    expect(() => gateway.verifyToken('TELEGRAM', 'tok')).toThrowError(
-      'MessengerGateway.verifyToken',
-    );
-    expect(() => gateway.connectBot('bot-1', 'TELEGRAM', 'tok')).toThrowError(
-      'MessengerGateway.connectBot',
-    );
-    expect(() => gateway.disconnectBot('TELEGRAM', 'tok')).toThrowError(
-      'MessengerGateway.disconnectBot',
-    );
-    expect(() => gateway.sendQuestion('bot-1', 'tg:1', 'Вопрос?', ['Да', 'Нет'])).toThrowError(
-      'MessengerGateway.sendQuestion',
-    );
-
-    expect(() => vault.mask({ cipherText: 'v1:a:b:c', mask: '••••1234' })).toThrowError(
-      'SecretVault.mask',
-    );
+    expect(vault.mask('super-secret-token')).toBe('••••oken');
   });
 });

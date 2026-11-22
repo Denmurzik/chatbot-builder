@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
-import { EnvironmentService } from '../publication/environment.service';
+import { EnvironmentService } from '../common/environment.service';
 import { ProjectController } from './project.controller';
 import { ProjectService } from './project.service';
 import { ScenarioEditor } from './scenario-editor';

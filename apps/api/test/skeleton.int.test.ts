@@ -1,5 +1,4 @@
 import 'reflect-metadata';
-import { emptyScenario } from '@chatbot/model';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
@@ -46,33 +45,14 @@ describe('Каркас модулей API (skeleton)', () => {
     expect(moduleRef.get(ScenarioEditor)).toBeInstanceOf(ScenarioEditor);
   });
 
-  it('нереализованные методы PublicationController бросают NotImplementedError с именем класса и метода', () => {
+  it('PublicationController.isTokenInUse работает и возвращает false для неизвестного хеша', async () => {
     const controller = moduleRef.get(PublicationController);
 
-    expect(() => controller.isTokenInUse('TELEGRAM', 'hash')).toThrowError(
-      'PublicationController.isTokenInUse',
-    );
+    await expect(controller.isTokenInUse('TELEGRAM', 'non-existent-hash')).resolves.toBe(false);
   });
 
-  it('недостающие операции ScenarioEditor и ProjectController бросают NotImplementedError', () => {
-    const editor = moduleRef.get(ScenarioEditor);
+  it('недостающие операции ProjectController бросают NotImplementedError', () => {
     const projects = moduleRef.get(ProjectController);
-    const scenario = emptyScenario();
-    const block = scenario.blocks[0];
-
-    expect(() => editor.addBlock(scenario, 'TEXT_MESSAGE', 100, 100)).toThrowError(
-      'ScenarioEditor.addBlock',
-    );
-    expect(() => editor.updateBlockSettings(block, {})).toThrowError(
-      'ScenarioEditor.updateBlockSettings',
-    );
-    expect(() => editor.deleteBlock(block)).toThrowError('ScenarioEditor.deleteBlock');
-    expect(() => editor.connect({ blockId: block.id, output: 'default' }, block)).toThrowError(
-      'ScenarioEditor.connect',
-    );
-    expect(() =>
-      editor.deleteTransition({ source: { blockId: block.id, output: 'default' }, target: block.id }),
-    ).toThrowError('ScenarioEditor.deleteTransition');
 
     expect(() => projects.renameProject('proj-1', 'Новое имя')).toThrowError(
       'ProjectController.renameProject',

@@ -5,70 +5,74 @@
 :root {
   color-scheme: light;
   --radius: 0.625rem;
-  --scrollbar-thumb: oklch(0.2 0.01 135 / 18%);
-  --scrollbar-thumb-hover: oklch(0.2 0.01 135 / 32%);
-  --background: #F4F6F1;
-  --foreground: #131712;
+  --scrollbar-thumb: oklch(0.28 0.03 250 / 22%);
+  --scrollbar-thumb-hover: oklch(0.28 0.03 250 / 38%);
+  /* Правило 60/30/10: 60% чистый светлый фон, 30% холодный стальной сланцевый, 10% лайм */
+  --background: #FFFFFF;
+  --foreground: #0F172A;
   --card: #FFFFFF;
-  --card-foreground: #131712;
+  --card-foreground: #0F172A;
   --popover: #FFFFFF;
-  --popover-foreground: #131712;
+  --popover-foreground: #0F172A;
+  --surface: #E8EEF6;
   --primary: #A3E635;
   --primary-foreground: #11160A;
-  --secondary: #EAEEE6;
-  --secondary-foreground: #131712;
-  --muted: #EAEEE6;
-  --muted-foreground: #596356;
-  --accent: #E5F3CF;
-  --accent-foreground: #223B06;
+  --secondary: #E4EAF2;
+  --secondary-foreground: #1E293B;
+  --muted: #E4EAF2;
+  --muted-foreground: #475569;
+  --accent: #D7E1EE;
+  --accent-foreground: #0F172A;
   --destructive: #DC2626;
-  --border: #DCE2D5;
-  --input: #DCE2D5;
+  --border: #CBD5E1;
+  --input: #CBD5E1;
   --ring: #65A30D;
   --brand: #A3E635;
-  --brand-soft: #E5F3CF;
+  --brand-soft: #E9F8CF;
   --brand-ink: #3F6212;
   /* Подсветка выражений в полях редактора */
-  --syntax-variable: oklch(0.48 0.16 250);
-  --syntax-env: oklch(0.48 0.18 300);
-  --syntax-string: oklch(0.44 0.13 145);
-  --syntax-number: oklch(0.5 0.13 70);
-  --syntax-operator: oklch(0.45 0.015 135);
+  --syntax-variable: oklch(0.46 0.17 250);
+  --syntax-env: oklch(0.46 0.18 300);
+  --syntax-string: oklch(0.43 0.13 145);
+  --syntax-number: oklch(0.5 0.14 70);
+  --syntax-operator: oklch(0.42 0.03 250);
   --syntax-keyword: oklch(0.48 0.19 350);
   --syntax-unknown: var(--destructive);
 }
 
 .dark {
   color-scheme: dark;
-  --scrollbar-thumb: oklch(0.95 0.01 135 / 16%);
-  --scrollbar-thumb-hover: oklch(0.95 0.01 135 / 30%);
-  --background: #101210;
-  --foreground: #ECF1EA;
-  --card: #171A17;
-  --card-foreground: #ECF1EA;
-  --popover: #1D211C;
-  --popover-foreground: #ECF1EA;
+  --scrollbar-thumb: oklch(0.88 0.02 250 / 20%);
+  --scrollbar-thumb-hover: oklch(0.88 0.02 250 / 36%);
+  /* Правило 60/30/10: 60% чёрно-графитовая база, 30% стальной сланцевый, 10% лайм */
+  --background: #0D0F12;
+  --foreground: #F1F5F9;
+  --card: #19212E;
+  --card-foreground: #F1F5F9;
+  --popover: #1E2838;
+  --popover-foreground: #F1F5F9;
+  --surface: #161D29;
   --primary: #A3E635;
-  --primary-foreground: #11160A;
-  --secondary: #212520;
-  --secondary-foreground: #ECF1EA;
-  --muted: #212520;
-  --muted-foreground: #8C9689;
-  --accent: #233015;
-  --accent-foreground: #D9F99D;
+  --primary-foreground: #0F1607;
+  --secondary: #222D3D;
+  --secondary-foreground: #E2E8F0;
+  --muted: #222D3D;
+  --muted-foreground: #94A3B8;
+  --accent: #273447;
+  --accent-foreground: #F1F5F9;
   --destructive: #EF4444;
-  --border: #2F352E;
-  --input: #2F352E;
+  --border: #2E3B4E;
+  --input: #344358;
   --ring: #A3E635;
   --brand: #A3E635;
-  --brand-soft: #233015;
+  --brand-soft: #1E2E14;
   --brand-ink: #A3E635;
   /* Подсветка выражений в полях редактора */
   --syntax-variable: oklch(0.78 0.12 250);
   --syntax-env: oklch(0.78 0.13 300);
   --syntax-string: oklch(0.8 0.14 145);
   --syntax-number: oklch(0.82 0.13 80);
-  --syntax-operator: oklch(0.75 0.015 135);
+  --syntax-operator: oklch(0.75 0.025 250);
   --syntax-keyword: oklch(0.78 0.15 350);
   --syntax-unknown: var(--destructive);
 }
@@ -82,6 +86,7 @@
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
+  --color-surface: var(--surface);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
@@ -123,10 +128,15 @@
   animation: preview-pulse 1.8s ease-in-out infinite;
 }
 
-/* Рамка множественного выделения на холсте React Flow в палитре FIELD LIME */
+/* Рамка множественного выделения и элементы управления React Flow в палитре Steel Slate + FIELD LIME */
 .react-flow {
   --xy-selection-background-color: color-mix(in oklab, var(--brand) 12%, transparent);
   --xy-selection-border: 1.5px solid var(--brand-ink);
+  --xy-controls-button-background-color: var(--surface);
+  --xy-controls-button-background-color-hover: var(--accent);
+  --xy-controls-button-color: var(--foreground);
+  --xy-controls-button-color-hover: var(--foreground);
+  --xy-controls-button-border-color: var(--border);
 }
 
 .dark .react-flow {

@@ -137,10 +137,10 @@ export function NodePicker({ open, onOpenChange, excluded = [], onPick }: NodePi
         side="right"
         overlay={false}
         data-testid="node-picker"
-        className="w-full max-w-full gap-3 sm:w-96 sm:max-w-96"
+        className="w-full max-w-full gap-3 bg-card p-0 sm:w-96 sm:max-w-96"
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
-        <SheetHeader className="pb-0">
+        <SheetHeader className="border-b bg-surface pr-12 pb-3">
           <SheetTitle>{ru.editor.picker.title}</SheetTitle>
           <SheetDescription>{ru.editor.picker.description}</SheetDescription>
         </SheetHeader>

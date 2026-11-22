@@ -76,10 +76,10 @@ export function ValidationPanel({
         side="right"
         overlay={false}
         data-testid="validation-panel"
-        className="w-full max-w-full gap-3 sm:w-96 sm:max-w-96"
+        className="w-full max-w-full gap-0 bg-card p-0 sm:w-96 sm:max-w-96"
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
-        <SheetHeader className="pb-0">
+        <SheetHeader className="border-b bg-surface pr-12 pb-3">
           <SheetTitle>{ru.validationPanel.title}</SheetTitle>
           <SheetDescription>
             {errors.length > 0
@@ -88,7 +88,7 @@ export function ValidationPanel({
           </SheetDescription>
         </SheetHeader>
         <ScrollArea className="min-h-0 flex-1">
-          <div className="px-4 pb-4">
+          <div className="p-4">
             {errors.length === 0 ? (
               <div className="flex flex-col items-center gap-2 py-8 text-center text-sm text-muted-foreground">
                 <CheckCircle2 className="size-8 text-muted-foreground" aria-hidden />

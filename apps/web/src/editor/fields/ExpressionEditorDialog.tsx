@@ -79,14 +79,20 @@ export function ExpressionEditorDialog({
     [mode, variablesKey, envKey, testValues, sources, title],
   );
 
+  const [activeTab, setActiveTab] = useState<'editor' | 'variables' | 'result'>('editor');
   const needle = query.trim().toLowerCase();
   const filtered = variables.filter((name) => name.toLowerCase().includes(needle));
+  const tabs: { id: 'editor' | 'variables' | 'result'; label: string }[] = [
+    { id: 'editor', label: t.editorTitle },
+    { id: 'variables', label: t.variables },
+    { id: 'result', label: t.result },
+  ];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         aria-describedby={undefined}
-        className="flex h-[92vh] max-w-[95vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-[95vw]"
+        className="flex h-[94dvh] max-w-[calc(100vw-1rem)] flex-col gap-0 overflow-hidden p-0 sm:h-[92dvh] sm:max-w-[95vw]"
         onCloseAutoFocus={(event) => {
           if (!returnFocusTo?.current) return;
           event.preventDefault();
@@ -101,8 +107,36 @@ export function ExpressionEditorDialog({
           {title ?? t.editorTitle}
         </DialogTitle>
         <DialogDescription className="sr-only">{t.editorTitle}</DialogDescription>
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)]">
-          <section aria-label={t.variables} className="flex min-h-0 flex-col border-r">
+        <div
+          role="tablist"
+          aria-label={title ?? t.editorTitle}
+          className="grid grid-cols-3 border-b bg-muted/20 lg:hidden"
+        >
+          {tabs.map((tab) => {
+            const selected = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => setActiveTab(tab.id)}
+                className={`border-b-2 px-3 py-2 text-xs font-medium transition-colors ${
+                  selected
+                    ? 'border-[var(--brand)] bg-background text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)]">
+          <section
+            aria-label={t.variables}
+            className={`min-h-0 flex-col lg:flex lg:border-r ${activeTab === 'variables' ? 'flex flex-1' : 'hidden'}`}
+          >
             <div className="border-b p-3">
               <Input
                 type="search"
@@ -124,6 +158,7 @@ export function ExpressionEditorDialog({
                     onClick={() => {
                       const view = viewRef.current;
                       if (view) insertAtCursor(view, mode === 'template' ? `{{${name}}}` : name);
+                      setActiveTab('editor');
                     }}
                   >
                     <span className="font-mono font-semibold">{name}</span>
@@ -136,7 +171,10 @@ export function ExpressionEditorDialog({
               ))}
             </ul>
           </section>
-          <section aria-label={t.editorTitle} className="min-h-0 overflow-y-auto p-4">
+          <section
+            aria-label={t.editorTitle}
+            className={`min-h-0 overflow-y-auto p-4 lg:block ${activeTab === 'editor' ? 'block flex-1' : 'hidden'}`}
+          >
             <CodeMirror
               value={value}
               onChange={handleChange}
@@ -150,7 +188,10 @@ export function ExpressionEditorDialog({
               }}
             />
           </section>
-          <section aria-label={t.result} className="min-h-0 overflow-y-auto border-l p-4">
+          <section
+            aria-label={t.result}
+            className={`min-h-0 overflow-y-auto p-4 lg:block lg:border-l ${activeTab === 'result' ? 'block flex-1' : 'hidden'}`}
+          >
             <ResultView kind={resultKind} value={value} testValues={testValues} />
           </section>
         </div>

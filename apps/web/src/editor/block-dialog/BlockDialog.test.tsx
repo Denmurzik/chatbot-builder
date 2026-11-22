@@ -427,4 +427,23 @@ describe('BlockDialog', () => {
       expect(screen.queryByLabelText('Переменная 1')).toBeNull();
     });
   });
+
+  it('на мобильном экране переключает вкладки «Настройки / Вход / Выход» (по умолчанию «Настройки»)', () => {
+    render(<Harness nodeId="msg" />);
+    const settingsTab = screen.getByRole('tab', { name: ru.blockDialog.settings });
+    const inputTab = screen.getByRole('tab', { name: ru.blockDialog.input });
+    const outputTab = screen.getByRole('tab', { name: ru.blockDialog.output });
+
+    expect(settingsTab.getAttribute('aria-selected')).toBe('true');
+    expect(inputTab.getAttribute('aria-selected')).toBe('false');
+    expect(outputTab.getAttribute('aria-selected')).toBe('false');
+
+    fireEvent.click(inputTab);
+    expect(inputTab.getAttribute('aria-selected')).toBe('true');
+    expect(settingsTab.getAttribute('aria-selected')).toBe('false');
+
+    fireEvent.click(outputTab);
+    expect(outputTab.getAttribute('aria-selected')).toBe('true');
+    expect(inputTab.getAttribute('aria-selected')).toBe('false');
+  });
 });

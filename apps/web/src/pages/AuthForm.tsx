@@ -43,7 +43,7 @@ export function AuthForm(props: AuthFormProps) {
 
   return (
     <div
-      className="relative flex min-h-svh flex-col items-center justify-center p-4"
+      className="relative flex min-h-dvh flex-col items-center justify-center px-4 py-14 sm:py-8"
       style={{
         backgroundImage:
           'radial-gradient(ellipse 60% 40% at 50% 0%, color-mix(in oklab, var(--brand) 10%, transparent), transparent 70%), radial-gradient(var(--border) 1px, transparent 1px)',

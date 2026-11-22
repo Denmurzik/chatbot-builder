@@ -48,7 +48,7 @@ export function TestEnvironmentDialog({
         onOpenChange(nextOpen);
       }}
     >
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{ru.testEnvironment.title}</DialogTitle>
           <DialogDescription>{ru.testEnvironment.description}</DialogDescription>

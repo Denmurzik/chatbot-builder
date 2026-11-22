@@ -229,8 +229,8 @@ function TelegramSection(props: { projectId: string; bot: BotView }) {
         <h3 className="text-sm font-medium">{ru.bots.tokenSection}</h3>
       </div>
       {connection ? (
-        <div className="flex items-center gap-2 text-sm">
-          <span className="font-mono text-muted-foreground">{connection.tokenMask}</span>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="break-all font-mono text-muted-foreground">{connection.tokenMask}</span>
           <Button
             type="button"
             variant="ghost"
@@ -431,14 +431,15 @@ function VkSection(props: { projectId: string; bot: BotView }) {
           {connection.vkMode === 'CALLBACK' ? (
             <div className="flex flex-col gap-1">
               <span className="text-xs text-muted-foreground">{ru.bots.vkWebhookLabel}</span>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 truncate rounded bg-muted px-2 py-1 font-mono text-xs">
+              <div className="flex min-w-0 items-center gap-2">
+                <code className="min-w-0 flex-1 truncate rounded bg-muted px-2 py-1 font-mono text-xs">
                   {webhookUrl}
                 </code>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
+                  className="shrink-0"
                   aria-label={ru.bots.vkWebhookCopy}
                   onClick={onCopyWebhook}
                 >
@@ -722,10 +723,10 @@ function BotCard(props: { projectId: string; bot: BotView; onDelete: () => void 
 
   return (
     <Card>
-      <CardHeader className="flex-row items-start justify-between gap-4">
-        <div className="flex flex-col gap-1.5">
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 flex-col gap-1.5">
           <div className="flex flex-wrap items-center gap-2">
-            <CardTitle>{bot.name}</CardTitle>
+            <CardTitle className="break-words">{bot.name}</CardTitle>
             {isPublished ? (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
                 <span className="relative flex size-2" aria-hidden="true">
@@ -744,9 +745,11 @@ function BotCard(props: { projectId: string; bot: BotView; onDelete: () => void 
               </span>
             )}
           </div>
-          {metaParts.length > 0 ? <CardDescription>{metaParts.join(' · ')}</CardDescription> : null}
+          {metaParts.length > 0 ? (
+            <CardDescription className="break-words">{metaParts.join(' · ')}</CardDescription>
+          ) : null}
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={props.onDelete}>
+        <Button type="button" variant="outline" size="sm" className="self-start shrink-0" onClick={props.onDelete}>
           <Trash2 />
           {ru.bots.delete}
         </Button>
@@ -768,9 +771,9 @@ export function BotsPage() {
   const [deleting, setDeleting] = useState<BotView | null>(null);
 
   return (
-    <div className="mx-auto flex min-h-svh max-w-4xl flex-col gap-6 p-6">
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
-        <div className="flex items-center gap-3">
+    <div className="mx-auto flex min-h-dvh max-w-4xl flex-col gap-5 px-4 py-4 sm:gap-6 sm:p-6">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
           <Link
             to="/projects"
             aria-label={ru.projects.title}
@@ -781,16 +784,16 @@ export function BotsPage() {
           <span className="h-4 w-px bg-border" aria-hidden="true" />
           <Link
             to={`/projects/${id}`}
-            className="flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            className="flex shrink-0 items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
             <ArrowLeft className="size-4" />
             {ru.bots.back}
           </Link>
-          <h1 className="text-xl font-semibold">{ru.bots.title}</h1>
+          <h1 className="text-lg font-semibold sm:text-xl">{ru.bots.title}</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <ThemeToggle />
-          <Button onClick={() => setCreateOpen(true)}>
+          <Button size="sm" className="sm:h-9 sm:px-4" onClick={() => setCreateOpen(true)}>
             <Plus />
             {ru.bots.create}
           </Button>
@@ -800,7 +803,7 @@ export function BotsPage() {
       {isLoading ? <p className="text-muted-foreground">{ru.common.loading}</p> : null}
       {isError ? <p className="text-destructive">{ru.bots.loadError}</p> : null}
       {bots && bots.length === 0 ? (
-        <div className="rounded-lg border border-dashed p-12 text-center text-muted-foreground">
+        <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground sm:p-12">
           {ru.bots.empty}
         </div>
       ) : null}

@@ -131,7 +131,7 @@ export function PreviewPanel({
         side="right"
         overlay={false}
         data-testid="preview-panel"
-        className="w-96 gap-0 p-0 sm:max-w-md"
+        className="w-full max-w-full gap-0 p-0 sm:w-96 sm:max-w-md"
         onCloseAutoFocus={(event) => event.preventDefault()}
         onInteractOutside={(event) => event.preventDefault()}
         onPointerDownOutside={(event) => event.preventDefault()}

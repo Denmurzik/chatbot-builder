@@ -46,27 +46,32 @@ function isTextField(target: EventTarget): boolean {
 function Column({
   title,
   side = false,
+  mobileActive = true,
   children,
 }: {
   title: string;
   side?: boolean;
+  mobileActive?: boolean;
   children: ReactNode;
 }) {
   return (
     <section
       aria-label={title}
       className={cn(
-        'flex min-h-0 flex-col border-r border-border last:border-r-0',
+        'min-h-0 flex-col border-border lg:flex lg:border-r lg:last:border-r-0',
+        mobileActive ? 'flex flex-1' : 'hidden',
         side && 'bg-muted/40',
       )}
     >
-      <h2 className="border-b border-border px-4 py-2 text-sm font-semibold text-foreground">
+      <h2 className="hidden border-b border-border px-4 py-2 text-sm font-semibold text-foreground lg:block">
         {title}
       </h2>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">{children}</div>
     </section>
   );
 }
+
+type BlockDialogTab = 'settings' | 'input' | 'output';
 
 function DialogBody({
   node,
@@ -79,6 +84,8 @@ function DialogBody({
   edges: Edge[];
   onChange: BlockDialogProps['onChange'];
 }) {
+  // На мобильном экране три колонки показываются как вкладки; по умолчанию открыты «Настройки»
+  const [activeTab, setActiveTab] = useState<BlockDialogTab>('settings');
   // Тестовые значения живут только пока окно открыто
   const [testValues, setTestValues] = useState<Record<string, string>>({});
   const [target, setTarget] = useState<InsertTarget | null>(null);
@@ -102,6 +109,12 @@ function DialogBody({
   const meta = BLOCK_META[node.data.type];
   const Icon = meta.icon;
 
+  const tabs: { id: BlockDialogTab; label: string }[] = [
+    { id: 'settings', label: t.settings },
+    { id: 'input', label: t.input },
+    { id: 'output', label: t.output },
+  ];
+
   return (
     <InsertContext.Provider value={registry}>
       {/* Фокус в любом другом поле сбрасывает цель «Вставить»; поля-цели ставят её после (CodeMirror — на focusin) */}
@@ -111,26 +124,52 @@ function DialogBody({
           if (isTextField(event.target)) setTarget(null);
         }}
       >
-        <header className="flex items-center gap-3 border-b border-border bg-muted/40 py-3 pr-12 pl-4">
+        <header className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/40 py-2.5 pr-12 pl-3 sm:gap-3 sm:py-3 sm:pl-4">
           <span
-            className="flex size-9 shrink-0 items-center justify-center rounded-md text-white"
+            className="flex size-8 shrink-0 items-center justify-center rounded-md text-white sm:size-9"
             style={{ backgroundColor: meta.color }}
           >
-            <Icon className="size-5" />
+            <Icon className="size-4 sm:size-5" />
           </span>
           <Input
             data-title-input
-            className="max-w-md text-base font-semibold"
+            className="min-w-0 flex-1 text-sm font-semibold sm:max-w-md sm:text-base"
             aria-label={t.titleLabel}
             value={node.data.title}
             onChange={(event) => onChange(node.id, { ...node.data, title: event.target.value })}
           />
-          <span className="text-sm text-muted-foreground">
+          <span className="w-full truncate text-xs text-muted-foreground sm:w-auto sm:text-sm">
             {meta.label} · {ru.fields.id}: {node.id}
           </span>
         </header>
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_minmax(0,1fr)]">
-          <Column title={t.input} side>
+        <div
+          role="tablist"
+          aria-label={t.label}
+          className="grid grid-cols-3 border-b border-border bg-muted/20 lg:hidden"
+        >
+          {tabs.map((tab) => {
+            const selected = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  'border-b-2 px-3 py-2 text-xs font-medium transition-colors',
+                  selected
+                    ? 'border-[var(--brand)] bg-background text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_minmax(0,1fr)]">
+          <Column title={t.input} side mobileActive={activeTab === 'input'}>
             <InputPane
               variables={variables}
               titles={titles}
@@ -140,7 +179,7 @@ function DialogBody({
               }
             />
           </Column>
-          <Column title={t.settings}>
+          <Column title={t.settings} mobileActive={activeTab === 'settings'}>
             <FieldContext.Provider value={fieldContext}>
               <SettingsPane
                 data={node.data}
@@ -149,7 +188,7 @@ function DialogBody({
               />
             </FieldContext.Provider>
           </Column>
-          <Column title={t.output} side>
+          <Column title={t.output} side mobileActive={activeTab === 'output'}>
             <OutputPane node={node} nodes={nodes} edges={edges} testValues={testValues} />
           </Column>
         </div>
@@ -194,7 +233,7 @@ export function BlockDialog({
     <Dialog open={node !== undefined} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         aria-label={t.label}
-        className="flex h-[90vh] max-w-[90vw] flex-col gap-0 overflow-hidden border-border bg-card p-0 text-card-foreground sm:max-w-[90vw]"
+        className="flex h-[94dvh] max-w-[calc(100vw-1rem)] flex-col gap-0 overflow-hidden border-border bg-card p-0 text-card-foreground sm:h-[90dvh] sm:max-w-[92vw] lg:max-w-[90vw]"
         // Не уводим фокус на первое поле само по себе — фокус на окне (иначе он остался бы на холсте
         // и Tab открыл бы панель блоков); для «Переименовать» — в название
         onOpenAutoFocus={(event) => {

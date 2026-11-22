@@ -108,6 +108,7 @@ model DialogContext {
   requests         HttpRequest[] @relation("RequestOwner")
 
   @@unique([botId, chatId])
+  @@index([channel, updatedAt])
   @@map("dialog_context")
 }
 

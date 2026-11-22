@@ -1,18 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
-import { parsePreviewChatId, type ChatEvent } from '@chatbot/model';
+import { parsePreviewChatId, type ChatEvent, type PreviewEvent } from '@chatbot/model';
 import type { EventQueue } from '@chatbot/queue';
-import { Inject, Logger } from '@nestjs/common';
+import { Inject, Logger, type OnModuleDestroy } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
+  type OnGatewayConnection,
   type OnGatewayDisconnect,
   type OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import type { Namespace, Socket } from 'socket.io';
+import type { DefaultEventsMap, Namespace, Socket } from 'socket.io';
 import { AuthService } from '../auth/auth.service';
 import type { AuthenticatedAuthor } from '../auth/current-author.decorator';
 import { SESSION_COOKIE_NAME } from '../config';
@@ -22,14 +23,26 @@ import { PreviewSubscriber } from './preview-subscriber';
 
 interface PreviewSocketData {
   author?: AuthenticatedAuthor;
+  jwtExp?: number | null;
   chatId?: string;
   sessionId?: string;
 }
 
+interface ServerToClientEvents {
+  preview: (event: PreviewEvent) => void;
+}
+
 type PreviewSocket = Socket<
-  Record<string, unknown>,
-  Record<string, unknown>,
-  Record<string, unknown>,
+  DefaultEventsMap,
+  ServerToClientEvents,
+  DefaultEventsMap,
+  PreviewSocketData
+>;
+
+type PreviewNamespace = Namespace<
+  DefaultEventsMap,
+  ServerToClientEvents,
+  DefaultEventsMap,
   PreviewSocketData
 >;
 
@@ -49,7 +62,9 @@ interface ButtonPayload {
 const MAX_SESSION_ID_LENGTH = 128;
 const MAX_TEXT_LENGTH = 4096;
 const MAX_CALLBACK_DATA_LENGTH = 64;
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 const ENQUEUE_ERROR_MESSAGE = 'Не удалось отправить событие';
+const SESSION_EXPIRED_MESSAGE = 'Сессия истекла. Войдите снова.';
 
 // Извлекает hostname (без порта) из заголовка Host или первой части X-Forwarded-Host
 function extractHostname(header: string | string[] | undefined): string | null {
@@ -119,11 +134,14 @@ function parseCookie(cookieHeader: string | undefined, name: string): string | n
     }
   },
 })
-export class PreviewGateway implements OnGatewayInit, OnGatewayDisconnect {
+export class PreviewGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy
+{
   private readonly logger = new Logger(PreviewGateway.name);
+  private readonly expiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   @WebSocketServer()
-  server!: Namespace;
+  server!: PreviewNamespace;
 
   constructor(
     private readonly authService: AuthService,
@@ -132,7 +150,7 @@ export class PreviewGateway implements OnGatewayInit, OnGatewayDisconnect {
     private readonly subscriber: PreviewSubscriber,
   ) {}
 
-  afterInit(server: Namespace): void {
+  afterInit(server: PreviewNamespace): void {
     this.subscriber.setHandler((chatId, event) => {
       server.to(chatId).emit('preview', event);
     });
@@ -144,9 +162,10 @@ export class PreviewGateway implements OnGatewayInit, OnGatewayDisconnect {
         return;
       }
       this.authService
-        .authenticate(token)
-        .then((author) => {
+        .authenticateWithExpiry(token)
+        .then(({ author, exp }) => {
           socket.data.author = author;
+          socket.data.jwtExp = exp;
           next();
         })
         .catch(() => {
@@ -155,9 +174,21 @@ export class PreviewGateway implements OnGatewayInit, OnGatewayDisconnect {
     });
   }
 
+  handleConnection(client: PreviewSocket): void {
+    this.scheduleExpiryTimer(client);
+  }
+
   handleDisconnect(client: PreviewSocket): void {
+    this.clearExpiryTimer(client.id);
     client.data.chatId = undefined;
     client.data.sessionId = undefined;
+  }
+
+  onModuleDestroy(): void {
+    for (const timer of this.expiryTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.expiryTimers.clear();
   }
 
   @SubscribeMessage('start')
@@ -165,6 +196,10 @@ export class PreviewGateway implements OnGatewayInit, OnGatewayDisconnect {
     @ConnectedSocket() client: PreviewSocket,
     @MessageBody() payload: StartPayload | undefined,
   ): Promise<{ chatId: string } | { error: string }> {
+    if (this.rejectIfExpired(client)) {
+      return { error: 'unauthorized' };
+    }
+
     const author = client.data.author;
     if (!author) {
       this.scheduleDisconnect(client);
@@ -218,6 +253,10 @@ export class PreviewGateway implements OnGatewayInit, OnGatewayDisconnect {
     @ConnectedSocket() client: PreviewSocket,
     @MessageBody() payload: InputPayload | undefined,
   ): Promise<{ ok: true } | { error: string }> {
+    if (this.rejectIfExpired(client)) {
+      return { error: 'unauthorized' };
+    }
+
     const session = this.getActiveSession(client);
     if (!session) return { error: 'Сеанс превью не запущен' };
 
@@ -246,6 +285,10 @@ export class PreviewGateway implements OnGatewayInit, OnGatewayDisconnect {
     @ConnectedSocket() client: PreviewSocket,
     @MessageBody() payload: ButtonPayload | undefined,
   ): Promise<{ ok: true } | { error: string }> {
+    if (this.rejectIfExpired(client)) {
+      return { error: 'unauthorized' };
+    }
+
     const session = this.getActiveSession(client);
     if (!session) return { error: 'Сеанс превью не запущен' };
 
@@ -277,6 +320,10 @@ export class PreviewGateway implements OnGatewayInit, OnGatewayDisconnect {
   async handleRestart(
     @ConnectedSocket() client: PreviewSocket,
   ): Promise<{ ok: true } | { error: string }> {
+    if (this.rejectIfExpired(client)) {
+      return { error: 'unauthorized' };
+    }
+
     const session = this.getActiveSession(client);
     if (!session) return { error: 'Сеанс превью не запущен' };
 
@@ -346,5 +393,52 @@ export class PreviewGateway implements OnGatewayInit, OnGatewayDisconnect {
     setTimeout(() => {
       client.disconnect(true);
     }, 10);
+  }
+
+  private isTokenExpired(client: PreviewSocket): boolean {
+    const exp = client.data.jwtExp;
+    return exp != null && exp * 1000 <= Date.now();
+  }
+
+  private rejectIfExpired(client: PreviewSocket): boolean {
+    if (!this.isTokenExpired(client)) return false;
+    this.clearExpiryTimer(client.id);
+    client.emit('preview', { type: 'system', text: SESSION_EXPIRED_MESSAGE, blockId: null });
+    this.scheduleDisconnect(client);
+    return true;
+  }
+
+  private scheduleExpiryTimer(client: PreviewSocket): void {
+    this.clearExpiryTimer(client.id);
+    const exp = client.data.jwtExp;
+    if (exp == null) return;
+
+    const remainingMs = exp * 1000 - Date.now();
+    if (remainingMs <= 0) {
+      client.emit('preview', { type: 'system', text: SESSION_EXPIRED_MESSAGE, blockId: null });
+      client.disconnect(true);
+      return;
+    }
+
+    const delay = Math.min(remainingMs, MAX_TIMER_DELAY_MS);
+    const timer = setTimeout(() => {
+      this.expiryTimers.delete(client.id);
+      if (this.isTokenExpired(client)) {
+        client.emit('preview', { type: 'system', text: SESSION_EXPIRED_MESSAGE, blockId: null });
+        client.disconnect(true);
+      } else {
+        this.scheduleExpiryTimer(client);
+      }
+    }, delay);
+    timer.unref();
+    this.expiryTimers.set(client.id, timer);
+  }
+
+  private clearExpiryTimer(socketId: string): void {
+    const timer = this.expiryTimers.get(socketId);
+    if (timer) {
+      clearTimeout(timer);
+      this.expiryTimers.delete(socketId);
+    }
   }
 }

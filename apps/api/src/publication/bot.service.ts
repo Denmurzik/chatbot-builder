@@ -1,4 +1,4 @@
-import { Prisma } from '@chatbot/db';
+import { Prisma, type MessengerType } from '@chatbot/db';
 import type {
   BotView,
   EnvVarInput,
@@ -15,11 +15,10 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { EnvironmentService } from '../common/environment.service';
 import { PrismaService } from '../prisma/prisma.module';
-import { TelegramWebhookService } from '../telegram/telegram-webhook.service';
 import { ScenarioValidator } from '../validation/scenario-validator';
-import { EnvironmentService } from './environment.service';
-import { TelegramTokenVerifier } from './telegram-token.verifier';
+import { MessengerAdminPort } from './messenger-admin.port';
 
 type BotWithConnections = Prisma.BotGetPayload<{ include: { connections: true } }>;
 
@@ -30,9 +29,8 @@ export class BotService {
     private readonly prisma: PrismaService,
     private readonly vault: SecretVault,
     private readonly environments: EnvironmentService,
-    private readonly verifier: TelegramTokenVerifier,
     private readonly validator: ScenarioValidator,
-    private readonly telegram: TelegramWebhookService,
+    private readonly messenger: MessengerAdminPort,
   ) {}
 
   async list(authorId: string, projectId: string): Promise<BotView[]> {
@@ -57,17 +55,32 @@ export class BotService {
   async remove(authorId: string, projectId: string, botId: string): Promise<void> {
     await this.getOwnedBot(authorId, projectId, botId);
     const oldToken = await this.currentToken(botId);
-    await this.prisma.client.$transaction(async (tx) => {
-      // Первой блокируется строка бота — тот же порядок, что у публикации (без взаимной блокировки с движком)
-      await tx.$queryRaw`SELECT id FROM bot WHERE id = ${botId} FOR UPDATE`;
-      // Сначала разрываем ссылки контекстов на запросы, затем удаляем зависимые записи
-      await tx.dialogContext.updateMany({ where: { botId }, data: { currentRequestId: null } });
-      await tx.httpRequest.deleteMany({ where: { dialogContext: { botId } } });
-      await tx.dialogContext.deleteMany({ where: { botId } });
-      await tx.messengerConnection.deleteMany({ where: { botId } });
-      await tx.bot.delete({ where: { id: botId } });
+    try {
+      await this.prisma.client.$transaction(async (tx) => {
+        // Первой блокируется строка бота — тот же порядок, что у публикации (без взаимной блокировки с движком)
+        await tx.$queryRaw`SELECT id FROM bot WHERE id = ${botId} FOR UPDATE`;
+        // Сначала разрываем ссылки контекстов на запросы, затем удаляем зависимые записи
+        await tx.dialogContext.updateMany({ where: { botId }, data: { currentRequestId: null } });
+        await tx.httpRequest.deleteMany({ where: { dialogContext: { botId } } });
+        await tx.dialogContext.deleteMany({ where: { botId } });
+        await tx.messengerConnection.deleteMany({ where: { botId } });
+        await tx.bot.delete({ where: { id: botId } });
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+        throw new NotFoundException('Бот не найден');
+      }
+      throw err;
+    }
+    if (oldToken) await this.messenger.disconnect(botId, oldToken);
+  }
+
+  async isTokenInUse(messenger: MessengerType, tokenHash: string): Promise<boolean> {
+    const existing = await this.prisma.client.messengerConnection.findFirst({
+      where: { messenger, tokenHash },
+      select: { id: true },
     });
-    if (oldToken) await this.telegram.disconnect(botId, oldToken);
+    return existing !== null;
   }
 
   async setEnvironment(
@@ -96,7 +109,7 @@ export class BotService {
     token: string,
   ): Promise<{ messenger: 'TELEGRAM'; tokenMask: string; botUsername: string }> {
     const bot = await this.getOwnedBot(authorId, projectId, botId);
-    const me = await this.verifier.verify(token);
+    const me = await this.messenger.verifyToken(token);
     if (!me) {
       throw new BadRequestException('Токен недействителен');
     }
@@ -108,7 +121,7 @@ export class BotService {
     const oldToken = await this.currentToken(botId);
     // Опубликованный бот сразу переключается на новый токен (до сохранения: ошибка Telegram -> 502)
     const published = bot.status === 'PUBLISHED';
-    if (published) await this.telegram.connect(botId, token);
+    if (published) await this.messenger.connect(botId, token);
     const { cipherText, mask } = this.vault.encrypt(token, tokenAad(botId));
     const data = { tokenCipher: cipherText, tokenMask: mask, tokenHash };
     try {
@@ -116,13 +129,13 @@ export class BotService {
     } catch (err) {
       if (published && oldToken !== token) {
         // Откатываем подключение нового токена, возвращаем прежний
-        await this.telegram.disconnect(botId, token);
-        if (oldToken) await this.telegram.connect(botId, oldToken).catch(() => undefined);
+        await this.messenger.disconnect(botId, token);
+        if (oldToken) await this.messenger.connect(botId, oldToken).catch(() => undefined);
       }
       throw err;
     }
     if (published && oldToken && oldToken !== token) {
-      await this.telegram.disconnect(botId, oldToken);
+      await this.messenger.disconnect(botId, oldToken);
     }
     return { messenger: 'TELEGRAM', tokenMask: mask, botUsername: me.username };
   }
@@ -133,7 +146,7 @@ export class BotService {
     await this.prisma.client.messengerConnection.deleteMany({
       where: { botId, messenger: 'TELEGRAM' },
     });
-    if (oldToken) await this.telegram.disconnect(botId, oldToken);
+    if (oldToken) await this.messenger.disconnect(botId, oldToken);
   }
 
   // Публикация и переопубликация (п. 2.11): проверка -> подключение к Telegram -> фиксация сценария
@@ -170,7 +183,7 @@ export class BotService {
       });
     }
     // Вне транзакции: ошибка Telegram даёт 502, и бот не меняется
-    await this.telegram.connect(botId, token);
+    await this.messenger.connect(botId, token);
 
     const updated = await this.prisma.client.$transaction(async (tx) => {
       // Статус читаем внутри транзакции: параллельные публикации тоже сбрасывают контексты

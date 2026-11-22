@@ -1,6 +1,7 @@
 import type { OutgoingMessageLike, PreviewEvent } from '@chatbot/model';
 import { Inject, Injectable, Logger, type OnApplicationShutdown } from '@nestjs/common';
 import IORedis from 'ioredis';
+import { PreviewNotifier } from '../dialog/ports';
 import { APP_CONFIG, type AppConfig } from '../infra/tokens';
 
 /**
@@ -8,11 +9,12 @@ import { APP_CONFIG, type AppConfig } from '../infra/tokens';
  * сообщения бота, подсветка текущего блока, переменные и системные сообщения (UC-A-20…A-23).
  */
 @Injectable()
-export class PreviewPublisher implements OnApplicationShutdown {
+export class PreviewPublisher extends PreviewNotifier implements OnApplicationShutdown {
   private readonly logger = new Logger(PreviewPublisher.name);
   private readonly redis: IORedis;
 
   constructor(@Inject(APP_CONFIG) config: AppConfig) {
+    super();
     // Отдельный клиент без бесконечной очереди команд, чтобы сбой Redis не подвешивал воркер раздела
     this.redis = new IORedis(config.redisUrl, {
       maxRetriesPerRequest: 1,

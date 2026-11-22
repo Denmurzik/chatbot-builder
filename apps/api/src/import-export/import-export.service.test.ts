@@ -25,6 +25,7 @@ function makeScenarioWithHttp(
     value: string;
     secret: boolean;
     secretValue?: { cipherText: string; mask: string };
+    secretMask?: string;
   }>,
 ): Scenario {
   return {
@@ -80,6 +81,7 @@ describe('ImportExportService (unit)', () => {
           value: '',
           secret: true,
           secretValue: { cipherText: 'v1:ddd:eee:fff', mask: '••••9999' },
+          secretMask: '••••9999',
         },
       ]);
 
@@ -88,6 +90,7 @@ describe('ImportExportService (unit)', () => {
       expect(rawJson).not.toContain('v1:aaa:bbb:ccc');
       expect(rawJson).not.toContain('v1:ddd:eee:fff');
       expect(rawJson).not.toContain('secretValue');
+      expect(rawJson).not.toContain('secretMask');
 
       const parsed = JSON.parse(rawJson) as Scenario;
       const reqBlock = parsed.blocks.find((b) => b.id === 'req');

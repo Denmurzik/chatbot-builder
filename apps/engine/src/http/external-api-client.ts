@@ -1,4 +1,3 @@
-import { NotImplementedError } from '@chatbot/model';
 import pRetry, { AbortError } from 'p-retry';
 import { request as undiciRequest, type Dispatcher } from 'undici';
 import type { OutgoingHttpRequest } from '../dialog/ports';
@@ -39,11 +38,6 @@ export class ExternalApiClient {
     this.run(request, timeoutSec, retryCount, retryIntervalSec).catch((error: unknown) => {
       console.error('ExternalApiClient: необработанная ошибка', error);
     });
-  }
-
-  // Поиск отправленного запроса по идентификатору (класс модели ExternalApiClient, SD-3/SD-4, спринт 2)
-  findSentRequest(_requestId: string): OutgoingHttpRequest | null {
-    throw new NotImplementedError('ExternalApiClient.findSentRequest');
   }
 
   private async run(

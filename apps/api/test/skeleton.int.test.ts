@@ -1,5 +1,4 @@
 import 'reflect-metadata';
-import { emptyScenario } from '@chatbot/model';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
@@ -11,14 +10,21 @@ import { ProjectController } from '../src/projects/project.controller';
 import { ScenarioEditor } from '../src/projects/scenario-editor';
 import { PublicationController } from '../src/publication/publication.controller';
 import { ScenarioValidator } from '../src/validation/scenario-validator';
+import { createIsolatedTestDb, type IsolatedTestDb } from './test-db';
 
 describe('Каркас модулей API (skeleton)', () => {
+  let db: IsolatedTestDb;
   let moduleRef: TestingModule;
-  const prevPolling = process.env.TELEGRAM_POLLING;
-  const prevVaultKey = process.env.VAULT_KEY;
-  const prevVaultHashKey = process.env.VAULT_HASH_KEY;
+  const prevEnv = {
+    DATABASE_URL: process.env.DATABASE_URL,
+    TELEGRAM_POLLING: process.env.TELEGRAM_POLLING,
+    VAULT_KEY: process.env.VAULT_KEY,
+    VAULT_HASH_KEY: process.env.VAULT_HASH_KEY,
+  };
 
   beforeAll(async () => {
+    db = await createIsolatedTestDb();
+    process.env.DATABASE_URL = db.databaseUrl;
     process.env.TELEGRAM_POLLING = '0';
     process.env.VAULT_KEY ??= Buffer.alloc(32, 1).toString('base64');
     process.env.VAULT_HASH_KEY ??= Buffer.alloc(32, 2).toString('base64');
@@ -26,13 +32,15 @@ describe('Каркас модулей API (skeleton)', () => {
     moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
-  }, 60000);
+  }, 120000);
 
   afterAll(async () => {
     await moduleRef?.close();
-    process.env.TELEGRAM_POLLING = prevPolling;
-    process.env.VAULT_KEY = prevVaultKey;
-    process.env.VAULT_HASH_KEY = prevVaultHashKey;
+    await db?.destroy();
+    for (const [key, value] of Object.entries(prevEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   });
 
   it('AppModule компилируется со всеми модулями и разрешает зависимости каркаса', () => {
@@ -46,33 +54,14 @@ describe('Каркас модулей API (skeleton)', () => {
     expect(moduleRef.get(ScenarioEditor)).toBeInstanceOf(ScenarioEditor);
   });
 
-  it('нереализованные методы PublicationController бросают NotImplementedError с именем класса и метода', () => {
+  it('PublicationController.isTokenInUse работает и возвращает false для неизвестного хеша', async () => {
     const controller = moduleRef.get(PublicationController);
 
-    expect(() => controller.isTokenInUse('TELEGRAM', 'hash')).toThrowError(
-      'PublicationController.isTokenInUse',
-    );
+    await expect(controller.isTokenInUse('TELEGRAM', 'non-existent-hash')).resolves.toBe(false);
   });
 
-  it('недостающие операции ScenarioEditor и ProjectController бросают NotImplementedError', () => {
-    const editor = moduleRef.get(ScenarioEditor);
+  it('недостающие операции ProjectController бросают NotImplementedError', () => {
     const projects = moduleRef.get(ProjectController);
-    const scenario = emptyScenario();
-    const block = scenario.blocks[0];
-
-    expect(() => editor.addBlock(scenario, 'TEXT_MESSAGE', 100, 100)).toThrowError(
-      'ScenarioEditor.addBlock',
-    );
-    expect(() => editor.updateBlockSettings(block, {})).toThrowError(
-      'ScenarioEditor.updateBlockSettings',
-    );
-    expect(() => editor.deleteBlock(block)).toThrowError('ScenarioEditor.deleteBlock');
-    expect(() => editor.connect({ blockId: block.id, output: 'default' }, block)).toThrowError(
-      'ScenarioEditor.connect',
-    );
-    expect(() =>
-      editor.deleteTransition({ source: { blockId: block.id, output: 'default' }, target: block.id }),
-    ).toThrowError('ScenarioEditor.deleteTransition');
 
     expect(() => projects.renameProject('proj-1', 'Новое имя')).toThrowError(
       'ProjectController.renameProject',

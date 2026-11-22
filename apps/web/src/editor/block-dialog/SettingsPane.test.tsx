@@ -119,6 +119,76 @@ describe('SettingsPane', () => {
     );
   });
 
+  it('секретный заголовок с secretMask (без secretValue) показывает маску, сохраняет её при пустом значении и сбрасывает при отключении флага', () => {
+    const onChange = vi.fn();
+    const base = httpData('GET', 0);
+    if (base.type !== 'HTTP_REQUEST') throw new Error('ожидался HTTP_REQUEST');
+    renderPane(
+      {
+        ...base,
+        headers: [
+          {
+            name: 'X-Api-Key',
+            value: '',
+            secret: true,
+            secretMask: '••••9876',
+          },
+        ],
+      },
+      onChange,
+    );
+
+    // Маска показывается как placeholder, поле значения пустое
+    const valueInput = screen.getByPlaceholderText('••••9876') as HTMLInputElement;
+    expect(valueInput.value).toBe('');
+
+    // Изменение имени заголовка при пустом value сохраняет secretMask
+    const nameInput = screen.getByDisplayValue('X-Api-Key') as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: 'X-Auth-Key' } });
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        headers: [
+          expect.objectContaining({
+            name: 'X-Auth-Key',
+            value: '',
+            secret: true,
+            secretMask: '••••9876',
+          }),
+        ],
+      }),
+    );
+
+    // Ввод нового значения передаётся в onChange для перешифрования на сервере
+    fireEvent.change(valueInput, { target: { value: 'new-key-value' } });
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        headers: [
+          expect.objectContaining({
+            name: 'X-Api-Key',
+            value: 'new-key-value',
+            secret: true,
+          }),
+        ],
+      }),
+    );
+
+    // Снятие флага secret очищает secretMask и secretValue
+    const secretCheckbox = screen.getByLabelText(ru.fields.headerSecret) as HTMLInputElement;
+    fireEvent.click(secretCheckbox);
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        headers: [
+          expect.objectContaining({
+            name: 'X-Api-Key',
+            secret: false,
+            secretMask: undefined,
+            secretValue: undefined,
+          }),
+        ],
+      }),
+    );
+  });
+
   it('поля сгруппированы по смыслу', () => {
     renderPane(httpData('GET', 0));
     for (const name of ['Запрос', 'Разбор ответа', 'Повторы и ошибки']) {

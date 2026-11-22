@@ -1,17 +1,21 @@
-import { Module } from '@nestjs/common';
+import { type DynamicModule, Module, type ModuleMetadata } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
-import { ProjectModule } from '../projects/project.module';
-import { TelegramModule } from '../telegram/telegram.module';
+import { EnvironmentService } from '../common/environment.service';
 import { ValidatorModule } from '../validation/validator.module';
 import { BotService } from './bot.service';
 import { PublicationController } from './publication.controller';
-import { TelegramTokenVerifier } from './telegram-token.verifier';
 
-// Модуль управления ботами, подключениями и публикацией (UC-A-25…A-28, UC-A-32, SD-6; спринты 2–3)
-@Module({
-  imports: [AuthModule, ProjectModule, ValidatorModule, TelegramModule],
-  controllers: [PublicationController],
-  providers: [BotService, TelegramTokenVerifier],
-  exports: [BotService],
-})
-export class PublicationModule {}
+// Модуль управления ботами, подключениями и публикацией (UC-A-25…A-28, UC-A-32, SD-6)
+// Зависит только от порта MessengerAdminPort; адаптер мессенджера подключается в AppModule
+@Module({})
+export class PublicationModule {
+  static register(options: { imports?: ModuleMetadata['imports'] } = {}): DynamicModule {
+    return {
+      module: PublicationModule,
+      imports: [AuthModule, ValidatorModule, ...(options.imports ?? [])],
+      controllers: [PublicationController],
+      providers: [BotService, EnvironmentService],
+      exports: [BotService],
+    };
+  }
+}

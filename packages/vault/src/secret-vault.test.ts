@@ -162,6 +162,19 @@ describe('SecretVault', () => {
       expect(vault.encrypt('12345678901', 'bot-1:VAR').mask).toBe('••••');
       expect(vault.encrypt('123456789012', 'bot-1:VAR').mask).toBe('••••9012');
     });
+
+    it('возвращает ту же маску через SecretVault.mask для коротких и длинных значений', () => {
+      const vault = new SecretVault(key, hashKey);
+
+      expect(vault.mask('')).toBe('••••');
+      expect(vault.mask('ab')).toBe('••••');
+      expect(vault.mask('12345678901')).toBe('••••');
+      expect(vault.mask('123456789012')).toBe('••••9012');
+      expect(vault.mask('123456:ABCdef')).toBe('••••Cdef');
+      expect(vault.mask('123456:ABCdef')).toBe(
+        vault.encrypt('123456:ABCdef', 'bot-1:TELEGRAM').mask,
+      );
+    });
   });
 
   describe('хеширование (hash)', () => {

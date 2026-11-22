@@ -167,7 +167,10 @@ describe('Сквозная проверка: запись к врачу чере
     expect(ctx.state).toBe('FINISHED');
 
     // Секретный ключ API не должен попадать в журнал HTTP-запросов в открытом виде
-    const rows = await env.db.httpRequest.findMany({ where: { dialogContextId: ctx.id } });
+    const rows = await env.db.httpRequest.findMany({
+      where: { dialogContextId: ctx.id },
+      orderBy: { createdAt: 'asc' },
+    });
     expect(rows).toHaveLength(3);
     expect(JSON.stringify(rows)).not.toContain(CLINIC_API_KEY);
   });
@@ -220,7 +223,10 @@ describe('Сквозная проверка: запись к врачу чере
     expect(ctx.state).toBe('FINISHED');
 
     // Проверяем строку http_request: статус ошибки и код ответа 500
-    const rows = await env.db.httpRequest.findMany({ where: { dialogContextId: ctx.id } });
+    const rows = await env.db.httpRequest.findMany({
+      where: { dialogContextId: ctx.id },
+      orderBy: { createdAt: 'asc' },
+    });
     expect(rows.length).toBeGreaterThanOrEqual(1);
     const failRow = rows[rows.length - 1];
     expect(failRow!.responseCode).toBe(500);
@@ -245,7 +251,10 @@ describe('Сквозная проверка: запись к врачу чере
     expect(ctx.state).toBe('FINISHED');
 
     // Проверяем строку http_request: код ответа 401
-    const rows = await env.db.httpRequest.findMany({ where: { dialogContextId: ctx.id } });
+    const rows = await env.db.httpRequest.findMany({
+      where: { dialogContextId: ctx.id },
+      orderBy: { createdAt: 'asc' },
+    });
     expect(rows.length).toBeGreaterThanOrEqual(1);
     const failRow = rows[rows.length - 1];
     expect(failRow!.responseCode).toBe(401);
@@ -267,7 +276,10 @@ describe('Сквозная проверка: запись к врачу чере
     expect(ctx.state).toBe('FINISHED');
 
     // Проверяем строку http_request: статус TIMED_OUT
-    const rows = await env.db.httpRequest.findMany({ where: { dialogContextId: ctx.id } });
+    const rows = await env.db.httpRequest.findMany({
+      where: { dialogContextId: ctx.id },
+      orderBy: { createdAt: 'asc' },
+    });
     expect(rows.length).toBeGreaterThanOrEqual(1);
     const failRow = rows[rows.length - 1];
     expect(failRow!.status).toBe('TIMED_OUT');

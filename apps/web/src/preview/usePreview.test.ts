@@ -227,11 +227,20 @@ describe('usePreview', () => {
         type: 'currentBlock',
         blockId: 'block_1',
       });
+      currentSocket.trigger('preview', {
+        type: 'system',
+        text: 'Ошибка блока',
+        blockId: 'block_err',
+      });
     });
 
-    expect(result.current.messages).toHaveLength(1);
+    expect(result.current.messages).toHaveLength(2);
     expect(result.current.variables).toEqual({ foo: 'bar' });
     expect(result.current.currentBlockId).toBe('block_1');
+    expect(result.current.errorBlockId).toBe('block_err');
+
+    onCurrentBlock.mockClear();
+    onErrorBlock.mockClear();
 
     // Переподключение
     act(() => {
@@ -240,6 +249,8 @@ describe('usePreview', () => {
 
     expect(result.current.variables).toEqual({});
     expect(result.current.currentBlockId).toBeNull();
+    expect(result.current.errorBlockId).toBeNull();
+    expect(onCurrentBlock).toHaveBeenCalledWith(null);
     expect(onErrorBlock).toHaveBeenCalledWith(null);
     expect(result.current.messages).toHaveLength(1);
     expect(result.current.messages[0]).toMatchObject({
@@ -247,6 +258,48 @@ describe('usePreview', () => {
       text: ru.preview.sessionRestartedAfterReconnect,
       blockId: null,
     });
+  });
+
+  it('при разрыве соединения (disconnect) сбрасывает подсветку текущего и ошибочного блоков', () => {
+    const onCurrentBlock = vi.fn();
+    const onErrorBlock = vi.fn();
+
+    const { result } = renderHook(() =>
+      usePreview({
+        projectId: 'proj-1',
+        enabled: true,
+        onCurrentBlock,
+        onErrorBlock,
+      }),
+    );
+
+    act(() => {
+      currentSocket.trigger('connect');
+      const ack = currentSocket.emit.mock.calls[0]![2] as (res: { chatId: string }) => void;
+      ack({ chatId: 'preview:proj-1:s1' });
+      currentSocket.trigger('preview', { type: 'currentBlock', blockId: 'block_1' });
+      currentSocket.trigger('preview', {
+        type: 'system',
+        text: 'Ошибка блока',
+        blockId: 'block_err',
+      });
+    });
+
+    expect(result.current.currentBlockId).toBe('block_1');
+    expect(result.current.errorBlockId).toBe('block_err');
+
+    onCurrentBlock.mockClear();
+    onErrorBlock.mockClear();
+
+    act(() => {
+      currentSocket.trigger('disconnect');
+    });
+
+    expect(result.current.status).toBe('disconnected');
+    expect(result.current.currentBlockId).toBeNull();
+    expect(result.current.errorBlockId).toBeNull();
+    expect(onCurrentBlock).toHaveBeenCalledWith(null);
+    expect(onErrorBlock).toHaveBeenCalledWith(null);
   });
 
   it('обрабатывает ошибки start ack, input ack, connect_error и игнорирует поздние ack после закрытия', () => {

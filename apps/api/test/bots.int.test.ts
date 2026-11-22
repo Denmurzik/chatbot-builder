@@ -1,12 +1,15 @@
 import 'reflect-metadata';
+import { Prisma } from '@chatbot/db';
 import { SecretVault, tokenAad } from '@chatbot/vault';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/configure-app';
-import { TelegramTokenVerifier } from '../src/publication/telegram-token.verifier';
+import { PrismaService } from '../src/prisma/prisma.module';
+import { MessengerAdminPort } from '../src/publication/messenger-admin.port';
+import { PublicationController } from '../src/publication/publication.controller';
 import { createIsolatedTestDb, type IsolatedTestDb } from './test-db';
 
 const GOOD_TOKEN_1 = '111111:AAAA-good-token-one-xxxxxxxxxxxxxxxx';
@@ -24,9 +27,11 @@ describe('Боты, окружения и подключение Telegram (ин�
     VAULT_HASH_KEY: process.env.VAULT_HASH_KEY,
   };
 
-  // Подмена getMe: токены с префиксом bad- недействительны
-  const verifier = {
-    verify: async (token: string) => (token.startsWith('bad-') ? null : { username: 'test_bot' }),
+  // Подмена порта мессенджера: токены с префиксом bad- недействительны
+  const messengerAdmin: MessengerAdminPort = {
+    verifyToken: async (token: string) => (token.startsWith('bad-') ? null : { username: 'test_bot' }),
+    connect: async () => undefined,
+    disconnect: async () => undefined,
   };
 
   beforeAll(async () => {
@@ -39,8 +44,8 @@ describe('Боты, окружения и подключение Telegram (ин�
     process.env.VAULT_HASH_KEY ??= Buffer.alloc(32, 2).toString('base64');
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(TelegramTokenVerifier)
-      .useValue(verifier)
+      .overrideProvider(MessengerAdminPort)
+      .useValue(messengerAdmin)
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -278,5 +283,31 @@ describe('Боты, окружения и подключение Telegram (ин�
 
     // Тот же токен у того же бота допустим
     await agent.put(urlA).send({ token: GOOD_TOKEN_1 }).expect(200);
+
+    // Проверка isTokenInUse через PublicationController
+    const controller = app.get(PublicationController);
+    const vault = SecretVault.fromEnv();
+    await expect(controller.isTokenInUse('TELEGRAM', vault.hash(GOOD_TOKEN_1))).resolves.toBe(true);
+    await expect(controller.isTokenInUse('TELEGRAM', vault.hash(GOOD_TOKEN_2))).resolves.toBe(false);
+  });
+
+  it('удаление бота при гонке P2025 возвращает 404 «Бот не найден»', async () => {
+    const { agent, projectId } = await agentWithProject('race@example.com');
+    const botId = await createBot(agent, projectId, 'Гоночный бот');
+
+    const prismaService = app.get(PrismaService);
+    const txSpy = vi.spyOn(prismaService.client, '$transaction').mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError('Record to delete does not exist.', {
+        code: 'P2025',
+        clientVersion: 'test',
+      }),
+    );
+
+    try {
+      const res = await agent.delete(`/api/projects/${projectId}/bots/${botId}`).expect(404);
+      expect(res.body.message).toBe('Бот не найден');
+    } finally {
+      txSpy.mockRestore();
+    }
   });
 });

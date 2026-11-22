@@ -22,7 +22,7 @@ import { VaultModule } from './vault/vault.module';
     QueueModule,
     TelegramModule,
     ValidatorModule,
-    PublicationModule,
+    PublicationModule.register({ imports: [TelegramModule] }),
     ImportExportModule,
     PreviewModule,
   ],

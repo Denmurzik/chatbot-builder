@@ -4,6 +4,10 @@ import type { Scenario } from './scenario';
 // Регулярное выражение из п. 2.4 для поиска переменных вида {{имя}} и {{env.ИМЯ}}
 export const TEMPLATE_VAR_REGEX = /\{\{\s*([A-Za-z_][A-Za-z0-9_.]*)\s*\}\}/g;
 
+// Префикс ссылок на переменные окружения в шаблонах и выражениях
+export const ENV_VAR_PREFIX = 'env.';
+
+const ENV_REF_NAME_REGEX = /^env\.([A-Za-z_][A-Za-z0-9_]*)$/;
 const ENV_REF_IN_EXPR_REGEX = /^\{\{\s*(env\.[A-Za-z_][A-Za-z0-9_]*)\s*\}\}/;
 const NUMERIC_LITERAL_AT_START_REGEX = /^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/;
 const IDENTIFIER_AT_START_REGEX = /^[A-Za-z_][A-Za-z0-9_]*/;
@@ -177,6 +181,39 @@ export function blockReads(block: Block): string[] {
       }
       return result;
   }
+}
+
+// Возвращает имена обычных переменных диалога (без ссылок env.*), которые читает блок
+export function blockDialogReads(block: Block): string[] {
+  return blockReads(block).filter((name) => !name.startsWith(ENV_VAR_PREFIX));
+}
+
+// Возвращает уникальные имена переменных окружения (без префикса env.), на которые ссылается блок
+export function extractEnvRefs(block: Block): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const name of blockReads(block)) {
+    const match = ENV_REF_NAME_REGEX.exec(name);
+    if (match && !seen.has(match[1])) {
+      seen.add(match[1]);
+      result.push(match[1]);
+    }
+  }
+
+  return result;
+}
+
+// Возвращает все уникальные имена переменных окружения (без префикса env.), используемые в сценарии
+export function extractScenarioEnvRefs(scenario: Scenario): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const block of scenario.blocks) {
+    pushUnique(result, seen, extractEnvRefs(block));
+  }
+
+  return result;
 }
 
 // Возвращает переменные, записанные блоками, из которых есть путь в blockId (обход назад без самого блока)

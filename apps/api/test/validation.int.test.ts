@@ -132,4 +132,65 @@ describe('Validation API (интеграционные тесты)', () => {
 
     await expect(validator.checkConnections(botId)).resolves.toEqual([]);
   });
+
+  it('POST /api/projects/:projectId/validate возвращает предупреждения unreachableBlock, unwrittenVariable и missingEnvVariable', async () => {
+    const { agent, projectId } = await agentWithProject('warnings@example.com');
+
+    const scenario: Scenario = {
+      formatVersion: 1,
+      blocks: [
+        { id: 'entry', type: 'ENTRY_POINT', title: 'Старт', x: 0, y: 0 },
+        {
+          id: 'msg',
+          type: 'TEXT_MESSAGE',
+          title: 'Привет',
+          x: 100,
+          y: 0,
+          text: 'Привет, {{missingVar}}! URL: {{env.CLINIC_URL}}',
+        },
+        { id: 'exit', type: 'EXIT_POINT', title: 'Конец', x: 200, y: 0 },
+        { id: 'orphan', type: 'EXIT_POINT', title: 'Оторванный', x: 200, y: 200 },
+      ],
+      transitions: [
+        { source: { blockId: 'entry', output: 'default' }, target: 'msg' },
+        { source: { blockId: 'msg', output: 'default' }, target: 'exit' },
+      ],
+    };
+    await agent.put(`/api/projects/${projectId}/scenario`).send(scenario).expect(200);
+
+    const resBeforeEnv = await agent.post(`/api/projects/${projectId}/validate`).expect(200);
+    expect(resBeforeEnv.body.errors).toEqual(
+      expect.arrayContaining([
+        {
+          rule: 'unreachableBlock',
+          severity: 'WARNING',
+          blockId: 'orphan',
+          message: 'Блок недостижим из точки входа',
+        },
+        {
+          rule: 'unwrittenVariable',
+          severity: 'WARNING',
+          blockId: 'msg',
+          message: 'Переменная «missingVar» используется, но не задаётся до этого блока',
+        },
+        {
+          rule: 'missingEnvVariable',
+          severity: 'WARNING',
+          blockId: 'msg',
+          message: 'Переменная окружения «env.CLINIC_URL» не задана в окружении',
+        },
+      ]),
+    );
+
+    // После добавления переменной окружения в проект предупреждение missingEnvVariable исчезает
+    await agent
+      .put(`/api/projects/${projectId}/environment`)
+      .send([{ name: 'CLINIC_URL', value: 'https://clinic.example.com', secret: false }])
+      .expect(200);
+
+    const resAfterEnv = await agent.post(`/api/projects/${projectId}/validate`).expect(200);
+    expect(
+      resAfterEnv.body.errors.filter((e: { rule: string }) => e.rule === 'missingEnvVariable'),
+    ).toEqual([]);
+  });
 });

@@ -1,4 +1,4 @@
-import { type Prisma } from '@chatbot/db';
+import { Prisma } from '@chatbot/db';
 import {
   emptyScenario,
   type EnvVarInput,
@@ -6,8 +6,10 @@ import {
   type EnvironmentVariable,
   type Scenario,
 } from '@chatbot/model';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { SecretVault, tokenAad } from '@chatbot/vault';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { EnvironmentService } from '../common/environment.service';
+import { MessengerAdminPort } from '../common/messenger-admin.port';
 import { sanitizeScenarioForClient } from '../common/scenario-helpers';
 import { PrismaService } from '../prisma/prisma.module';
 
@@ -15,6 +17,7 @@ export interface ProjectSummary {
   id: string;
   name: string;
   updatedAt: Date;
+  botsCount: number;
 }
 
 export interface CreatedProject {
@@ -34,17 +37,33 @@ export interface ProjectDetails {
 // Сервис управления проектами с изоляцией данных по authorId (п. 2.12 спецификации)
 @Injectable()
 export class ProjectService {
+  private readonly logger = new Logger(ProjectService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly environments: EnvironmentService,
+    private readonly vault: SecretVault,
+    private readonly messenger: MessengerAdminPort,
   ) {}
 
   async listByAuthor(authorId: string): Promise<ProjectSummary[]> {
-    return this.prisma.client.project.findMany({
+    const projects = await this.prisma.client.project.findMany({
       where: { authorId },
-      select: { id: true, name: true, updatedAt: true },
+      select: {
+        id: true,
+        name: true,
+        updatedAt: true,
+        _count: { select: { bots: true } },
+      },
       orderBy: { updatedAt: 'desc' },
     });
+
+    return projects.map((project) => ({
+      id: project.id,
+      name: project.name,
+      updatedAt: project.updatedAt,
+      botsCount: project._count.bots,
+    }));
   }
 
   async create(authorId: string, name: string): Promise<CreatedProject> {
@@ -83,6 +102,140 @@ export class ProjectService {
       environment: this.environments.toView(project.environment as unknown as EnvironmentVariable[]),
       updatedAt: project.updatedAt,
     };
+  }
+
+  // Переименование проекта владельца (UC-A-04)
+  async rename(authorId: string, projectId: string, name: string): Promise<ProjectSummary> {
+    const existing = await this.prisma.client.project.findFirst({
+      where: { id: projectId, authorId },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new NotFoundException('Проект не найден');
+    }
+
+    try {
+      const updated = await this.prisma.client.project.update({
+        where: { id: projectId },
+        data: { name },
+        select: {
+          id: true,
+          name: true,
+          updatedAt: true,
+          _count: { select: { bots: true } },
+        },
+      });
+      return {
+        id: updated.id,
+        name: updated.name,
+        updatedAt: updated.updatedAt,
+        botsCount: updated._count.bots,
+      };
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+        throw new NotFoundException('Проект не найден');
+      }
+      throw err;
+    }
+  }
+
+  // Каскадное удаление проекта владельца вместе с ботами, подключениями, диалогами и запросами (UC-A-04)
+  async remove(authorId: string, projectId: string): Promise<void> {
+    const project = await this.prisma.client.project.findFirst({
+      where: { id: projectId, authorId },
+      select: {
+        id: true,
+        bots: {
+          select: {
+            id: true,
+            connections: {
+              select: { messenger: true, tokenCipher: true, tokenMask: true },
+            },
+          },
+        },
+      },
+    });
+    if (!project) {
+      throw new NotFoundException('Проект не найден');
+    }
+
+    // Расшифровываем токены подключений до транзакции, чтобы отключить их после коммита
+    const toDisconnect: Array<{ botId: string; token: string }> = [];
+    for (const bot of project.bots) {
+      for (const conn of bot.connections) {
+        const token = this.vault.decrypt(
+          { cipherText: conn.tokenCipher, mask: conn.tokenMask },
+          tokenAad(bot.id, conn.messenger),
+        );
+        toDisconnect.push({ botId: bot.id, token });
+      }
+    }
+
+    const previewPrefix = `preview:${projectId}:`;
+    try {
+      await this.prisma.client.$transaction(async (tx) => {
+        // Блокируем строку проекта и строки его ботов в предсказуемом порядке
+        await tx.$queryRaw`SELECT id FROM project WHERE id = ${projectId} FOR UPDATE`;
+        const lockedBots = await tx.$queryRaw<{ id: string }[]>`
+          SELECT id FROM bot WHERE project_id = ${projectId} ORDER BY id FOR UPDATE`;
+        const botIds = lockedBots.map((b) => b.id);
+
+        const dialogWhere: Prisma.DialogContextWhereInput =
+          botIds.length > 0
+            ? {
+                OR: [
+                  { botId: { in: botIds } },
+                  { channel: 'PREVIEW', chatId: { startsWith: previewPrefix } },
+                ],
+              }
+            : { channel: 'PREVIEW', chatId: { startsWith: previewPrefix } };
+
+        const contexts = await tx.dialogContext.findMany({
+          where: dialogWhere,
+          select: { id: true },
+        });
+        const contextIds = contexts.map((c) => c.id);
+
+        if (contextIds.length > 0) {
+          // Сначала разрываем ссылки контекстов на текущие HTTP-запросы, затем удаляем запросы и контексты
+          await tx.dialogContext.updateMany({
+            where: { id: { in: contextIds } },
+            data: { currentRequestId: null },
+          });
+          await tx.httpRequest.deleteMany({
+            where: { dialogContextId: { in: contextIds } },
+          });
+          await tx.dialogContext.deleteMany({
+            where: { id: { in: contextIds } },
+          });
+        }
+
+        if (botIds.length > 0) {
+          await tx.messengerConnection.deleteMany({ where: { botId: { in: botIds } } });
+          await tx.bot.deleteMany({ where: { id: { in: botIds } } });
+        }
+
+        await tx.project.delete({ where: { id: projectId } });
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+        throw new NotFoundException('Проект не найден');
+      }
+      throw err;
+    }
+
+    // Best-effort отключение внешних подключений после успешного удаления из БД
+    for (const { botId, token } of toDisconnect) {
+      try {
+        await this.messenger.disconnect(botId, token);
+      } catch (err) {
+        this.logger.warn(
+          `Не удалось отключить бота ${botId} от мессенджера при удалении проекта ${projectId}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
   }
 
   // Сохраняет тестовое окружение проекта (для превью); секреты шифруются, наружу уходят маски

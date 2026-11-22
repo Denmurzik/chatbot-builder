@@ -8,7 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/configure-app';
 import { PrismaService } from '../src/prisma/prisma.module';
-import { MessengerAdminPort } from '../src/publication/messenger-admin.port';
+import { MessengerAdminPort } from '../src/common/messenger-admin.port';
 import { PublicationController } from '../src/publication/publication.controller';
 import { createIsolatedTestDb, type IsolatedTestDb } from './test-db';
 

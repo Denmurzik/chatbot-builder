@@ -1,11 +1,12 @@
 import { Prisma, type MessengerType } from '@chatbot/db';
-import type {
-  BotView,
-  EnvVarInput,
-  EnvVarView,
-  EnvironmentVariable,
-  Scenario,
-  ValidationError,
+import {
+  environmentSchema,
+  type BotView,
+  type EnvVarInput,
+  type EnvVarView,
+  type EnvironmentVariable,
+  type Scenario,
+  type ValidationError,
 } from '@chatbot/model';
 import { SecretVault, tokenAad } from '@chatbot/vault';
 import {
@@ -16,9 +17,9 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { EnvironmentService } from '../common/environment.service';
+import { MessengerAdminPort } from '../common/messenger-admin.port';
 import { PrismaService } from '../prisma/prisma.module';
 import { ScenarioValidator } from '../validation/scenario-validator';
-import { MessengerAdminPort } from './messenger-admin.port';
 
 type BotWithConnections = Prisma.BotGetPayload<{ include: { connections: true } }>;
 
@@ -155,14 +156,16 @@ export class BotService {
     projectId: string,
     botId: string,
   ): Promise<{ bot: BotView; warnings: ValidationError[] }> {
-    await this.getOwnedBot(authorId, projectId, botId);
+    const bot = await this.getOwnedBot(authorId, projectId, botId);
     const project = await this.prisma.client.project.findUniqueOrThrow({
       where: { id: projectId },
       select: { scenario: true },
     });
     const scenario = project.scenario as unknown as Scenario;
+    const parsedEnv = environmentSchema.safeParse(bot.environment);
+    const envVars = parsedEnv.success ? parsedEnv.data : [];
     const issues = [
-      ...this.validator.validate(scenario),
+      ...this.validator.validate(scenario, envVars),
       ...(await this.validator.checkConnections(botId)),
     ];
     if (issues.some((i) => i.severity === 'ERROR')) {

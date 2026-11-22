@@ -1,8 +1,10 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import { toast } from 'sonner';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import YAML from 'yaml';
 import type { Scenario } from '@chatbot/model';
 import { createQueryClient } from '@/app/queryClient';
 import { ru } from '@/i18n/ru';
@@ -71,6 +73,10 @@ function makeJsonFile(content: string, name = 'scenario.json'): File {
   return new File([content], name, { type: 'application/json' });
 }
 
+function makeYamlFile(content: string, name = 'scenario.yaml'): File {
+  return new File([content], name, { type: 'application/yaml' });
+}
+
 describe('parseContentDispositionFileName', () => {
   it('извлекает кириллическое имя из filename*=UTF-8', () => {
     const header =
@@ -90,7 +96,8 @@ describe('parseContentDispositionFileName', () => {
 });
 
 describe('ImportExportMenu — экспорт', () => {
-  it('вызывает GET /api/projects/:id/export и запускает скачивание файла', async () => {
+  it('вызывает GET /api/projects/:id/export?format=json и запускает скачивание JSON-файла', async () => {
+    const user = userEvent.setup();
     const fetchMock = vi.fn(() =>
       Promise.resolve(
         new Response(JSON.stringify(INITIAL_SCENARIO), {
@@ -126,11 +133,12 @@ describe('ImportExportMenu — экспорт', () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: ru.importExport.export }));
+    await user.click(screen.getByRole('button', { name: ru.importExport.export }));
+    await user.click(await screen.findByRole('menuitem', { name: ru.importExport.exportJson }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(onSaveBeforeExport).not.toHaveBeenCalled();
-    expect(fetchMock).toHaveBeenCalledWith('/api/projects/p1/export', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/projects/p1/export?format=json', {
       method: 'GET',
       credentials: 'include',
     });
@@ -144,7 +152,60 @@ describe('ImportExportMenu — экспорт', () => {
     expect(anchor?.download).toBe('Запись.json');
   });
 
+  it('вызывает GET /api/projects/:id/export?format=yaml и запускает скачивание YAML-файла', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response(YAML.stringify(INITIAL_SCENARIO), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/yaml; charset=utf-8',
+            'Content-Disposition':
+              "attachment; filename=\"bot.yaml\"; filename*=UTF-8''%D0%97%D0%B0%D0%BF%D0%B8%D1%81%D1%8C.yaml",
+          },
+        }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const createObjectURL = vi.fn(() => 'blob:mock-yaml');
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL });
+
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const appendSpy = vi.spyOn(document.body, 'appendChild');
+
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <ImportExportMenu
+          projectId="p1"
+          projectName="Запись"
+          dirty={false}
+          onSaveBeforeExport={vi.fn(async () => true)}
+          onImported={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: ru.importExport.export }));
+    await user.click(await screen.findByRole('menuitem', { name: ru.importExport.exportYaml }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(fetchMock).toHaveBeenCalledWith('/api/projects/p1/export?format=yaml', {
+      method: 'GET',
+      credentials: 'include',
+    });
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock-yaml');
+
+    const anchor = appendSpy.mock.calls
+      .map(([node]) => node)
+      .find((node): node is HTMLAnchorElement => node instanceof HTMLAnchorElement);
+    expect(anchor?.download).toBe('Запись.yaml');
+  });
+
   it('при несохранённых изменениях сначала сохраняет сценарий перед экспортом', async () => {
+    const user = userEvent.setup();
     const fetchMock = vi.fn(() =>
       Promise.resolve(new Response(JSON.stringify(INITIAL_SCENARIO), { status: 200 })),
     );
@@ -170,13 +231,15 @@ describe('ImportExportMenu — экспорт', () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: ru.importExport.export }));
+    await user.click(screen.getByRole('button', { name: ru.importExport.export }));
+    await user.click(await screen.findByRole('menuitem', { name: ru.importExport.exportJson }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(onSaveBeforeExport).toHaveBeenCalledTimes(1);
   });
 
   it('не запускает экспорт, если предварительное сохранение не удалось', async () => {
+    const user = userEvent.setup();
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const onSaveBeforeExport = vi.fn(async () => false);
@@ -193,7 +256,8 @@ describe('ImportExportMenu — экспорт', () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: ru.importExport.export }));
+    await user.click(screen.getByRole('button', { name: ru.importExport.export }));
+    await user.click(await screen.findByRole('menuitem', { name: ru.importExport.exportYaml }));
 
     await waitFor(() => expect(onSaveBeforeExport).toHaveBeenCalledTimes(1));
     expect(fetchMock).not.toHaveBeenCalled();
@@ -295,6 +359,65 @@ describe('ImportDialog — проверка JSON и предупреждение
     );
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  it('импортирует корректный YAML-файл с Content-Type: application/yaml; charset=utf-8', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({ updatedAt: '2026-01-03T00:00:00Z', secretsToFill: 1 }),
+          { status: 200 },
+        ),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const successSpy = vi.spyOn(toast, 'success').mockImplementation(() => '');
+    const warningSpy = vi.spyOn(toast, 'warning').mockImplementation(() => '');
+    const onImported = vi.fn(async () => {});
+    const onOpenChange = vi.fn();
+
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <ImportDialog projectId="p1" open onOpenChange={onOpenChange} onImported={onImported} />
+      </QueryClientProvider>,
+    );
+
+    const yamlText = YAML.stringify(IMPORTED_SCENARIO);
+    const input = screen.getByLabelText(ru.importExport.fileLabel);
+    fireEvent.change(input, { target: { files: [makeYamlFile(yamlText)] } });
+    fireEvent.click(screen.getByRole('button', { name: ru.importExport.confirmImport }));
+
+    await waitFor(() => expect(onImported).toHaveBeenCalledTimes(1));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/projects/p1/import');
+    expect(init.method).toBe('POST');
+    expect(new Headers(init.headers).get('Content-Type')).toBe('application/yaml; charset=utf-8');
+    expect(init.body).toBe(yamlText);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(successSpy).toHaveBeenCalledWith(ru.importExport.importSuccess);
+    expect(warningSpy).toHaveBeenCalledWith(ru.importExport.secretsToFill(1));
+  });
+
+  it('показывает понятную ошибку для битого YAML без отправки на сервер', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <ImportDialog projectId="p1" open onOpenChange={vi.fn()} onImported={vi.fn()} />
+      </QueryClientProvider>,
+    );
+
+    const input = screen.getByLabelText(ru.importExport.fileLabel);
+    fireEvent.change(input, {
+      target: { files: [makeYamlFile('blocks:\n  - [незакрытый список', 'broken.yml')] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: ru.importExport.confirmImport }));
+
+    expect(await screen.findByText(ru.importExport.invalidYaml)).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

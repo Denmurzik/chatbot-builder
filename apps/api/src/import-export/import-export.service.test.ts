@@ -62,6 +62,9 @@ describe('ImportExportService (unit)', () => {
       expect(buildExportFileName('Запись к врачу')).toBe('Запись к врачу.json');
       expect(buildExportFileName('Бот: тест / 1\\2*?<>|')).toBe('Бот тест 1 2.json');
       expect(buildExportFileName('   ...   ')).toBe('scenario.json');
+      expect(buildExportFileName('Запись к врачу', 'yaml')).toBe('Запись к врачу.yaml');
+      expect(buildExportFileName('bot.yml', 'yaml')).toBe('bot.yaml');
+      expect(buildExportFileName('bot.yaml', 'json')).toBe('bot.json');
     });
   });
 
@@ -263,6 +266,83 @@ describe('ImportExportService (unit)', () => {
         }),
       );
       expect(result).toEqual({ updatedAt, secretsToFill: 2 });
+    });
+
+    it('сериализует сценарий в YAML без секретов и импортирует YAML-строку обратно', async () => {
+      const { service, projectService, scenarioEditor } = createService();
+      const updatedAt = new Date('2026-11-20T12:00:00.000Z');
+      vi.mocked(projectService.getById).mockResolvedValue({
+        id: 'proj-1',
+        name: 'Тест',
+        scenario: emptyScenario(),
+        environment: [],
+        updatedAt,
+      });
+      vi.mocked(scenarioEditor.saveScenario).mockResolvedValue({ updatedAt });
+
+      const scenario = makeScenarioWithHttp([
+        { name: 'Accept', value: 'application/json', secret: false },
+        {
+          name: 'Authorization',
+          value: 'Bearer plain-secret',
+          secret: true,
+          secretValue: { cipherText: 'v1:aaa:bbb:ccc', mask: '••••cret' },
+          secretMask: '••••cret',
+        },
+      ]);
+
+      const yamlText = service.serialize(scenario, 'yaml');
+      expect(yamlText).not.toContain('plain-secret');
+      expect(yamlText).not.toContain('secretValue');
+      expect(yamlText).not.toContain('secretMask');
+
+      const result = await service.importScenario('author-1', 'proj-1', yamlText);
+      expect(result).toEqual({ updatedAt, secretsToFill: 1 });
+      expect(scenarioEditor.saveScenario).toHaveBeenCalledWith(
+        'author-1',
+        'proj-1',
+        expect.objectContaining({
+          formatVersion: 1,
+          blocks: expect.arrayContaining([
+            expect.objectContaining({
+              id: 'req',
+              headers: [
+                { name: 'Accept', value: 'application/json', secret: false },
+                { name: 'Authorization', value: '', secret: true },
+              ],
+            }),
+          ]),
+        }),
+      );
+    });
+
+    it('при невалидном YAML или не-объекте бросает BadRequestException 400 с issues', async () => {
+      const { service, projectService } = createService();
+      vi.mocked(projectService.getById).mockResolvedValue({
+        id: 'proj-1',
+        name: 'Тест',
+        scenario: emptyScenario(),
+        environment: [],
+        updatedAt: new Date(),
+      });
+
+      await expect(
+        service.importScenario('author-1', 'proj-1', 'blocks: [unclosed'),
+      ).rejects.toMatchObject({
+        response: {
+          message: 'Файл не подходит',
+          issues: [expect.objectContaining({ path: '', message: expect.stringContaining('Некорректный YAML') })],
+        },
+      });
+
+      await expect(
+        service.importScenario('author-1', 'proj-1', '- item1\n- item2\n'),
+      ).rejects.toMatchObject({
+        response: {
+          message: 'Файл не подходит',
+          issues: [expect.objectContaining({ path: '', message: expect.stringContaining('Некорректный YAML') })],
+        },
+      });
     });
   });
 });

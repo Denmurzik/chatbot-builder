@@ -18,7 +18,7 @@ import { VaultModule } from './vault/vault.module';
     PrismaModule,
     VaultModule,
     AuthModule,
-    ProjectModule,
+    ProjectModule.register({ imports: [TelegramModule] }),
     QueueModule,
     TelegramModule,
     ValidatorModule,

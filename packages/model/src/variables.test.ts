@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest';
 import type { Block } from './blocks';
 import type { Scenario } from './scenario';
 import {
+  ENV_VAR_PREFIX,
   TEMPLATE_VAR_REGEX,
   availableVariables,
+  blockDialogReads,
   blockReads,
   blockWrites,
+  extractEnvRefs,
+  extractScenarioEnvRefs,
   extractVariableNames,
 } from './variables';
 
@@ -467,6 +471,105 @@ describe('variables', () => {
         { name: 'x', sourceBlockId: 'second' },
       ]);
       expect(availableVariables(scenario, 'missing')).toEqual([]);
+    });
+
+    it('в цикле видит переменные, записанные в других блоках цикла, и не зависает на самоцикле', () => {
+      const scenario: Scenario = {
+        formatVersion: 1,
+        blocks: [
+          { id: 'entry', type: 'ENTRY_POINT', title: 'Старт', ...base },
+          {
+            id: 'msg',
+            type: 'TEXT_MESSAGE',
+            title: 'Показ',
+            ...base,
+            text: 'Попытка {{retryNote}}',
+          },
+          {
+            id: 'setNote',
+            type: 'ASSIGNMENT',
+            title: 'Запись пометки',
+            ...base,
+            variableName: 'retryNote',
+            expression: '"повтор"',
+          },
+          {
+            id: 'selfLoop',
+            type: 'ASSIGNMENT',
+            title: 'Самоцикл',
+            ...base,
+            variableName: 'counter',
+            expression: 'counter + 1',
+          },
+        ],
+        transitions: [
+          { source: { blockId: 'entry', output: 'default' }, target: 'msg' },
+          { source: { blockId: 'msg', output: 'default' }, target: 'setNote' },
+          { source: { blockId: 'setNote', output: 'default' }, target: 'msg' },
+          { source: { blockId: 'selfLoop', output: 'default' }, target: 'selfLoop' },
+        ],
+      };
+
+      expect(availableVariables(scenario, 'msg')).toEqual([
+        { name: 'retryNote', sourceBlockId: 'setNote' },
+      ]);
+      expect(availableVariables(scenario, 'selfLoop')).toEqual([]);
+    });
+  });
+
+  describe('blockDialogReads, extractEnvRefs и extractScenarioEnvRefs', () => {
+    it('разделяет обычные переменные диалога и ссылки env.* без дубликатов', () => {
+      expect(ENV_VAR_PREFIX).toBe('env.');
+      const http = makeHttpBlock({
+        headers: [
+          { name: 'X-User', value: '{{userId}} {{env.API_URL}}', secret: false },
+          { name: 'Authorization', value: 'Bearer {{env.IGNORED_SECRET}}', secret: true },
+        ],
+        suspendText: 'Ждём {{env.CLINIC_NAME}} для {{userName}}',
+      });
+
+      expect(blockDialogReads(http)).toEqual(['orderId', 'userId', 'item', 'userName']);
+      expect(extractEnvRefs(http)).toEqual(['API_URL', 'CLIENT_KEY', 'CLINIC_NAME']);
+    });
+
+    it('извлекает env.* из шаблонов и выражений разных типов блоков и агрегирует по сценарию', () => {
+      const scenario: Scenario = {
+        formatVersion: 1,
+        blocks: [
+          { id: 'entry', type: 'ENTRY_POINT', title: 'Старт', ...base },
+          {
+            id: 'msg',
+            type: 'TEXT_MESSAGE',
+            title: 'Привет',
+            ...base,
+            text: 'Клиника {{env.CLINIC_NAME}} ({{user}})',
+          },
+          {
+            id: 'cond',
+            type: 'CONDITION',
+            title: 'Проверка',
+            ...base,
+            expression: 'token == {{env.ADMIN_TOKEN}} && mode != "{{env.IN_STRING}}"',
+          },
+          makeHttpBlock({
+            id: 'http',
+            url: '{{env.API_URL}}/{{env.CLINIC_NAME}}',
+            body: '{"k":"{{env.CLIENT_KEY}}"}',
+          }),
+        ],
+        transitions: [],
+      };
+
+      expect(extractEnvRefs(scenario.blocks[0])).toEqual([]);
+      expect(extractEnvRefs(scenario.blocks[1])).toEqual(['CLINIC_NAME']);
+      expect(extractEnvRefs(scenario.blocks[2])).toEqual(['ADMIN_TOKEN']);
+      expect(blockDialogReads(scenario.blocks[2])).toEqual(['token', 'mode']);
+      expect(extractScenarioEnvRefs(scenario)).toEqual([
+        'CLINIC_NAME',
+        'ADMIN_TOKEN',
+        'API_URL',
+        'CLIENT_KEY',
+      ]);
     });
   });
 });

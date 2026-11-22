@@ -169,7 +169,9 @@ describe('ScenarioValidator', () => {
       ]),
     );
     // У HTTP_REQUEST со стратегией SUSPEND выход error не обязателен
-    expect(errors.some((e) => e.blockId === 'http_suspend')).toBe(false);
+    expect(errors.some((e) => e.rule === 'outputs_connected' && e.blockId === 'http_suspend')).toBe(
+      false,
+    );
   });
 
   it('required_field: пустые обязательные поля дают ERROR с указанием блока', () => {
@@ -280,7 +282,7 @@ describe('ScenarioValidator', () => {
       ],
     };
 
-    const errors = validator.validate(scenario);
+    const errors = validator.validate(scenario).filter((e) => e.severity === 'ERROR');
     expect(errors).toEqual([
       expect.objectContaining({ rule: 'expression', severity: 'ERROR', blockId: 'assign' }),
       expect.objectContaining({ rule: 'expression', severity: 'ERROR', blockId: 'cond' }),
@@ -381,7 +383,7 @@ describe('ScenarioValidator', () => {
       ],
     };
 
-    expect(validator.validate(tightLoop)).toEqual([
+    expect(validator.validate(tightLoop).filter((e) => e.rule === 'loop_without_wait')).toEqual([
       expect.objectContaining({
         rule: 'loop_without_wait',
         severity: 'WARNING',
@@ -435,5 +437,128 @@ describe('ScenarioValidator', () => {
 
     const connectedValidator = createValidator(1);
     await expect(connectedValidator.checkConnections('bot-1')).resolves.toEqual([]);
+  });
+
+  it('unreachableBlock: недостижимые из точки входа блоки дают WARNING (только при 1 точке входа)', () => {
+    const validator = createValidator();
+
+    const scenario: Scenario = {
+      formatVersion: 1,
+      blocks: [
+        { id: 'entry', type: 'ENTRY_POINT', title: 'Старт', x: 0, y: 0 },
+        { id: 'exit', type: 'EXIT_POINT', title: 'Выход', x: 200, y: 0 },
+        { id: 'orphan', type: 'TEXT_MESSAGE', title: 'Оторванный', x: 0, y: 200, text: 'Привет' },
+        { id: 'orphan_exit', type: 'EXIT_POINT', title: 'Выход 2', x: 200, y: 200 },
+      ],
+      transitions: [
+        { source: { blockId: 'entry', output: 'default' }, target: 'exit' },
+        { source: { blockId: 'orphan', output: 'default' }, target: 'orphan_exit' },
+      ],
+    };
+
+    const issues = validator.validate(scenario);
+    expect(issues).toEqual([
+      {
+        rule: 'unreachableBlock',
+        severity: 'WARNING',
+        blockId: 'orphan',
+        message: 'Блок недостижим из точки входа',
+      },
+      {
+        rule: 'unreachableBlock',
+        severity: 'WARNING',
+        blockId: 'orphan_exit',
+        message: 'Блок недостижим из точки входа',
+      },
+    ]);
+
+    // При 0 точках входа unreachableBlock не срабатывает
+    const noEntry: Scenario = {
+      formatVersion: 1,
+      blocks: [{ id: 'exit', type: 'EXIT_POINT', title: 'Выход', x: 0, y: 0 }],
+      transitions: [],
+    };
+    expect(validator.validate(noEntry).filter((i) => i.rule === 'unreachableBlock')).toEqual([]);
+  });
+
+  it('unwrittenVariable: чтение незаданной переменной диалога даёт WARNING, заданной — без предупреждений', () => {
+    const validator = createValidator();
+
+    const scenario: Scenario = {
+      formatVersion: 1,
+      blocks: [
+        { id: 'entry', type: 'ENTRY_POINT', title: 'Старт', x: 0, y: 0 },
+        {
+          id: 'inp',
+          type: 'TEXT_INPUT',
+          title: 'Ввод имени',
+          x: 100,
+          y: 0,
+          question: 'Как вас зовут?',
+          variableName: 'name',
+        },
+        {
+          id: 'msg',
+          type: 'TEXT_MESSAGE',
+          title: 'Приветствие',
+          x: 200,
+          y: 0,
+          text: 'Привет, {{name}}! Возраст: {{age}}, API: {{env.API_URL}}',
+        },
+        { id: 'exit', type: 'EXIT_POINT', title: 'Выход', x: 300, y: 0 },
+      ],
+      transitions: [
+        { source: { blockId: 'entry', output: 'default' }, target: 'inp' },
+        { source: { blockId: 'inp', output: 'default' }, target: 'msg' },
+        { source: { blockId: 'msg', output: 'default' }, target: 'exit' },
+      ],
+    };
+
+    // Без envVars проверяются только переменные диалога: age не задана, name задана, env.API_URL игнорируется
+    expect(validator.validate(scenario)).toEqual([
+      {
+        rule: 'unwrittenVariable',
+        severity: 'WARNING',
+        blockId: 'msg',
+        message: 'Переменная «age» используется, но не задаётся до этого блока',
+      },
+    ]);
+  });
+
+  it('missingEnvVariable: при переданном envVars незаданные env.* дают WARNING, без envVars — не проверяются', () => {
+    const validator = createValidator();
+
+    const scenario: Scenario = {
+      formatVersion: 1,
+      blocks: [
+        { id: 'entry', type: 'ENTRY_POINT', title: 'Старт', x: 0, y: 0 },
+        {
+          id: 'msg',
+          type: 'TEXT_MESSAGE',
+          title: 'Сообщение',
+          x: 100,
+          y: 0,
+          text: '{{env.DEFINED_VAR}} и {{env.MISSING_VAR}}',
+        },
+        { id: 'exit', type: 'EXIT_POINT', title: 'Выход', x: 200, y: 0 },
+      ],
+      transitions: [
+        { source: { blockId: 'entry', output: 'default' }, target: 'msg' },
+        { source: { blockId: 'msg', output: 'default' }, target: 'exit' },
+      ],
+    };
+
+    expect(validator.validate(scenario)).toEqual([]);
+    expect(validator.validate(scenario, [{ name: 'DEFINED_VAR' }])).toEqual([
+      {
+        rule: 'missingEnvVariable',
+        severity: 'WARNING',
+        blockId: 'msg',
+        message: 'Переменная окружения «env.MISSING_VAR» не задана в окружении',
+      },
+    ]);
+    expect(
+      validator.validate(scenario, [{ name: 'DEFINED_VAR' }, { name: 'MISSING_VAR' }]),
+    ).toEqual([]);
   });
 });

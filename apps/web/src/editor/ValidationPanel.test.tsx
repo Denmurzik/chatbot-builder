@@ -112,6 +112,52 @@ describe('ValidationPanel', () => {
 
     expect(screen.getByText('Ошибок не найдено')).toBeTruthy();
   });
+
+  it('отрисовывает предупреждения новых правил (unreachableBlock, unwrittenVariable, missingEnvVariable) с иконкой и выбором блока', () => {
+    const onSelectBlock = vi.fn();
+    const warnings: ValidationError[] = [
+      {
+        rule: 'unreachableBlock',
+        message: 'Блок «Забытый шаг» недостижим от точки входа',
+        severity: 'WARNING',
+        blockId: 'orphan_1',
+      },
+      {
+        rule: 'unwrittenVariable',
+        message: 'Переменная «patient_name» используется, но нигде не записывается',
+        severity: 'WARNING',
+        blockId: 'msg_2',
+      },
+      {
+        rule: 'missingEnvVariable',
+        message: 'Переменная окружения «CLINIC_API_KEY» не задана',
+        severity: 'WARNING',
+        blockId: 'http_1',
+      },
+    ];
+
+    render(
+      <ValidationPanel
+        open
+        onOpenChange={vi.fn()}
+        errors={warnings}
+        onSelectBlock={onSelectBlock}
+      />,
+    );
+
+    expect(screen.getByText(ru.validationPanel.summary(0, 3))).toBeTruthy();
+    expect(screen.getAllByLabelText(ru.validationPanel.warningSeverity)).toHaveLength(3);
+    expect(screen.queryAllByLabelText(ru.validationPanel.errorSeverity)).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('button', { name: /Забытый шаг/ }));
+    expect(onSelectBlock).toHaveBeenCalledWith('orphan_1');
+
+    fireEvent.click(screen.getByRole('button', { name: /patient_name/ }));
+    expect(onSelectBlock).toHaveBeenCalledWith('msg_2');
+
+    fireEvent.click(screen.getByRole('button', { name: /CLINIC_API_KEY/ }));
+    expect(onSelectBlock).toHaveBeenCalledWith('http_1');
+  });
 });
 
 describe('EditorPage — проверка сценария', () => {

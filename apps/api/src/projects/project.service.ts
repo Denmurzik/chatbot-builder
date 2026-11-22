@@ -1,4 +1,4 @@
-import { Prisma } from '@chatbot/db';
+import { Prisma, type MessengerType } from '@chatbot/db';
 import {
   emptyScenario,
   type EnvVarInput,
@@ -9,7 +9,11 @@ import {
 import { SecretVault, tokenAad } from '@chatbot/vault';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { EnvironmentService } from '../common/environment.service';
-import { MessengerAdminPort } from '../common/messenger-admin.port';
+import {
+  MessengerAdminPort,
+  toConnectConfig,
+  type MessengerConnectConfig,
+} from '../common/messenger-admin.port';
 import { sanitizeScenarioForClient } from '../common/scenario-helpers';
 import { PrismaService } from '../prisma/prisma.module';
 
@@ -149,7 +153,7 @@ export class ProjectService {
           select: {
             id: true,
             connections: {
-              select: { messenger: true, tokenCipher: true, tokenMask: true },
+              select: { messenger: true, tokenCipher: true, tokenMask: true, config: true },
             },
           },
         },
@@ -160,14 +164,24 @@ export class ProjectService {
     }
 
     // Расшифровываем токены подключений до транзакции, чтобы отключить их после коммита
-    const toDisconnect: Array<{ botId: string; token: string }> = [];
+    const toDisconnect: Array<{
+      messenger: MessengerType;
+      botId: string;
+      token: string;
+      config?: MessengerConnectConfig;
+    }> = [];
     for (const bot of project.bots) {
       for (const conn of bot.connections) {
         const token = this.vault.decrypt(
           { cipherText: conn.tokenCipher, mask: conn.tokenMask },
           tokenAad(bot.id, conn.messenger),
         );
-        toDisconnect.push({ botId: bot.id, token });
+        toDisconnect.push({
+          messenger: conn.messenger,
+          botId: bot.id,
+          token,
+          config: toConnectConfig(conn.messenger, conn.config),
+        });
       }
     }
 
@@ -225,9 +239,9 @@ export class ProjectService {
     }
 
     // Best-effort отключение внешних подключений после успешного удаления из БД
-    for (const { botId, token } of toDisconnect) {
+    for (const { messenger, botId, token, config } of toDisconnect) {
       try {
-        await this.messenger.disconnect(botId, token);
+        await this.messenger.disconnect(messenger, botId, token, config);
       } catch (err) {
         this.logger.warn(
           `Не удалось отключить бота ${botId} от мессенджера при удалении проекта ${projectId}: ${

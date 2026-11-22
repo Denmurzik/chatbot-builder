@@ -19,6 +19,11 @@ const bot: BotView = {
   environment: [],
 };
 
+const botWithTelegram: BotView = {
+  ...bot,
+  connections: [{ messenger: 'TELEGRAM', tokenMask: '12••••cd' }],
+};
+
 function json(status: number, body?: unknown): Response {
   return new Response(body === undefined ? null : JSON.stringify(body), {
     status,
@@ -75,12 +80,15 @@ describe('BotsPage', () => {
   });
 
   it('422 публикации показывает список ошибок', async () => {
-    stubApi({
-      'POST /api/projects/p1/bots/b1/publish': json(422, {
-        message: 'Unprocessable Entity',
-        errors: [{ rule: 'R1', message: 'Нет стартового блока', severity: 'ERROR' }],
-      }),
-    });
+    stubApi(
+      {
+        'POST /api/projects/p1/bots/b1/publish': json(422, {
+          message: 'Unprocessable Entity',
+          errors: [{ rule: 'R1', message: 'Нет стартового блока', severity: 'ERROR' }],
+        }),
+      },
+      [botWithTelegram],
+    );
     const user = userEvent.setup();
     renderPage();
     await user.click(await screen.findByRole('button', { name: ru.bots.publish }));
@@ -88,14 +96,19 @@ describe('BotsPage', () => {
   });
 
   it('опубликованный бот получает кнопку «Опубликовать заново»', async () => {
-    stubApi({}, [{ ...bot, status: 'PUBLISHED', publishedAt: '2026-11-20T10:00:00.000Z' }]);
+    stubApi({}, [
+      { ...botWithTelegram, status: 'PUBLISHED', publishedAt: '2026-11-20T10:00:00.000Z' },
+    ]);
     renderPage();
     expect(await screen.findByRole('button', { name: ru.bots.republish })).toBeTruthy();
     expect(screen.queryByRole('button', { name: ru.bots.publish })).toBeNull();
   });
 
   it('502 публикации показывает, что Telegram недоступен', async () => {
-    stubApi({ 'POST /api/projects/p1/bots/b1/publish': json(502, { message: 'Bad Gateway' }) });
+    stubApi(
+      { 'POST /api/projects/p1/bots/b1/publish': json(502, { message: 'Bad Gateway' }) },
+      [botWithTelegram],
+    );
     const user = userEvent.setup();
     renderPage();
     await user.click(await screen.findByRole('button', { name: ru.bots.publish }));
@@ -103,12 +116,15 @@ describe('BotsPage', () => {
   });
 
   it('успешная публикация показывает тост с числом предупреждений', async () => {
-    stubApi({
-      'POST /api/projects/p1/bots/b1/publish': json(200, {
-        bot,
-        warnings: [{ rule: 'W1', message: 'Блок недостижим', severity: 'WARNING' }],
-      }),
-    });
+    stubApi(
+      {
+        'POST /api/projects/p1/bots/b1/publish': json(200, {
+          bot: botWithTelegram,
+          warnings: [{ rule: 'W1', message: 'Блок недостижим', severity: 'WARNING' }],
+        }),
+      },
+      [botWithTelegram],
+    );
     const user = userEvent.setup();
     renderPage();
     await user.click(await screen.findByRole('button', { name: ru.bots.publish }));
@@ -182,5 +198,224 @@ describe('BotsPage', () => {
     await waitFor(() =>
       expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(true),
     );
+  });
+
+  it('кнопка публикации отключена, если не подключён ни один мессенджер', async () => {
+    stubApi({}, [bot]);
+    renderPage();
+    const publishBtn = await screen.findByRole('button', { name: ru.bots.publish });
+    expect((publishBtn as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(ru.bots.publishNeedsConnection)).toBeTruthy();
+  });
+
+  it('подключение VK в режиме CALLBACK валидирует строку подтверждения, отправляет PUT и показывает Callback URL', async () => {
+    const list: BotView[] = [bot];
+    const fetchMock = stubApi(
+      {
+        'PUT /api/projects/p1/bots/b1/connections/vk': () => {
+          list[0] = {
+            ...bot,
+            connections: [
+              {
+                messenger: 'VK',
+                tokenMask: 'vk••••99',
+                vkGroupId: 123456,
+                vkMode: 'CALLBACK',
+                vkHasSecret: true,
+                vkConfirmationCode: 'confirm123',
+              },
+            ],
+          };
+          return json(200, {
+            messenger: 'VK',
+            tokenMask: 'vk••••99',
+            vkGroupId: 123456,
+            vkMode: 'CALLBACK',
+            vkHasSecret: true,
+            vkConfirmationCode: 'confirm123',
+            groupName: 'Test Group',
+          });
+        },
+      },
+      list,
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    const vkToken = await screen.findByLabelText(ru.bots.vkTokenLabel);
+    expect(vkToken.getAttribute('type')).toBe('password');
+    await user.type(vkToken, 'vk1.a.secret_token');
+    await user.type(screen.getByLabelText(ru.bots.vkGroupIdLabel), '123456');
+
+    // Без строки подтверждения клиентская валидация блокирует отправку
+    await user.click(screen.getByRole('button', { name: ru.bots.vkConnect }));
+    expect(await screen.findByText(ru.bots.vkConfirmationRequired)).toBeTruthy();
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false);
+
+    await user.type(screen.getByLabelText(ru.bots.vkConfirmationLabel), 'confirm123');
+    const secretField = screen.getByLabelText(ru.bots.vkSecretLabel);
+    expect(secretField.getAttribute('type')).toBe('password');
+    await user.type(secretField, 'my-secret');
+    await user.click(screen.getByRole('button', { name: ru.bots.vkConnect }));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        ([url, init]) =>
+          init?.method === 'PUT' && url === '/api/projects/p1/bots/b1/connections/vk',
+      );
+      expect(call).toBeTruthy();
+      expect(JSON.parse(String(call?.[1]?.body))).toEqual({
+        token: 'vk1.a.secret_token',
+        groupId: 123456,
+        mode: 'CALLBACK',
+        confirmationCode: 'confirm123',
+        secret: 'my-secret',
+      });
+    });
+
+    const expectedUrl = `${window.location.origin}/webhook/vk/b1`;
+    expect(await screen.findByText(expectedUrl)).toBeTruthy();
+    expect(screen.getByText(/#123456/)).toBeTruthy();
+    expect(screen.getByText(ru.bots.vkSecretSet)).toBeTruthy();
+  });
+
+  it('подключение VK в режиме LONG_POLL не требует строку подтверждения и не показывает Callback URL', async () => {
+    const list: BotView[] = [bot];
+    const fetchMock = stubApi(
+      {
+        'PUT /api/projects/p1/bots/b1/connections/vk': () => {
+          list[0] = {
+            ...bot,
+            connections: [
+              {
+                messenger: 'VK',
+                tokenMask: 'vk••••lp',
+                vkGroupId: 654321,
+                vkMode: 'LONG_POLL',
+                vkHasSecret: false,
+              },
+            ],
+          };
+          return json(200, {
+            messenger: 'VK',
+            tokenMask: 'vk••••lp',
+            vkGroupId: 654321,
+            vkMode: 'LONG_POLL',
+            vkHasSecret: false,
+            groupName: 'LP Group',
+          });
+        },
+      },
+      list,
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(await screen.findByLabelText(ru.bots.vkTokenLabel), 'vk1.a.lp_token');
+    await user.type(screen.getByLabelText(ru.bots.vkGroupIdLabel), '654321');
+    await user.click(screen.getByLabelText(ru.bots.vkModeLongPoll));
+    expect(screen.queryByLabelText(ru.bots.vkConfirmationLabel)).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: ru.bots.vkConnect }));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        ([url, init]) =>
+          init?.method === 'PUT' && url === '/api/projects/p1/bots/b1/connections/vk',
+      );
+      expect(call).toBeTruthy();
+      expect(JSON.parse(String(call?.[1]?.body))).toEqual({
+        token: 'vk1.a.lp_token',
+        groupId: 654321,
+        mode: 'LONG_POLL',
+      });
+    });
+
+    expect((await screen.findAllByText(/vk••••lp/)).length).toBeGreaterThan(0);
+    expect(screen.getByText(ru.bots.vkModeLongPoll)).toBeTruthy();
+    expect(screen.queryByText(`${window.location.origin}/webhook/vk/b1`)).toBeNull();
+  });
+
+  it('отключение VK отправляет DELETE /connections/vk и обновляет состояние', async () => {
+    const list: BotView[] = [
+      {
+        ...bot,
+        connections: [
+          {
+            messenger: 'VK',
+            tokenMask: 'vk••••77',
+            vkGroupId: 777,
+            vkMode: 'CALLBACK',
+            vkHasSecret: false,
+            vkConfirmationCode: 'abc',
+          },
+        ],
+      },
+    ];
+    const fetchMock = stubApi(
+      {
+        'DELETE /api/projects/p1/bots/b1/connections/vk': () => {
+          list[0] = { ...bot, connections: [] };
+          return json(204);
+        },
+      },
+      list,
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole('button', { name: ru.bots.vkDisconnect }));
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            init?.method === 'DELETE' && url === '/api/projects/p1/bots/b1/connections/vk',
+        ),
+      ).toBe(true),
+    );
+    expect(await screen.findByText(ru.bots.vkNotConnected)).toBeTruthy();
+  });
+
+  it('бот с подключённым только VK может быть опубликован', async () => {
+    const vkOnlyBot: BotView = {
+      ...bot,
+      connections: [
+        {
+          messenger: 'VK',
+          tokenMask: 'vk••••88',
+          vkGroupId: 888,
+          vkMode: 'LONG_POLL',
+          vkHasSecret: false,
+        },
+      ],
+    };
+    const fetchMock = stubApi(
+      {
+        'POST /api/projects/p1/bots/b1/publish': json(200, {
+          bot: { ...vkOnlyBot, status: 'PUBLISHED', publishedAt: '2026-11-22T12:00:00.000Z' },
+          warnings: [],
+        }),
+      },
+      [vkOnlyBot],
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    // Telegram-секция не должна ошибочно показывать VK-подключение
+    expect(await screen.findByText(ru.bots.notConnected)).toBeTruthy();
+
+    const publishBtn = screen.getByRole('button', { name: ru.bots.publish });
+    expect((publishBtn as HTMLButtonElement).disabled).toBe(false);
+    await user.click(publishBtn);
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) => init?.method === 'POST' && url === '/api/projects/p1/bots/b1/publish',
+        ),
+      ).toBe(true),
+    );
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(ru.bots.published(0)));
   });
 });

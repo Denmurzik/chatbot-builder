@@ -15,6 +15,7 @@ describe('Auth API (интеграционные тесты)', () => {
     DATABASE_URL: process.env.DATABASE_URL,
     JWT_SECRET: process.env.JWT_SECRET,
     TELEGRAM_POLLING: process.env.TELEGRAM_POLLING,
+    VK_POLLING: process.env.VK_POLLING,
     NODE_ENV: process.env.NODE_ENV,
   };
 
@@ -23,6 +24,7 @@ describe('Auth API (интеграционные тесты)', () => {
     process.env.DATABASE_URL = db.databaseUrl;
     process.env.JWT_SECRET = 'test-jwt-secret-key-for-auth-tests';
     process.env.TELEGRAM_POLLING = '0';
+    process.env.VK_POLLING = '0';
     process.env.NODE_ENV = 'test';
 
     const moduleRef = await Test.createTestingModule({
@@ -40,6 +42,8 @@ describe('Auth API (интеграционные тесты)', () => {
     process.env.DATABASE_URL = prevEnv.DATABASE_URL;
     process.env.JWT_SECRET = prevEnv.JWT_SECRET;
     process.env.TELEGRAM_POLLING = prevEnv.TELEGRAM_POLLING;
+    if (prevEnv.VK_POLLING === undefined) delete process.env.VK_POLLING;
+    else process.env.VK_POLLING = prevEnv.VK_POLLING;
     process.env.NODE_ENV = prevEnv.NODE_ENV;
   });
 

@@ -10,6 +10,7 @@ import { QueueModule } from './queue/queue.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { ValidatorModule } from './validation/validator.module';
 import { VaultModule } from './vault/vault.module';
+import { VkModule } from './vk/vk.module';
 
 // Корневой модуль HTTP API приложения
 @Module({
@@ -18,11 +19,12 @@ import { VaultModule } from './vault/vault.module';
     PrismaModule,
     VaultModule,
     AuthModule,
-    ProjectModule.register({ imports: [TelegramModule] }),
+    ProjectModule.register({ imports: [TelegramModule, VkModule] }),
     QueueModule,
     TelegramModule,
+    VkModule,
     ValidatorModule,
-    PublicationModule.register({ imports: [TelegramModule] }),
+    PublicationModule.register({ imports: [TelegramModule, VkModule] }),
     ImportExportModule,
     PreviewModule,
   ],

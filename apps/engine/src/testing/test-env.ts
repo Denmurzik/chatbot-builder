@@ -95,6 +95,10 @@ export async function waitFor(
 
 export interface TestEnvOptions {
   launcher?: HttpRequestLauncher;
+  // Если true, используется реальный MessengerGateway (CompositeMessengerGateway) вместо подделки
+  useRealMessengerGateway?: boolean;
+  // Переопределение базового URL VK API для интеграционных тестов
+  vkApiBaseUrl?: string;
 }
 
 // Поднимает приложение engine на собственной базе и собственном префиксе BullMQ
@@ -118,14 +122,16 @@ export async function createTestEnv(options: TestEnvOptions = {}): Promise<TestE
     databaseUrl: testUrl.toString(),
     redisUrl: REDIS_URL,
     queuePrefix: prefix,
+    ...(options.vkApiBaseUrl ? { vkApiBaseUrl: options.vkApiBaseUrl } : {}),
   };
   const builder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(APP_CONFIG)
     .useValue(config)
-    .overrideProvider(MessengerGateway)
-    .useValue(gateway)
     .overrideProvider(SecretVault)
     .useValue(vault);
+  if (!options.useRealMessengerGateway) {
+    builder.overrideProvider(MessengerGateway).useValue(gateway);
+  }
   if (options.launcher) {
     builder.overrideProvider(HttpRequestLauncher).useValue(options.launcher);
   }

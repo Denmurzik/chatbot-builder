@@ -22,6 +22,7 @@ describe('Боты, окружения и подключение Telegram (ин�
     DATABASE_URL: process.env.DATABASE_URL,
     JWT_SECRET: process.env.JWT_SECRET,
     TELEGRAM_POLLING: process.env.TELEGRAM_POLLING,
+    VK_POLLING: process.env.VK_POLLING,
     NODE_ENV: process.env.NODE_ENV,
     VAULT_KEY: process.env.VAULT_KEY,
     VAULT_HASH_KEY: process.env.VAULT_HASH_KEY,
@@ -29,7 +30,8 @@ describe('Боты, окружения и подключение Telegram (ин�
 
   // Подмена порта мессенджера: токены с префиксом bad- недействительны
   const messengerAdmin: MessengerAdminPort = {
-    verifyToken: async (token: string) => (token.startsWith('bad-') ? null : { username: 'test_bot' }),
+    verifyToken: async (_messenger, token: string) =>
+      token.startsWith('bad-') ? null : { username: 'test_bot' },
     connect: async () => undefined,
     disconnect: async () => undefined,
   };
@@ -39,6 +41,7 @@ describe('Боты, окружения и подключение Telegram (ин�
     process.env.DATABASE_URL = db.databaseUrl;
     process.env.JWT_SECRET = 'test-jwt-secret-key-for-bots-tests';
     process.env.TELEGRAM_POLLING = '0';
+    process.env.VK_POLLING = '0';
     process.env.NODE_ENV = 'test';
     process.env.VAULT_KEY ??= Buffer.alloc(32, 1).toString('base64');
     process.env.VAULT_HASH_KEY ??= Buffer.alloc(32, 2).toString('base64');

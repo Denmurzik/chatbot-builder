@@ -1,12 +1,14 @@
 import { Prisma, type MessengerType } from '@chatbot/db';
 import {
   environmentSchema,
+  type BotConnectionView,
   type BotView,
   type EnvVarInput,
   type EnvVarView,
   type EnvironmentVariable,
   type Scenario,
   type ValidationError,
+  type VkConnectionMode,
 } from '@chatbot/model';
 import { SecretVault, tokenAad } from '@chatbot/vault';
 import {
@@ -17,13 +19,36 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { EnvironmentService } from '../common/environment.service';
-import { MessengerAdminPort } from '../common/messenger-admin.port';
+import {
+  MessengerAdminPort,
+  parseVkStoredConfig,
+  toConnectConfig,
+  type MessengerConnectConfig,
+  type VkStoredConfig,
+} from '../common/messenger-admin.port';
 import { PrismaService } from '../prisma/prisma.module';
 import { ScenarioValidator } from '../validation/scenario-validator';
+import type { ConnectVkBody } from './dto';
 
 type BotWithConnections = Prisma.BotGetPayload<{ include: { connections: true } }>;
 
-// Сервис ботов проекта, их окружений и подключения Telegram (п. 2.11, 2.12)
+export interface ConnectVkResult {
+  messenger: 'VK';
+  tokenMask: string;
+  vkGroupId: number;
+  vkMode: VkConnectionMode;
+  vkHasSecret: boolean;
+  vkConfirmationCode?: string;
+  groupName: string;
+}
+
+interface DecryptedConnection {
+  messenger: MessengerType;
+  token: string;
+  config?: MessengerConnectConfig;
+}
+
+// Сервис ботов проекта, их окружений и подключений Telegram / VK (п. 2.11, 2.12)
 @Injectable()
 export class BotService {
   constructor(
@@ -55,7 +80,7 @@ export class BotService {
 
   async remove(authorId: string, projectId: string, botId: string): Promise<void> {
     await this.getOwnedBot(authorId, projectId, botId);
-    const oldToken = await this.currentToken(botId);
+    const connections = await this.decryptAllConnections(botId);
     try {
       await this.prisma.client.$transaction(async (tx) => {
         // Первой блокируется строка бота — тот же порядок, что у публикации (без взаимной блокировки с движком)
@@ -73,7 +98,9 @@ export class BotService {
       }
       throw err;
     }
-    if (oldToken) await this.messenger.disconnect(botId, oldToken);
+    for (const conn of connections) {
+      await this.messenger.disconnect(conn.messenger, botId, conn.token, conn.config);
+    }
   }
 
   async isTokenInUse(messenger: MessengerType, tokenHash: string): Promise<boolean> {
@@ -110,7 +137,7 @@ export class BotService {
     token: string,
   ): Promise<{ messenger: 'TELEGRAM'; tokenMask: string; botUsername: string }> {
     const bot = await this.getOwnedBot(authorId, projectId, botId);
-    const me = await this.messenger.verifyToken(token);
+    const me = await this.messenger.verifyToken('TELEGRAM', token);
     if (!me) {
       throw new BadRequestException('Токен недействителен');
     }
@@ -119,38 +146,131 @@ export class BotService {
     if (other && other.botId !== botId) {
       throw new ConflictException('Токен уже используется другим ботом');
     }
-    const oldToken = await this.currentToken(botId);
+    const oldConn = await this.decryptConnection(botId, 'TELEGRAM');
+    const oldToken = oldConn?.token ?? null;
     // Опубликованный бот сразу переключается на новый токен (до сохранения: ошибка Telegram -> 502)
     const published = bot.status === 'PUBLISHED';
-    if (published) await this.messenger.connect(botId, token);
-    const { cipherText, mask } = this.vault.encrypt(token, tokenAad(botId));
+    if (published) await this.messenger.connect('TELEGRAM', botId, token);
+    const { cipherText, mask } = this.vault.encrypt(token, tokenAad(botId, 'TELEGRAM'));
     const data = { tokenCipher: cipherText, tokenMask: mask, tokenHash };
     try {
-      await this.saveConnection(botId, data);
+      await this.saveConnection(botId, 'TELEGRAM', data);
     } catch (err) {
       if (published && oldToken !== token) {
         // Откатываем подключение нового токена, возвращаем прежний
-        await this.messenger.disconnect(botId, token);
-        if (oldToken) await this.messenger.connect(botId, oldToken).catch(() => undefined);
+        await this.messenger.disconnect('TELEGRAM', botId, token);
+        if (oldToken) {
+          await this.messenger.connect('TELEGRAM', botId, oldToken).catch(() => undefined);
+        }
       }
       throw err;
     }
     if (published && oldToken && oldToken !== token) {
-      await this.messenger.disconnect(botId, oldToken);
+      await this.messenger.disconnect('TELEGRAM', botId, oldToken);
     }
-    return { messenger: 'TELEGRAM', tokenMask: mask, botUsername: me.username };
+    return { messenger: 'TELEGRAM', tokenMask: mask, botUsername: me.username ?? '' };
   }
 
   async disconnectTelegram(authorId: string, projectId: string, botId: string): Promise<void> {
     await this.getOwnedBot(authorId, projectId, botId);
-    const oldToken = await this.currentToken(botId);
+    const oldConn = await this.decryptConnection(botId, 'TELEGRAM');
     await this.prisma.client.messengerConnection.deleteMany({
       where: { botId, messenger: 'TELEGRAM' },
     });
-    if (oldToken) await this.messenger.disconnect(botId, oldToken);
+    if (oldConn) await this.messenger.disconnect('TELEGRAM', botId, oldConn.token);
   }
 
-  // Публикация и переопубликация (п. 2.11): проверка -> подключение к Telegram -> фиксация сценария
+  async connectVk(
+    authorId: string,
+    projectId: string,
+    botId: string,
+    body: ConnectVkBody,
+  ): Promise<ConnectVkResult> {
+    const bot = await this.getOwnedBot(authorId, projectId, botId);
+    const connectConfig: MessengerConnectConfig = {
+      groupId: body.groupId,
+      mode: body.mode,
+      ...(body.confirmationCode ? { confirmationCode: body.confirmationCode } : {}),
+      ...(body.secret ? { secret: body.secret } : {}),
+    };
+    const verified = await this.messenger.verifyToken('VK', body.token, connectConfig);
+    if (!verified) {
+      throw new BadRequestException(
+        'Токен сообщества VK недействителен или не соответствует указанному ID сообщества',
+      );
+    }
+    const tokenHash = this.vault.hash(body.token);
+    const other = await this.prisma.client.messengerConnection.findUnique({ where: { tokenHash } });
+    if (other && other.botId !== botId) {
+      throw new ConflictException('Токен уже используется другим ботом');
+    }
+
+    const oldConn = await this.decryptConnection(botId, 'VK');
+    const published = bot.status === 'PUBLISHED';
+    if (published) {
+      await this.messenger.connect('VK', botId, body.token, connectConfig);
+    }
+
+    const { cipherText, mask } = this.vault.encrypt(body.token, tokenAad(botId, 'VK'));
+    const vkConfig: VkStoredConfig = {
+      groupId: body.groupId,
+      mode: body.mode,
+      ...(body.confirmationCode ? { confirmationCode: body.confirmationCode } : {}),
+    };
+    if (body.secret && body.secret.length > 0) {
+      const encryptedSecret = this.vault.encrypt(body.secret, tokenAad(botId, 'VK_SECRET'));
+      vkConfig.secretCipher = encryptedSecret.cipherText;
+      vkConfig.secretMask = encryptedSecret.mask;
+    }
+
+    const data = {
+      tokenCipher: cipherText,
+      tokenMask: mask,
+      tokenHash,
+      config: vkConfig as unknown as Prisma.InputJsonValue,
+    };
+
+    try {
+      await this.saveConnection(botId, 'VK', data);
+    } catch (err) {
+      if (published && oldConn?.token !== body.token) {
+        await this.messenger.disconnect('VK', botId, body.token, connectConfig);
+        if (oldConn) {
+          await this.messenger
+            .connect('VK', botId, oldConn.token, oldConn.config)
+            .catch(() => undefined);
+        }
+      }
+      throw err;
+    }
+
+    if (published && oldConn && oldConn.token !== body.token) {
+      await this.messenger.disconnect('VK', botId, oldConn.token, oldConn.config);
+    }
+
+    return {
+      messenger: 'VK',
+      tokenMask: mask,
+      vkGroupId: body.groupId,
+      vkMode: body.mode,
+      vkHasSecret: Boolean(vkConfig.secretCipher),
+      ...(vkConfig.confirmationCode ? { vkConfirmationCode: vkConfig.confirmationCode } : {}),
+      groupName: verified.groupName ?? '',
+    };
+  }
+
+  async disconnectVk(authorId: string, projectId: string, botId: string): Promise<void> {
+    await this.getOwnedBot(authorId, projectId, botId);
+    const oldConn = await this.decryptConnection(botId, 'VK');
+    await this.prisma.client.messengerConnection.deleteMany({
+      where: { botId, messenger: 'VK' },
+    });
+    if (oldConn) {
+      await this.messenger.disconnect('VK', botId, oldConn.token, oldConn.config);
+    }
+  }
+
+  // Публикация и переопубликация (п. 2.11): проверка -> подключение всех мессенджеров -> фиксация сценария
   async publish(
     authorId: string,
     projectId: string,
@@ -173,8 +293,8 @@ export class BotService {
     }
     const warnings = issues.filter((i) => i.severity === 'WARNING');
 
-    const token = await this.currentToken(botId);
-    if (!token) {
+    const connections = await this.decryptAllConnections(botId);
+    if (connections.length === 0) {
       throw new UnprocessableEntityException({
         errors: [
           {
@@ -185,8 +305,10 @@ export class BotService {
         ],
       });
     }
-    // Вне транзакции: ошибка Telegram даёт 502, и бот не меняется
-    await this.messenger.connect(botId, token);
+    // Вне транзакции: ошибка внешнего API мессенджера даёт 502, и бот не меняется
+    for (const conn of connections) {
+      await this.messenger.connect(conn.messenger, botId, conn.token, conn.config);
+    }
 
     const updated = await this.prisma.client.$transaction(async (tx) => {
       // Статус читаем внутри транзакции: параллельные публикации тоже сбрасывают контексты
@@ -221,27 +343,55 @@ export class BotService {
     return { bot: this.toView(updated), warnings };
   }
 
-  private async currentToken(botId: string): Promise<string | null> {
+  private async decryptConnection(
+    botId: string,
+    messenger: MessengerType,
+  ): Promise<DecryptedConnection | null> {
     const connection = await this.prisma.client.messengerConnection.findUnique({
-      where: { botId_messenger: { botId, messenger: 'TELEGRAM' } },
+      where: { botId_messenger: { botId, messenger } },
     });
     if (!connection) return null;
-    return this.vault.decrypt(
+    const token = this.vault.decrypt(
       { cipherText: connection.tokenCipher, mask: connection.tokenMask },
-      tokenAad(botId),
+      tokenAad(botId, messenger),
     );
+    return {
+      messenger,
+      token,
+      config: toConnectConfig(messenger, connection.config),
+    };
+  }
+
+  private async decryptAllConnections(botId: string): Promise<DecryptedConnection[]> {
+    const rows = await this.prisma.client.messengerConnection.findMany({
+      where: { botId },
+    });
+    return rows.map((connection) => ({
+      messenger: connection.messenger,
+      token: this.vault.decrypt(
+        { cipherText: connection.tokenCipher, mask: connection.tokenMask },
+        tokenAad(botId, connection.messenger),
+      ),
+      config: toConnectConfig(connection.messenger, connection.config),
+    }));
   }
 
   // Запись подключения; P2002 по token_hash — токен занят другим ботом, иная гонка (botId_messenger) — повтор
   private async saveConnection(
     botId: string,
-    data: { tokenCipher: string; tokenMask: string; tokenHash: string },
+    messenger: MessengerType,
+    data: {
+      tokenCipher: string;
+      tokenMask: string;
+      tokenHash: string;
+      config?: Prisma.InputJsonValue;
+    },
   ): Promise<void> {
     const attempt = async (): Promise<'ok' | 'retry'> => {
       try {
         await this.prisma.client.messengerConnection.upsert({
-          where: { botId_messenger: { botId, messenger: 'TELEGRAM' } },
-          create: { botId, messenger: 'TELEGRAM', ...data },
+          where: { botId_messenger: { botId, messenger } },
+          create: { botId, messenger, ...data },
           update: data,
         });
         return 'ok';
@@ -281,12 +431,31 @@ export class BotService {
   }
 
   private toView(bot: BotWithConnections): BotView {
+    const connections: BotConnectionView[] = bot.connections.map((c) => {
+      if (c.messenger === 'VK') {
+        const cfg = parseVkStoredConfig(c.config);
+        return {
+          messenger: 'VK',
+          tokenMask: c.tokenMask,
+          ...(cfg
+            ? {
+                vkGroupId: cfg.groupId,
+                vkMode: cfg.mode,
+                vkHasSecret: Boolean(cfg.secretCipher),
+                ...(cfg.confirmationCode ? { vkConfirmationCode: cfg.confirmationCode } : {}),
+              }
+            : {}),
+        };
+      }
+      return { messenger: c.messenger, tokenMask: c.tokenMask };
+    });
+
     return {
       id: bot.id,
       name: bot.name,
       status: bot.status,
       publishedAt: bot.publishedAt ? bot.publishedAt.toISOString() : null,
-      connections: bot.connections.map((c) => ({ messenger: 'TELEGRAM', tokenMask: c.tokenMask })),
+      connections,
       environment: this.environments.toView(bot.environment as unknown as EnvironmentVariable[]),
     };
   }

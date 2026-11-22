@@ -106,6 +106,7 @@ describe('Socket.IO-шлюз превью (интеграционные тест
     DATABASE_URL: process.env.DATABASE_URL,
     JWT_SECRET: process.env.JWT_SECRET,
     TELEGRAM_POLLING: process.env.TELEGRAM_POLLING,
+    VK_POLLING: process.env.VK_POLLING,
     NODE_ENV: process.env.NODE_ENV,
     QUEUE_PREFIX: process.env.QUEUE_PREFIX,
     VAULT_KEY: process.env.VAULT_KEY,
@@ -117,6 +118,7 @@ describe('Socket.IO-шлюз превью (интеграционные тест
     process.env.DATABASE_URL = db.databaseUrl;
     process.env.JWT_SECRET = 'test-jwt-secret-key-for-preview-tests';
     process.env.TELEGRAM_POLLING = '0';
+    process.env.VK_POLLING = '0';
     process.env.NODE_ENV = 'test';
     process.env.QUEUE_PREFIX = `preview_test_${randomBytes(4).toString('hex')}`;
     process.env.VAULT_KEY ??= Buffer.alloc(32, 1).toString('base64');

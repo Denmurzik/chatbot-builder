@@ -1,11 +1,38 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { BotView, EnvVarInput, EnvVarView, ValidationError } from '@chatbot/model';
+import type {
+  BotConnectionView,
+  BotView,
+  EnvVarInput,
+  EnvVarView,
+  ValidationError,
+  VkConnectionMode,
+} from '@chatbot/model';
 import { apiFetch } from './client';
+
+export type { BotConnectionView, VkConnectionMode };
 
 export interface TelegramConnectionView {
   messenger: 'TELEGRAM';
   tokenMask: string;
   botUsername: string;
+}
+
+export interface ConnectVkInput {
+  token: string;
+  groupId: number;
+  mode: VkConnectionMode;
+  confirmationCode?: string;
+  secret?: string;
+}
+
+export interface VkConnectionResult {
+  messenger: 'VK';
+  tokenMask: string;
+  vkGroupId: number;
+  vkMode: VkConnectionMode;
+  vkHasSecret: boolean;
+  vkConfirmationCode?: string;
+  groupName: string;
 }
 
 export interface PublishResult {
@@ -72,6 +99,27 @@ export function useDisconnectTelegram(projectId: string, botId: string) {
   return useMutation({
     mutationFn: () =>
       apiFetch<void>(`${botPath(projectId, botId)}/connections/telegram`, { method: 'DELETE' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: botsKey(projectId) }),
+  });
+}
+
+export function useConnectVk(projectId: string, botId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ConnectVkInput) =>
+      apiFetch<VkConnectionResult>(`${botPath(projectId, botId)}/connections/vk`, {
+        method: 'PUT',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: botsKey(projectId) }),
+  });
+}
+
+export function useDisconnectVk(projectId: string, botId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<void>(`${botPath(projectId, botId)}/connections/vk`, { method: 'DELETE' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: botsKey(projectId) }),
   });
 }

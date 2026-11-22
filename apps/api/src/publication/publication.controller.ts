@@ -21,17 +21,19 @@ import {
 import { type AuthenticatedAuthor, CurrentAuthor } from '../auth/current-author.decorator';
 import { JwtGuard } from '../auth/jwt.guard';
 import { ZodBodyPipe } from '../common/zod-body.pipe';
-import { BotService } from './bot.service';
+import { BotService, type ConnectVkResult } from './bot.service';
 import {
   connectTelegramBodySchema,
+  connectVkBodySchema,
   createBotBodySchema,
   type ConnectTelegramBody,
+  type ConnectVkBody,
   type CreateBotBody,
 } from './dto';
 
 /**
  * Класс модели BCE: PublicationController — управление ботами, окружениями, подключением мессенджеров и публикацией.
- * Реализует UC-A-25…A-28, UC-A-32, UC-U-07, SD-6; спринт 2 (боты, окружения, подключение Telegram, публикация и переопубликация).
+ * Реализует UC-A-25…A-28, UC-A-32, UC-U-07, SD-6; спринт 2 (боты, окружения, подключение Telegram/VK, публикация и переопубликация).
  */
 @Controller('projects/:projectId/bots')
 @UseGuards(JwtGuard)
@@ -97,6 +99,28 @@ export class PublicationController {
     @Param('botId') botId: string,
   ): Promise<void> {
     return this.bots.disconnectTelegram(author.id, projectId, botId);
+  }
+
+  // Подключение сообщества VK к боту (Callback API или Bots Long Poll)
+  @Put(':botId/connections/vk')
+  @HttpCode(HttpStatus.OK)
+  connectVk(
+    @CurrentAuthor() author: AuthenticatedAuthor,
+    @Param('projectId') projectId: string,
+    @Param('botId') botId: string,
+    @Body(new ZodBodyPipe(connectVkBodySchema)) body: ConnectVkBody,
+  ): Promise<ConnectVkResult> {
+    return this.bots.connectVk(author.id, projectId, botId, body);
+  }
+
+  @Delete(':botId/connections/vk')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  disconnectVk(
+    @CurrentAuthor() author: AuthenticatedAuthor,
+    @Param('projectId') projectId: string,
+    @Param('botId') botId: string,
+  ): Promise<void> {
+    return this.bots.disconnectVk(author.id, projectId, botId);
   }
 
   // Публикация и переопубликация бота (п. 2.11): 200 { bot, warnings } или 422 { errors }

@@ -1,18 +1,21 @@
 import { BadGatewayException, Injectable } from '@nestjs/common';
 import { GrammyError } from 'grammy';
-import { MessengerAdminPort } from '../common/messenger-admin.port';
+import type {
+  SingleMessengerAdminAdapter,
+  VerifiedMessengerInfo,
+} from '../common/messenger-admin.port';
 import { TelegramApiFactory } from './telegram-api.factory';
 import { TelegramWebhookService } from './telegram-webhook.service';
 
-// Адаптер администрирования Telegram: реализует порт MessengerAdminPort поверх webhook/polling и getMe
+// Адаптер администрирования Telegram: реализует SingleMessengerAdminAdapter поверх webhook/polling и getMe
 @Injectable()
-export class TelegramAdminAdapter extends MessengerAdminPort {
+export class TelegramAdminAdapter implements SingleMessengerAdminAdapter {
+  readonly messenger = 'TELEGRAM' as const;
+
   constructor(
     private readonly webhook: TelegramWebhookService,
     private readonly apiFactory: TelegramApiFactory,
-  ) {
-    super();
-  }
+  ) {}
 
   connect(botId: string, token: string): Promise<void> {
     return this.webhook.connect(botId, token);
@@ -23,7 +26,7 @@ export class TelegramAdminAdapter extends MessengerAdminPort {
   }
 
   // Проверка токена вызовом getMe: 401/404 -> null, прочие ошибки -> 502
-  async verifyToken(token: string): Promise<{ username: string } | null> {
+  async verifyToken(token: string): Promise<VerifiedMessengerInfo | null> {
     try {
       const me = await this.apiFactory.create(token).getMe();
       return { username: me.username ?? '' };

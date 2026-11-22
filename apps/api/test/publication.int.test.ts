@@ -78,6 +78,7 @@ describe('Публикация и переопубликация (интегра
     process.env.DATABASE_URL = db.databaseUrl;
     process.env.JWT_SECRET = 'test-jwt-secret-key-for-publication-tests';
     process.env.TELEGRAM_POLLING = '0';
+    process.env.VK_POLLING = '0';
     process.env.NODE_ENV = 'test';
     process.env.PUBLIC_URL = 'https://bots.example.com/';
     process.env.REDIS_URL = REDIS_URL;

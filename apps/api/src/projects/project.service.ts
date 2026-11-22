@@ -22,6 +22,64 @@ export interface ProjectSummary {
   name: string;
   updatedAt: Date;
   botsCount: number;
+  blocksCount: number;
+  publishedBotsCount: number;
+  messengers: MessengerType[];
+}
+
+const projectSummarySelect = {
+  id: true,
+  name: true,
+  updatedAt: true,
+  scenario: true,
+  bots: {
+    select: {
+      status: true,
+      connections: {
+        select: {
+          messenger: true,
+        },
+      },
+    },
+  },
+} satisfies Prisma.ProjectSelect;
+
+type ProjectSummaryRow = Prisma.ProjectGetPayload<{ select: typeof projectSummarySelect }>;
+
+// Подсчитывает количество блоков в JSON-сценарии проекта без полной валидации
+function countScenarioBlocks(scenario: Prisma.JsonValue): number {
+  if (scenario && typeof scenario === 'object' && !Array.isArray(scenario)) {
+    const blocks = (scenario as { blocks?: unknown }).blocks;
+    if (Array.isArray(blocks)) {
+      return blocks.length;
+    }
+  }
+  return 0;
+}
+
+// Собирает сводку проекта для карточки списка за один запрос без N+1
+function toProjectSummary(project: ProjectSummaryRow): ProjectSummary {
+  let publishedBotsCount = 0;
+  const messengerSet = new Set<MessengerType>();
+
+  for (const bot of project.bots) {
+    if (bot.status === 'PUBLISHED') {
+      publishedBotsCount += 1;
+    }
+    for (const conn of bot.connections) {
+      messengerSet.add(conn.messenger);
+    }
+  }
+
+  return {
+    id: project.id,
+    name: project.name,
+    updatedAt: project.updatedAt,
+    botsCount: project.bots.length,
+    blocksCount: countScenarioBlocks(project.scenario),
+    publishedBotsCount,
+    messengers: Array.from(messengerSet).sort(),
+  };
 }
 
 export interface CreatedProject {
@@ -53,21 +111,11 @@ export class ProjectService {
   async listByAuthor(authorId: string): Promise<ProjectSummary[]> {
     const projects = await this.prisma.client.project.findMany({
       where: { authorId },
-      select: {
-        id: true,
-        name: true,
-        updatedAt: true,
-        _count: { select: { bots: true } },
-      },
+      select: projectSummarySelect,
       orderBy: { updatedAt: 'desc' },
     });
 
-    return projects.map((project) => ({
-      id: project.id,
-      name: project.name,
-      updatedAt: project.updatedAt,
-      botsCount: project._count.bots,
-    }));
+    return projects.map(toProjectSummary);
   }
 
   async create(authorId: string, name: string): Promise<CreatedProject> {
@@ -122,19 +170,9 @@ export class ProjectService {
       const updated = await this.prisma.client.project.update({
         where: { id: projectId },
         data: { name },
-        select: {
-          id: true,
-          name: true,
-          updatedAt: true,
-          _count: { select: { bots: true } },
-        },
+        select: projectSummarySelect,
       });
-      return {
-        id: updated.id,
-        name: updated.name,
-        updatedAt: updated.updatedAt,
-        botsCount: updated._count.bots,
-      };
+      return toProjectSummary(updated);
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
         throw new NotFoundException('Проект не найден');

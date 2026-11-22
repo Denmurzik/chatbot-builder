@@ -132,19 +132,36 @@ function NodeMenu({
 
 const SHAPE_CLASSES: Record<Shape, string> = {
   // Точка входа: скруглена слева, как «начало» потока
-  start: 'min-w-44 max-w-56 rounded-l-full rounded-r-lg border bg-card pl-2',
+  start: 'min-w-44 max-w-56 rounded-l-full rounded-r-lg border bg-card',
   // Точка выхода: скруглена справа, как «конец» потока
-  finish: 'min-w-44 max-w-56 rounded-r-full rounded-l-lg border bg-card pr-2',
+  finish: 'min-w-44 max-w-56 rounded-r-full rounded-l-lg border bg-card',
   // Реплика: крупное скругление 16 px (узнаётся по значку-реплике в углу, выступов за контур нет)
   talk: 'min-w-48 max-w-64 rounded-2xl border bg-card',
   // Развилка: прямоугольное тело, ромб — значок
   branch: 'min-w-48 max-w-64 rounded-lg border bg-card',
   // Присваивание: компактная карточка
   compact: 'min-w-40 max-w-56 rounded-md border bg-card',
-  // Интеграция: двойная рамка — внутренняя линия рисуется inset-тенью, поэтому ручки и «+»
-  // остаются на внешней границе блока
-  integration:
-    'min-w-48 max-w-64 rounded-lg border-2 bg-card shadow-[inset_0_0_0_3px_var(--card),inset_0_0_0_4px_var(--border)]',
+  // Интеграция: аккуратная одиночная рамка, метод и URL выделены в теле карточки
+  integration: 'min-w-48 max-w-64 rounded-lg border bg-card',
+};
+
+// Скругление шапки под форму узла, чтобы тонкая подложка не вылезала за рамку
+const HEADER_SHAPE_CLASSES: Record<Shape, string> = {
+  start: 'rounded-tl-full rounded-tr-[7px] pl-5',
+  finish: 'rounded-r-full rounded-l-[7px] pr-5',
+  talk: 'rounded-t-[15px]',
+  branch: 'rounded-t-[7px]',
+  compact: 'rounded-t-[5px]',
+  integration: 'rounded-t-[7px]',
+};
+
+// Цвета пилюли HTTP-метода для читаемого контраста в светлой и тёмной темах
+const HTTP_METHOD_CLASSES: Record<string, string> = {
+  GET: 'border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
+  POST: 'border-sky-500/30 bg-sky-500/15 text-sky-700 dark:text-sky-300',
+  PUT: 'border-amber-500/30 bg-amber-500/15 text-amber-700 dark:text-amber-300',
+  PATCH: 'border-amber-500/30 bg-amber-500/15 text-amber-700 dark:text-amber-300',
+  DELETE: 'border-rose-500/30 bg-rose-500/15 text-rose-700 dark:text-rose-300',
 };
 
 // Значок блока: у развилок — ромб, у остальных — скруглённый квадрат (у начала и конца — круг)
@@ -202,9 +219,22 @@ export function BlockNode({ id, data, selected }: NodeProps<BlockNodeType>) {
     updateNodeInternals(id);
   }, [id, outputsKey, updateNodeInternals]);
 
+  const httpData =
+    data.type === 'HTTP_REQUEST' ? (data as Record<string, unknown>) : null;
+  const httpMethod =
+    httpData && typeof httpData.method === 'string' ? httpData.method.trim().toUpperCase() : '';
+  const httpUrl = httpData && typeof httpData.url === 'string' ? httpData.url.trim() : '';
+
   const content = (
     <>
-      <div className={cn('flex items-center gap-2 px-3', shape === 'compact' ? 'py-1.5' : 'py-2')}>
+      <div
+        className={cn(
+          'flex items-center gap-2 px-3',
+          shape === 'compact' ? 'py-1.5' : 'py-2',
+          HEADER_SHAPE_CLASSES[shape],
+        )}
+        style={{ backgroundColor: `color-mix(in oklab, ${meta.color} 9%, transparent)` }}
+      >
         <BlockIcon shape={shape} color={meta.color}>
           <Icon className={shape === 'compact' ? 'size-3' : 'size-4'} />
         </BlockIcon>
@@ -220,15 +250,38 @@ export function BlockNode({ id, data, selected }: NodeProps<BlockNodeType>) {
           />
         )}
       </div>
-      {preview && (
-        <div
-          className={cn(
-            'line-clamp-2 px-3 pb-2 text-xs break-words text-muted-foreground',
-            shape === 'compact' && 'font-mono',
-          )}
-        >
-          {preview}
-        </div>
+      {data.type === 'HTTP_REQUEST' ? (
+        (httpMethod || httpUrl) && (
+          <div className="flex items-start gap-1.5 px-3 py-2 text-xs">
+            {httpMethod && (
+              <span
+                data-testid="http-method-badge"
+                className={cn(
+                  'shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] leading-none font-semibold tracking-wide',
+                  HTTP_METHOD_CLASSES[httpMethod] ?? 'border-border bg-muted text-muted-foreground',
+                )}
+              >
+                {httpMethod}
+              </span>
+            )}
+            {httpUrl && (
+              <span className="line-clamp-2 min-w-0 flex-1 font-mono break-all text-muted-foreground">
+                {httpUrl}
+              </span>
+            )}
+          </div>
+        )
+      ) : (
+        preview && (
+          <div
+            className={cn(
+              'line-clamp-2 px-3 py-2 text-xs break-words text-muted-foreground',
+              shape === 'compact' && 'font-mono',
+            )}
+          >
+            {preview}
+          </div>
+        )
       )}
       {outputs.length > 0 && (
         <div className="flex flex-col border-t py-1">
@@ -249,12 +302,16 @@ export function BlockNode({ id, data, selected }: NodeProps<BlockNodeType>) {
   return (
     <div
       data-block-shape={shape}
-      className={cn(
-        'relative text-card-foreground shadow-sm',
-        SHAPE_CLASSES[shape],
-        selected && 'ring-2 ring-ring',
-      )}
-      style={{ borderTopColor: meta.color, borderTopWidth: shape === 'integration' ? 2 : 3 }}
+      className={cn('relative text-card-foreground shadow-sm', SHAPE_CLASSES[shape])}
+      style={{
+        borderTopColor: meta.color,
+        borderTopWidth: 3,
+        ...(selected
+          ? {
+              boxShadow: `0 0 0 1px ${meta.color}, 0 0 18px -4px color-mix(in oklab, ${meta.color} 35%, transparent)`,
+            }
+          : undefined),
+      }}
       {...handlers}
     >
       <NodeMenu

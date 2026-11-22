@@ -19,7 +19,9 @@ import {
   useSaveEnvironment,
 } from '@/api/bots';
 import { ApiError } from '@/api/client';
+import { BrandLogo } from '@/components/BrandLogo';
 import { EnvironmentEditor } from '@/components/EnvironmentEditor';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -66,6 +68,34 @@ const vkFormSchema = z
     }
   });
 
+/** Иконка Telegram (бумажный самолётик) для бейджа секции. */
+function TelegramBadge() {
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex size-6 shrink-0 items-center justify-center rounded-md border border-[#229ED9]/30 bg-[#229ED9]/12 text-[#167BAE] dark:text-[#4BB8EC]"
+    >
+      <svg viewBox="0 0 24 24" className="size-3.5" fill="currentColor">
+        <path d="M21.94 4.16a1 1 0 0 0-1.05-.14L2.64 11.46a1 1 0 0 0 .08 1.88l4.49 1.4 1.74 5.23a1 1 0 0 0 1.66.4l2.58-2.46 4.46 3.27a1 1 0 0 0 1.56-.59l3-15.46a1 1 0 0 0-.27-.97ZM9.7 14.37l7.52-6.17-5.86 7.36-.34 2.57-1.14-3.44-.18-.32Z" />
+      </svg>
+    </span>
+  );
+}
+
+/** Иконка ВКонтакте для бейджа секции. */
+function VkBadge() {
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex size-6 shrink-0 items-center justify-center rounded-md border border-[#0077FF]/30 bg-[#0077FF]/12 text-[#005FCC] dark:text-[#5CA3FF]"
+    >
+      <svg viewBox="0 0 24 24" className="size-3.5" fill="currentColor">
+        <path d="M12.78 17.5c-5.47 0-8.59-3.75-8.72-10h2.74c.09 4.58 2.11 6.52 3.71 6.92V7.5h2.58v3.95c1.58-.17 3.24-1.97 3.8-3.95h2.58c-.43 2.44-2.23 4.24-3.51 4.98 1.28.6 3.33 2.17 4.11 5.02h-2.84c-.61-1.9-2.13-3.37-4.14-3.57v3.57h-.31Z" />
+      </svg>
+    </span>
+  );
+}
+
 function CreateBotDialog(props: {
   projectId: string;
   open: boolean;
@@ -102,9 +132,9 @@ function CreateBotDialog(props: {
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{ru.bots.nameLabel}</FormLabel>
+                  <FormLabel htmlFor="create-bot-name">{ru.bots.nameLabel}</FormLabel>
                   <FormControl>
-                    <Input {...field} />
+                    <Input {...field} id="create-bot-name" name="name" autoComplete="off" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -190,9 +220,14 @@ function TelegramSection(props: { projectId: string; bot: BotView }) {
     });
   });
 
+  const tokenInputId = `tg-token-${props.bot.id}`;
+
   return (
-    <section className="flex flex-col gap-2">
-      <h3 className="text-sm font-medium">{ru.bots.tokenSection}</h3>
+    <section className="flex flex-col gap-2 border-l-2 border-[#229ED9]/60 pl-4">
+      <div className="flex items-center gap-2">
+        <TelegramBadge />
+        <h3 className="text-sm font-medium">{ru.bots.tokenSection}</h3>
+      </div>
       {connection ? (
         <div className="flex items-center gap-2 text-sm">
           <span className="font-mono text-muted-foreground">{connection.tokenMask}</span>
@@ -218,10 +253,12 @@ function TelegramSection(props: { projectId: string; bot: BotView }) {
             name="token"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{ru.bots.tokenLabel}</FormLabel>
+                <FormLabel htmlFor={tokenInputId}>{ru.bots.tokenLabel}</FormLabel>
                 <FormControl>
                   <Input
                     {...field}
+                    id={tokenInputId}
+                    name="token"
                     type="password"
                     autoComplete="off"
                     onChange={(event) => {
@@ -336,9 +373,17 @@ function VkSection(props: { projectId: string; bot: BotView }) {
     });
   });
 
+  const vkTokenId = `vk-token-${props.bot.id}`;
+  const vkGroupIdInputId = `vk-group-id-${props.bot.id}`;
+  const vkConfirmationId = `vk-confirmation-${props.bot.id}`;
+  const vkSecretId = `vk-secret-${props.bot.id}`;
+
   return (
-    <section className="flex flex-col gap-2">
-      <h3 className="text-sm font-medium">{ru.bots.vkSection}</h3>
+    <section className="flex flex-col gap-2 border-l-2 border-[#0077FF]/60 pl-4">
+      <div className="flex items-center gap-2">
+        <VkBadge />
+        <h3 className="text-sm font-medium">{ru.bots.vkSection}</h3>
+      </div>
       {connection ? (
         <div className="flex flex-col gap-2 rounded-md border p-3 text-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -415,10 +460,12 @@ function VkSection(props: { projectId: string; bot: BotView }) {
               name="token"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{ru.bots.vkTokenLabel}</FormLabel>
+                  <FormLabel htmlFor={vkTokenId}>{ru.bots.vkTokenLabel}</FormLabel>
                   <FormControl>
                     <Input
                       {...field}
+                      id={vkTokenId}
+                      name="token"
                       type="password"
                       autoComplete="off"
                       onChange={(event) => {
@@ -437,10 +484,12 @@ function VkSection(props: { projectId: string; bot: BotView }) {
               name="groupId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{ru.bots.vkGroupIdLabel}</FormLabel>
+                  <FormLabel htmlFor={vkGroupIdInputId}>{ru.bots.vkGroupIdLabel}</FormLabel>
                   <FormControl>
                     <Input
                       {...field}
+                      id={vkGroupIdInputId}
+                      name="groupId"
                       inputMode="numeric"
                       autoComplete="off"
                       onChange={(event) => {
@@ -501,10 +550,12 @@ function VkSection(props: { projectId: string; bot: BotView }) {
                   name="confirmationCode"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{ru.bots.vkConfirmationLabel}</FormLabel>
+                      <FormLabel htmlFor={vkConfirmationId}>{ru.bots.vkConfirmationLabel}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
+                          id={vkConfirmationId}
+                          name="confirmationCode"
                           value={field.value ?? ''}
                           autoComplete="off"
                           onChange={(event) => {
@@ -523,10 +574,12 @@ function VkSection(props: { projectId: string; bot: BotView }) {
                   name="secret"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{ru.bots.vkSecretLabel}</FormLabel>
+                      <FormLabel htmlFor={vkSecretId}>{ru.bots.vkSecretLabel}</FormLabel>
                       <FormControl>
                         <Input
                           {...field}
+                          id={vkSecretId}
+                          name="secret"
                           value={field.value ?? ''}
                           type="password"
                           autoComplete="off"
@@ -658,19 +711,40 @@ function BotCard(props: { projectId: string; bot: BotView; onDelete: () => void 
   const { bot } = props;
   const telegramConnection = bot.connections.find((c) => c.messenger === 'TELEGRAM');
   const vkConnection = bot.connections.find((c) => c.messenger === 'VK');
+  const isPublished = bot.status === 'PUBLISHED';
+  const metaParts = [
+    bot.publishedAt
+      ? `${ru.bots.publishedAt}: ${new Date(bot.publishedAt).toLocaleString('ru-RU')}`
+      : null,
+    telegramConnection ? `${ru.bots.connectedAs}: ${telegramConnection.tokenMask}` : null,
+    vkConnection ? `${ru.bots.vkConnectedAs}: ${vkConnection.tokenMask}` : null,
+  ].filter(Boolean);
+
   return (
     <Card>
       <CardHeader className="flex-row items-start justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <CardTitle>{bot.name}</CardTitle>
-          <CardDescription>
-            {bot.status === 'PUBLISHED' ? ru.bots.statusPublished : ru.bots.statusCreated}
-            {bot.publishedAt
-              ? `. ${ru.bots.publishedAt}: ${new Date(bot.publishedAt).toLocaleString('ru-RU')}`
-              : ''}
-            {telegramConnection ? `. ${ru.bots.connectedAs}: ${telegramConnection.tokenMask}` : ''}
-            {vkConnection ? `. ${ru.bots.vkConnectedAs}: ${vkConnection.tokenMask}` : ''}
-          </CardDescription>
+        <div className="flex flex-col gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle>{bot.name}</CardTitle>
+            {isPublished ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                <span className="relative flex size-2" aria-hidden="true">
+                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500 opacity-75" />
+                  <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+                </span>
+                {ru.bots.statusPublished}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                <span
+                  className="inline-flex size-2 rounded-full bg-muted-foreground/50"
+                  aria-hidden="true"
+                />
+                {ru.bots.statusCreated}
+              </span>
+            )}
+          </div>
+          {metaParts.length > 0 ? <CardDescription>{metaParts.join(' · ')}</CardDescription> : null}
         </div>
         <Button type="button" variant="outline" size="sm" onClick={props.onDelete}>
           <Trash2 />
@@ -695,21 +769,32 @@ export function BotsPage() {
 
   return (
     <div className="mx-auto flex min-h-svh max-w-4xl flex-col gap-6 p-6">
-      <header className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
+        <div className="flex items-center gap-3">
+          <Link
+            to="/projects"
+            aria-label={ru.projects.title}
+            className="inline-flex items-center rounded-md p-1 transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            <BrandLogo size={22} />
+          </Link>
+          <span className="h-4 w-px bg-border" aria-hidden="true" />
           <Link
             to={`/projects/${id}`}
-            className="flex items-center gap-1 text-sm text-muted-foreground"
+            className="flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
             <ArrowLeft className="size-4" />
             {ru.bots.back}
           </Link>
           <h1 className="text-xl font-semibold">{ru.bots.title}</h1>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus />
-          {ru.bots.create}
-        </Button>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus />
+            {ru.bots.create}
+          </Button>
+        </div>
       </header>
 
       {isLoading ? <p className="text-muted-foreground">{ru.common.loading}</p> : null}

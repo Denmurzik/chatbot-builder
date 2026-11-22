@@ -31,6 +31,8 @@ import {
 import { ApiError } from '@/api/client';
 import { useProject, useSaveScenario } from '@/api/projects';
 import { useValidateScenario } from '@/api/validation';
+import { BrandLogo } from '@/components/BrandLogo';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -128,21 +130,52 @@ function showIssues(title: string, issues: { path: string; message: string }[]) 
   });
 }
 
-function EditorHeader({ name, children }: { name?: string; children?: ReactNode }) {
+function EditorHeader({
+  name,
+  dirty,
+  children,
+}: {
+  name?: string;
+  dirty?: boolean;
+  children?: ReactNode;
+}) {
   const { id } = useParams();
   return (
-    <header className="flex items-center gap-4 border-b px-4 py-2">
-      <Link to="/projects" className="flex items-center gap-1 text-sm text-muted-foreground">
-        <ArrowLeft className="size-4" />
-        {ru.editor.back}
-      </Link>
-      <h1 className="min-w-0 flex-1 truncate text-base font-semibold">{name}</h1>
-      {id ? (
-        <Link to={`/projects/${id}/bots`} className="text-sm text-muted-foreground">
-          {ru.editor.bots}
+    <header className="flex items-center gap-3 border-b bg-card/80 px-4 py-2 backdrop-blur-sm">
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
+        <BrandLogo size={22} />
+        <Link
+          to="/projects"
+          className="flex shrink-0 items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="size-4" />
+          {ru.editor.back}
         </Link>
-      ) : null}
-      {children}
+        {name && (
+          <>
+            <span className="h-5 w-px shrink-0 bg-border" aria-hidden />
+            <h1 className="min-w-0 truncate text-base font-semibold">{name}</h1>
+          </>
+        )}
+        {dirty && (
+          <span className="shrink-0 text-xs text-muted-foreground">{ru.editor.unsaved}</span>
+        )}
+      </div>
+      {children ? (
+        children
+      ) : (
+        <div className="flex items-center gap-2">
+          <ThemeToggle size="icon-sm" />
+          {id ? (
+            <Link
+              to={`/projects/${id}/bots`}
+              className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {ru.editor.bots}
+            </Link>
+          ) : null}
+        </div>
+      )}
     </header>
   );
 }
@@ -585,13 +618,27 @@ function ScenarioEditor({
       if (!isError && !isCurrent) return node;
       const highlight = isError
         ? 'preview-node-error rounded-2xl ring-2 ring-destructive ring-offset-2 ring-offset-background shadow-[0_0_0_4px_color-mix(in_oklab,var(--destructive)_25%,transparent)]'
-        : 'preview-node-current rounded-2xl ring-2 ring-primary ring-offset-2 ring-offset-background shadow-[0_0_0_4px_color-mix(in_oklab,var(--primary)_20%,transparent)]';
+        : 'preview-node-current animate-preview-pulse rounded-2xl ring-2 ring-[var(--brand)] ring-offset-2 ring-offset-background shadow-[0_0_18px_-2px_color-mix(in_oklab,var(--brand)_45%,transparent)]';
       return {
         ...node,
         className: node.className ? `${node.className} ${highlight}` : highlight,
       };
     });
   }, [nodes, previewBlockId, previewErrorBlockId]);
+
+  // Подсветка связей активного блока в превью — производный массив, не мутирует сохранённые связи
+  const displayEdges = useMemo(() => {
+    if (!previewBlockId) return edges;
+    return edges.map((edge) =>
+      edge.source === previewBlockId || edge.target === previewBlockId
+        ? {
+            ...edge,
+            animated: true,
+            style: { ...edge.style, stroke: 'var(--brand)', strokeWidth: 2 },
+          }
+        : edge,
+    );
+  }, [edges, previewBlockId]);
 
   // Ctrl+S — сохранить; code не зависит от раскладки (в русской key = «ы»)
   useEffect(() => {
@@ -655,90 +702,110 @@ function ScenarioEditor({
 
   return (
     <>
-      <EditorHeader name={name}>
+      <EditorHeader name={name} dirty={dirty}>
         <div className="flex items-center gap-3">
-          {dirty && <span className="text-xs text-muted-foreground">{ru.editor.unsaved}</span>}
-          <Button
-            type="button"
-            size="icon"
-            variant="outline"
-            disabled={!history.canUndo}
-            onClick={history.undo}
-            aria-label={ru.editor.undo}
-            title={`${ru.editor.undo} (Ctrl+Z)`}
-          >
-            <Undo2 className="size-4" />
-          </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="outline"
-            disabled={!history.canRedo}
-            onClick={history.redo}
-            aria-label={ru.editor.redo}
-            title={`${ru.editor.redo} (Ctrl+Shift+Z)`}
-          >
-            <Redo2 className="size-4" />
-          </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="outline"
-            onClick={() => setShortcutsOpen(true)}
-            aria-label={ru.editor.shortcuts.open}
-            title={ru.editor.shortcuts.open}
-          >
-            <CircleHelp className="size-4" />
-          </Button>
-          <ImportExportMenu
-            projectId={projectId}
-            projectName={name}
-            dirty={dirty}
-            disabled={save.isPending}
-            onSaveBeforeExport={handleSaveBeforeExport}
-            onImported={onImported}
-          />
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => setTestEnvOpen(true)}
-          >
-            <SlidersHorizontal className="size-4" />
-            {ru.testEnvironment.button}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={save.isPending}
-            onClick={() => void handleOpenPreview()}
-          >
-            <Play className="size-4" />
-            {ru.preview.button}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={save.isPending || validate.isPending}
-            onClick={() => void handleValidate()}
-          >
-            <CheckCheck className="size-4" />
-            {validate.isPending ? ru.validationPanel.checking : ru.validationPanel.button}
-          </Button>
-          <Tooltip>
-            {/* Button в React 18 не пробрасывает ref — триггер оборачиваем в span */}
-            <TooltipTrigger asChild>
-              <span>
-                <Button type="button" size="sm" disabled={save.isPending} onClick={handleSave}>
+          {/* История изменений */}
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="outline"
+              disabled={!history.canUndo}
+              onClick={history.undo}
+              aria-label={ru.editor.undo}
+              title={`${ru.editor.undo} (Ctrl+Z)`}
+            >
+              <Undo2 className="size-4" />
+            </Button>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="outline"
+              disabled={!history.canRedo}
+              onClick={history.redo}
+              aria-label={ru.editor.redo}
+              title={`${ru.editor.redo} (Ctrl+Shift+Z)`}
+            >
+              <Redo2 className="size-4" />
+            </Button>
+          </div>
+          <span className="h-5 w-px bg-border" aria-hidden />
+          {/* Инструменты проверки, окружения и импорта/экспорта */}
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={save.isPending || validate.isPending}
+              onClick={() => void handleValidate()}
+            >
+              <CheckCheck className="size-4" />
+              {validate.isPending ? ru.validationPanel.checking : ru.validationPanel.button}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setTestEnvOpen(true)}
+            >
+              <SlidersHorizontal className="size-4" />
+              {ru.testEnvironment.button}
+            </Button>
+            <ImportExportMenu
+              projectId={projectId}
+              projectName={name}
+              dirty={dirty}
+              disabled={save.isPending}
+              onSaveBeforeExport={handleSaveBeforeExport}
+              onImported={onImported}
+            />
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="outline"
+              onClick={() => setShortcutsOpen(true)}
+              aria-label={ru.editor.shortcuts.open}
+              title={ru.editor.shortcuts.open}
+            >
+              <CircleHelp className="size-4" />
+            </Button>
+          </div>
+          <span className="h-5 w-px bg-border" aria-hidden />
+          {/* Основные действия: тема, боты, сохранение и запуск превью */}
+          <div className="flex items-center gap-2">
+            <ThemeToggle size="icon-sm" />
+            <Link
+              to={`/projects/${projectId}/bots`}
+              className="px-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {ru.editor.bots}
+            </Link>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={save.isPending}
+                  onClick={handleSave}
+                >
                   <Save className="size-4" />
                   {save.isPending ? ru.editor.saving : ru.editor.save}
                 </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>{ru.editor.saveShortcut}</TooltipContent>
-          </Tooltip>
+              </TooltipTrigger>
+              <TooltipContent>{ru.editor.saveShortcut}</TooltipContent>
+            </Tooltip>
+            <Button
+              type="button"
+              size="sm"
+              variant="default"
+              disabled={save.isPending}
+              onClick={() => void handleOpenPreview()}
+            >
+              <Play className="size-4" />
+              {ru.preview.button}
+            </Button>
+          </div>
         </div>
       </EditorHeader>
       <div className="flex min-h-0 flex-1">
@@ -747,7 +814,7 @@ function ScenarioEditor({
             <ServerIssuesContext.Provider value={serverIssuesByBlock}>
               <Canvas
                 nodes={displayNodes}
-                edges={edges}
+                edges={displayEdges}
                 onNodesChange={handleNodesChange}
                 onEdgesChange={handleEdgesChange}
                 onEdgesReplace={handleEdgesReplace}

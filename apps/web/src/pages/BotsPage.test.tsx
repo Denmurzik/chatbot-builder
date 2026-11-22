@@ -418,4 +418,30 @@ describe('BotsPage', () => {
     );
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith(ru.bots.published(0)));
   });
+
+  it('отображает логотип со ссылкой на /projects, переключатель темы, статус публикации и a11y-атрибуты полей', async () => {
+    stubApi({}, [
+      { ...botWithTelegram, status: 'PUBLISHED', publishedAt: '2026-11-20T10:00:00.000Z' },
+    ]);
+    renderPage();
+
+    expect(await screen.findByText(ru.bots.statusPublished)).toBeTruthy();
+    const logoLink = screen.getByRole('link', { name: ru.projects.title });
+    expect(logoLink.getAttribute('href')).toBe('/projects');
+    expect(
+      screen.getByRole('button', {
+        name: new RegExp(`${ru.theme.switchToLight}|${ru.theme.switchToDark}`),
+      }),
+    ).toBeTruthy();
+
+    const tgTokenInput = screen.getByLabelText(ru.bots.tokenLabel);
+    expect(tgTokenInput.getAttribute('id')).toBe('tg-token-b1');
+    expect(tgTokenInput.getAttribute('name')).toBe('token');
+    expect(tgTokenInput.getAttribute('autocomplete')).toBe('off');
+
+    const vkTokenInput = screen.getByLabelText(ru.bots.vkTokenLabel);
+    expect(vkTokenInput.getAttribute('id')).toBe('vk-token-b1');
+    expect(vkTokenInput.getAttribute('name')).toBe('token');
+    expect(vkTokenInput.getAttribute('autocomplete')).toBe('off');
+  });
 });

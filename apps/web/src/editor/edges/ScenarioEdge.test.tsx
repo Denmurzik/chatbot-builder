@@ -80,6 +80,32 @@ describe('ScenarioEdge', () => {
     expect(selectedFill).not.toBe(normalFill);
   });
 
+  it('учитывает пользовательский style.stroke (подсветка связей в превью)', () => {
+    const { container } = render(
+      <ReactFlowProvider>
+        <svg>
+          <ScenarioEdge
+            id="entry::preview"
+            source="entry"
+            target="msg_1"
+            sourceX={200}
+            sourceY={60}
+            targetX={400}
+            targetY={60}
+            sourcePosition={Position.Right}
+            targetPosition={Position.Left}
+            selected={false}
+            style={{ stroke: 'var(--brand)', strokeWidth: 2 }}
+          />
+        </svg>
+      </ReactFlowProvider>,
+    );
+
+    const path = container.querySelector<SVGPathElement>('.react-flow__edge-path');
+    expect(path?.style.stroke).toBe('var(--brand)');
+    expect(container.querySelector('marker path')?.getAttribute('fill')).toBe('var(--brand)');
+  });
+
   it('прямая связь — плавная кривая, связь назад — ломаная со скруглениями', () => {
     function pathOf(sourceX: number, targetX: number) {
       const { container } = render(

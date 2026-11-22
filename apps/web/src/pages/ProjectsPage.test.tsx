@@ -176,4 +176,57 @@ describe('ProjectsPage', () => {
     expect(await screen.findByText(ru.projects.deleteTitle)).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
   });
+
+  it('отображает бренд, переключатель темы и метрики карточек (статус, блоки, TG/VK)', async () => {
+    const projects: ProjectSummary[] = [
+      {
+        id: 'p1',
+        name: 'Опубликованный бот',
+        updatedAt: '2026-01-01T10:00:00Z',
+        botsCount: 2,
+        blocksCount: 12,
+        publishedBotsCount: 1,
+        messengers: ['TELEGRAM', 'VK'],
+      },
+      {
+        id: 'p2',
+        name: 'Черновик сценария',
+        updatedAt: '2026-01-02T10:00:00Z',
+        botsCount: 0,
+        blocksCount: 3,
+        publishedBotsCount: 0,
+        messengers: [],
+      },
+    ];
+
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === '/api/auth/me') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ id: 'u1', email: 'author@example.com' }), { status: 200 }),
+        );
+      }
+      if (url === '/api/projects' && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve(new Response(JSON.stringify(projects), { status: 200 }));
+      }
+      return Promise.resolve(new Response(null, { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderProjectsPage();
+
+    expect(await screen.findByText('Опубликованный бот')).toBeTruthy();
+    expect(screen.getByText(ru.appName)).toBeTruthy();
+    expect(
+      screen.getByRole('button', {
+        name: new RegExp(`${ru.theme.switchToLight}|${ru.theme.switchToDark}`),
+      }),
+    ).toBeTruthy();
+
+    expect(screen.getByText(ru.projects.publishedBadge)).toBeTruthy();
+    expect(screen.getByText(ru.projects.draftBadge)).toBeTruthy();
+    expect(screen.getByText(ru.projects.blocksCount(12))).toBeTruthy();
+    expect(screen.getByText(ru.projects.blocksCount(3))).toBeTruthy();
+    expect(screen.getByText('TG')).toBeTruthy();
+    expect(screen.getByText('VK')).toBeTruthy();
+  });
 });

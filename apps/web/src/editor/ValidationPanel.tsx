@@ -78,6 +78,8 @@ export function ValidationPanel({
         data-testid="validation-panel"
         className="w-full max-w-full gap-0 bg-card p-0 sm:w-96 sm:max-w-96"
         onCloseAutoFocus={(event) => event.preventDefault()}
+        onInteractOutside={(event) => event.preventDefault()}
+        onPointerDownOutside={(event) => event.preventDefault()}
       >
         <SheetHeader className="border-b bg-surface pr-12 pb-3">
           <SheetTitle>{ru.validationPanel.title}</SheetTitle>
